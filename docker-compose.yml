@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SalinAI  |  docker-compose.yml  (Production / Team Shared)
+# Usage:
+#   1. Copy .env.example → .env and fill in all values
+#   2. Place your serviceAccountKey.json in ./backend/
+#   3. docker compose up --build
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Backend: Node.js + Express + LangChain Agentic Core ──────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: salinai-backend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      # Server
+      PORT: ${PORT:-3001}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:80}
+
+      # Firebase Admin (Realtime DB)
+      FIREBASE_DATABASE_URL: ${FIREBASE_DATABASE_URL}
+
+      # Gemini / Google AI
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+
+      # Notifications (P1 — Optional for MVP)
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+
+      # MongoDB Atlas (P1 — Deferrable RAG phase)
+      MONGODB_URI: ${MONGODB_URI:-}
+
+      # OpenWeatherMap (P1 — Deferrable)
+      OPENWEATHERMAP_API_KEY: ${OPENWEATHERMAP_API_KEY:-}
+
+    volumes:
+      # Mount the Firebase service account key at runtime — NEVER bake it in.
+      # The file path inside the container matches what firebase.js requires.
+      - ./backend/serviceAccountKey.json:/app/serviceAccountKey.json:ro
+    networks:
+      - salinai-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Frontend: Vite React → Nginx ──────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Firebase Client SDK (public — safe to pass as build args)
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN}
+        VITE_FIREBASE_DATABASE_URL: ${VITE_FIREBASE_DATABASE_URL}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID}
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:3001}
+    container_name: salinai-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - salinai-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  salinai-net:
+    driver: bridge

@@ -1,0 +1,20 @@
+# Dependencies listed in .gitignore (secrets & build artefacts)
+node_modules
+.env
+serviceAccountKey.json
+
+# Git
+.git
+.gitignore
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS artefacts
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode
+.idea
