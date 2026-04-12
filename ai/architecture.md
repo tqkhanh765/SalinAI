@@ -12,7 +12,7 @@ SalinAI is built as a three-layer, event-driven AI Agentic system. Firebase rema
 
 ### Layer 2: AI Agentic Core (Backend on Render)
 
-| Component | Technology | Description |
+| Submodel | Role | Notes |
 |---|---|---|
 | Event Filter + Throttle | Firebase listener middleware | Prevents spam invocation and enforces minimum trigger interval |
 | Orchestrator | LangChain.js | Coordinates retrieval, prompt assembly, and tool execution |
@@ -131,7 +131,7 @@ MANUAL: AI Agentic pipeline may reason, but actuator write tools are blocked.
 
 ## 7. Technology Summary
 
-| Layer | Technology | Hosting |
+| Layer | Technology | Purpose |
 |---|---|---|
 | Frontend | React.js (Vite) | Vercel |
 | Backend AI Agentic Core | Node.js, Express, LangChain.js | Render |

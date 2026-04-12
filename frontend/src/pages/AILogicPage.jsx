@@ -108,7 +108,7 @@ const LogSection = ({ type, content, visible, isTyping = false, typingText = '' 
           </p>
         ) : (
           <pre
-            className="text-xs sm:text-sm leading-relaxed font-mono whitespace-pre-wrap break-words"
+            className="text-xs sm:text-sm leading-relaxed font-mono whitespace-pre-wrap wrap-break-word"
             style={{ color: style.text, margin: 0 }}
           >
             {content}

@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { ref, set } from 'firebase/database';
+import { db } from '../lib/firebaseClient';
 
 // ─── Helper sub-components ─────────────────────────────────────────────────────
 
@@ -149,9 +151,11 @@ const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading
 
 export default function SimulatorPage({ onAgentTrigger }) {
   const [salinityLevel, setSalinityLevel] = useState(4.5);
+  const [moistureLevel, setMoistureLevel] = useState(65);
   const [weatherCondition, setWeatherCondition] = useState('Sunny');
   const [valveOpen, setValveOpen] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
   const [notificationMsg, setNotificationMsg] = useState('');
   const [hasTriggered, setHasTriggered] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
@@ -161,8 +165,25 @@ export default function SimulatorPage({ onAgentTrigger }) {
   const salinityColor = salinityLevel <= 3 ? '#6FCF97' : salinityLevel <= 6 ? '#F2C94C' : '#EB5757';
   const sliderBg = `linear-gradient(to right, ${salinityColor} 0%, ${salinityColor} ${(salinityLevel / 10) * 100}%, #d1d5db ${(salinityLevel / 10) * 100}%, #d1d5db 100%)`;
 
-  const handleTrigger = () => {
-    if (isLoading) return;
+  const handleTrigger = async () => {
+    if (isLoading || isPushing) return;
+
+    setIsPushing(true);
+    try {
+      await set(ref(db, 'sensor_data'), {
+        salinity: Number(salinityLevel.toFixed(2)),
+        moisture: Number(moistureLevel.toFixed(2)),
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      setShowNotification(true);
+      setHasTriggered(false);
+      setNotificationMsg(`❌ Không thể gửi dữ liệu lên Firebase: ${error.message}`);
+      setIsPushing(false);
+      return;
+    }
+
+    setIsPushing(false);
     setIsLoading(true);
     setShowNotification(false);
     setHasTriggered(false);
@@ -186,17 +207,17 @@ export default function SimulatorPage({ onAgentTrigger }) {
 
       if (open) {
         setNotificationMsg(
-          `✅ Chất lượng nước an toàn (${salinityLevel.toFixed(1)}‰). Van đã mở để tưới tiêu.`
+          `✅ Dữ liệu đã gửi Firebase. Chất lượng nước an toàn (${salinityLevel.toFixed(1)}‰, ẩm đất ${moistureLevel.toFixed(0)}%). Van đã mở để tưới tiêu.`
         );
       } else {
         setNotificationMsg(
-          `🚫 Điều kiện không an toàn — Độ mặn: ${salinityLevel.toFixed(1)}‰, Thời tiết: ${translateWeather(weatherCondition)}. Van vẫn đóng.`
+          `🚫 Dữ liệu đã gửi Firebase. Điều kiện không an toàn — Độ mặn: ${salinityLevel.toFixed(1)}‰, ẩm đất ${moistureLevel.toFixed(0)}%, thời tiết: ${translateWeather(weatherCondition)}. Van vẫn đóng.`
         );
       }
 
       // Notify parent (for AI Logic page)
       if (onAgentTrigger) {
-        onAgentTrigger({ salinityLevel, weatherCondition, valveOpen: open });
+        onAgentTrigger({ salinityLevel, moistureLevel, weatherCondition, valveOpen: open });
       }
     }, delay);
   };
@@ -233,7 +254,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
             style={{ borderColor: '#1F6F5F20' }}>
 
             <div className="flex items-center gap-3 pb-4" style={{ borderBottom: '1px solid #EEEEEE' }}>
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
                 style={{ background: '#2FA08415' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2FA084" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
@@ -282,6 +303,43 @@ export default function SimulatorPage({ onAgentTrigger }) {
               {/* Gauge */}
               <div className="flex justify-center py-2">
                 <SalinityGauge value={salinityLevel} />
+              </div>
+            </div>
+
+            {/* Weather Dropdown */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-semibold" style={{ color: '#1F6F5F' }}
+                  htmlFor="moisture-slider">
+                  🌱 Độ Ẩm Đất
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-lg font-extrabold tabular-nums" style={{ color: '#2FA084' }}>
+                    {moistureLevel.toFixed(0)}
+                  </span>
+                  <span className="text-xs font-semibold text-gray-400">%</span>
+                </div>
+              </div>
+              <input
+                id="moisture-slider"
+                type="range"
+                min={0}
+                max={100}
+                step={1}
+                value={moistureLevel}
+                onChange={(e) => setMoistureLevel(parseFloat(e.target.value))}
+                className="w-full h-2 rounded-full"
+                style={{
+                  background: `linear-gradient(to right, #2FA084 0%, #2FA084 ${moistureLevel}%, #d1d5db ${moistureLevel}%, #d1d5db 100%)`,
+                  minHeight: '44px',
+                  padding: '18px 0',
+                  cursor: 'pointer',
+                }}
+              />
+              <div className="flex justify-between text-xs text-gray-400 font-medium">
+                <span>0% Khô</span>
+                <span>50%</span>
+                <span>100% Ướt</span>
               </div>
             </div>
 
@@ -350,10 +408,17 @@ export default function SimulatorPage({ onAgentTrigger }) {
             >
               {isLoading ? (
                 <>
-                  <svg className="animate-spin w-5 h-5 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                  <svg className="animate-spin w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
                   </svg>
                   <span>SalinAI đang phân tích...</span>
+                </>
+              ) : isPushing ? (
+                <>
+                  <svg className="animate-spin w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                  </svg>
+                  <span>Đang gửi Firebase...</span>
                 </>
               ) : (
                 <>
@@ -374,7 +439,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
             <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6"
               style={{ borderColor: '#1F6F5F20' }}>
               <div className="flex items-center gap-3 mb-5 pb-4" style={{ borderBottom: '1px solid #EEEEEE' }}>
-                <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
                   style={{ background: '#6FCF9715' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6FCF97" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
@@ -420,7 +485,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
               >
                 <div className="flex items-start gap-3">
                   <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
                     style={{ background: valveOpen ? '#6FCF9715' : '#1F6F5F15' }}
                   >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={valveOpen ? '#6FCF97' : '#1F6F5F'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -453,6 +518,10 @@ export default function SimulatorPage({ onAgentTrigger }) {
                   </p>
                 </div>
                 <div className="rounded-xl p-3" style={{ background: '#F7F9F9' }}>
+                  <p className="text-xs text-gray-400 mb-1">Độ Ẩm Đất</p>
+                  <p className="font-bold text-sm" style={{ color: '#1F6F5F' }}>{moistureLevel.toFixed(0)}%</p>
+                </div>
+                <div className="rounded-xl p-3 col-span-2" style={{ background: '#F7F9F9' }}>
                   <p className="text-xs text-gray-400 mb-1">Thời Tiết</p>
                   <p className="font-bold text-sm" style={{ color: '#1F6F5F' }}>{translateWeather(weatherCondition)}</p>
                 </div>

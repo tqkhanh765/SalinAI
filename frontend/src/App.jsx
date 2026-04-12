@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Navbar from './components/Navbar';
 import FarmerDashboard from './pages/FarmerDashboard';
+import SimulatorPage from './pages/SimulatorPage';
 import BehindTheScenes from './pages/BehindTheScenes';
 import './index.css';
 
@@ -13,6 +14,9 @@ function App() {
       <main>
         <div style={{ display: activePage === 'dashboard' ? 'block' : 'none' }}>
           <FarmerDashboard />
+        </div>
+        <div style={{ display: activePage === 'simulator' ? 'block' : 'none' }}>
+          <SimulatorPage />
         </div>
         <div style={{ display: activePage === 'ai-logic' ? 'block' : 'none' }}>
           <BehindTheScenes />

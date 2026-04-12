@@ -1,76 +1,68 @@
-# Testing Strategy & Edge Cases (v2.0)
+# Testing Strategy & Edge Cases (v2.2)
 
-## 1. System Prompt Constraints (Core Autonomous Loop)
+## 1. Core Decision Rules
 
-| Test Case | Input Conditions | Expected Agent Behavior |
+| Test Case | Input Conditions | Expected Behavior |
 |---|---|---|
-| **TC-1: Safe — No Action** | Salinity = 1.0 ppt, Weather = Clear | MUST NOT call `execute_valve_control`. Log must contain "NO_ACTION" with reasoning "Safe". |
-| **TC-2: Danger — High Salinity** | Salinity = 2.5 ppt, Weather = Clear | MUST call `execute_valve_control("CLOSED")` immediately. Reason must mention ppt threshold. |
-| **TC-3: Danger — Weather Risk** | Salinity = 1.5 ppt, Weather = "Storm" (`is_risky: true`) | MUST call `execute_valve_control("CLOSED")` proactively. Reason must mention weather. |
-| **TC-4: Recovery — Safe After Close** | Salinity = 0.8 ppt, Valve is CLOSED | MUST call `execute_valve_control("OPEN")`. Reason must mention salinity is below safe threshold. |
-| **TC-5: Dual Danger** | Salinity = 3.0 ppt, Weather = "Storm" | MUST call `execute_valve_control("CLOSED")`. Reason must mention both factors. |
+| **TC-1: Safe - No Action** | Salinity = 1.0 ppt, control mode = AUTO | The system must not change the valve. It should write a NO_ACTION log with a clear reason. |
+| **TC-2: High Salinity** | Salinity = 2.5 ppt, control mode = AUTO | The system must move the valve to CLOSED and explain that the threshold was exceeded. |
+| **TC-3: Recovery** | Salinity = 0.8 ppt, valve = CLOSED, control mode = AUTO | The system must open the valve if no other risk is present. |
+| **TC-4: Dual Risk** | Salinity = 3.0 ppt, risky weather context, control mode = AUTO | The system must favor CLOSED and record both reasons in the log. |
 
 ---
 
-## 2. Manual Override (State Locking)
+## 2. Manual Override
 
 | Test Case | Steps | Expected Result |
 |---|---|---|
-| **TC-6: Override Blocks AI** | 1. Set `control_mode = MANUAL` via Dashboard. 2. Push salinity = 5.0 ppt. | Backend listener MUST detect `MANUAL` mode and abort before invoking LangChain. AI MUST NOT be triggered. Valve state MUST NOT change. |
-| **TC-7: Throttle Re-fires After Return to AUTO** | 1. Set `MANUAL`, push anomaly. 2. Set `AUTO`. 3. Push anomaly again. | After returning to `AUTO`, the next sensor change MUST correctly trigger the AI agent. |
+| **TC-5: Override Blocks AI** | Set `control_mode = MANUAL`, then push a high-salinity reading. | The listener must stop before orchestration starts. No autonomous valve change should happen. |
+| **TC-6: Return to AUTO Restores Flow** | Switch from MANUAL back to AUTO, then push a new anomaly. | The next valid event must trigger the orchestration flow normally. |
 
 ---
 
-## 3. Event Filter & Throttling
+## 3. Listener and Throttling
 
 | Test Case | Steps | Expected Result |
 |---|---|---|
-| **TC-8: No Spam Invocations** | Push 10 rapid sensor updates within 1 second (all same value). | LangChain agent MUST be invoked AT MOST once within the debounce window. |
-| **TC-9: Cron Trigger** | Sensor data is stable for > cron interval (e.g., 5 min). | Agent MUST be triggered by the cron schedule to perform a status check, even without a data change event. |
+| **TC-7: Duplicate Event Suppression** | Push the same sensor reading several times in a short window. | The system must invoke the flow at most once during the debounce window. |
+| **TC-8: Stable-State Check** | Keep the system idle for the configured interval. | The periodic check, if enabled, should not spam repeated actions. |
 
 ---
 
-## 4. Weather Integration
-
-| Test Case | Input | Expected Result |
-|---|---|---|
-| **TC-10: API Failure Graceful Degradation** | OpenWeatherMap API returns 500 or timeout. | `check_weather` tool MUST return a safe default (`is_risky: false`). Agent MUST log the error but continue reasoning with available data. |
-| **TC-11: Risky Weather Classification** | API returns `"Thunderstorm"` condition. | `is_risky` MUST be `true`. Agent MUST close the valve. |
-
----
-
-## 5. RAG & MongoDB History
+## 4. RAG and MongoDB
 
 | Test Case | Steps | Expected Result |
 |---|---|---|
-| **TC-12: Log Written to MongoDB** | Trigger any agent action (including NO_ACTION). | Verify a document appears in the MongoDB `action_logs` collection with correct `actor`, `action`, `reason`, and `timestamp` fields. |
-| **TC-13: RAG Context Injection** | Ask chat: "Why did the valve close at 14:00?". | Agent MUST retrieve the relevant past log from MongoDB via vector search and include it in its reasoning. Response MUST reference the correct timestamp/reason. |
+| **TC-9: Action Written to MongoDB** | Trigger any AI decision, including NO_ACTION. | A matching record must appear in the MongoDB action log collection with the right context fields. |
+| **TC-10: Retrieval Finds Similar Past Case** | Query the system with a salinity spike similar to a previously logged event. | The RAG step must surface the most relevant old action and include it in the reasoning context. |
+| **TC-11: Retrieval Failure Fallback** | Simulate MongoDB being unavailable. | The system must still produce a safe decision using the live sensor state and log the retrieval error. |
 
 ---
 
-## 6. REST API (Chat & Override)
-
-| Test Case | Request | Expected Response |
-|---|---|---|
-| **TC-14: Chat — Factual Query** | `POST /api/chat` `{ "message": "What is the current salinity?" }` | `200 OK` with a reply containing the latest salinity value from Firebase context. |
-| **TC-15: Chat — Empty Message** | `POST /api/chat` `{ "message": "" }` | `400 Bad Request` with an error message. |
-| **TC-16: Override — Set MANUAL** | `POST /api/override` `{ "control_mode": "MANUAL" }` | `200 OK`. Firebase `actuator.control_mode` MUST be `"MANUAL"`. |
-| **TC-17: Override — Invalid State** | `POST /api/override` `{ "valve_state": "BROKEN" }` | `400 Bad Request` with a validation error. |
-
----
-
-## 7. Alert System
+## 5. LangFlow Visualization
 
 | Test Case | Steps | Expected Result |
 |---|---|---|
-| **TC-18: Telegram Alert Sent** | Trigger anomaly in AUTO mode (salinity = 3.0 ppt). | Verify Telegram message is received with valve state and reason within 5 seconds of the agent's decision. |
-| **TC-19: No Duplicate Alerts** | Trigger same anomaly twice within the throttle window. | Only ONE Telegram message MUST be sent (de-duplicated by the throttle filter). |
+| **TC-12: Ingestion Substep** | Feed sensor data into the ingestion node. | The substep must normalize the payload and pass a structured current-state object forward. |
+| **TC-13: Safety Substep** | Force a proposed action while `control_mode = MANUAL`. | The safety node must block the action and return a safe fallback decision. |
+| **TC-14: Persistence Substep** | Complete a full flow that ends in a decision. | The persistence node must write the final decision trail to Firebase and MongoDB. |
+| **TC-15: LangFlow Diagram Match** | Compare the UI pipeline diagram against the documented runtime flow. | The visualization must match the LangChain-controlled sequence and labels. |
 
 ---
 
-## 8. Real-time Latency
+## 6. API and Dashboard
+
+| Test Case | Request or Action | Expected Response |
+|---|---|---|
+| **TC-16: Health Check** | `GET /api/health` | Return `200 OK` with Firebase and MongoDB connection status. |
+| **TC-17: Override Validation** | `POST /api/override` with an invalid valve state | Return `400 Bad Request` and do not update Firebase. |
+| **TC-18: Dashboard Reflection** | Trigger a valid autonomous action | The dashboard must show the new valve state, latest reasoning, and the newest log entry. |
+
+---
+
+## 7. Latency and Reliability
 
 | Test Case | Method | Target |
 |---|---|---|
-| **TC-20: End-to-End Latency (AUTO)** | Timestamp at Simulator "Push Data" click; timestamp at Dashboard valve UI update. | Round-trip MUST be < **3 seconds** under normal network conditions. |
-| **TC-21: Chat Response Latency** | Timestamp at "Send" click in chat panel; timestamp at first character of AI reply. | Chat response MUST arrive in < **5 seconds**. |
+| **TC-19: End-to-End Latency** | Measure from sensor push to dashboard update | Keep the core path under 3 seconds under normal conditions. |
+| **TC-20: Safe Fallback Under Error** | Inject a model or retrieval failure | The system must log the failure and avoid unsafe valve changes. |

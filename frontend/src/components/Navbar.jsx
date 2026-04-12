@@ -51,6 +51,18 @@ export default function Navbar({ activePage, setActivePage }) {
       ),
     },
     {
+      id: 'simulator',
+      label: 'Mô Phỏng',
+      sublabel: 'Push Sensor Data',
+      icon: (
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M12 2v20" />
+          <path d="M5 9l7-7 7 7" />
+          <path d="M5 15l7 7 7-7" />
+        </svg>
+      ),
+    },
+    {
       id: 'ai-logic',
       label: 'Hậu Trường',
       sublabel: 'Logic AI & Mô Phỏng',
@@ -138,13 +150,13 @@ export default function Navbar({ activePage, setActivePage }) {
                 }`}
               style={activePage === tab.id ? { color: '#1F6F5F' } : { color: 'rgba(255,255,255,0.9)' }}
             >
-              <span className="flex-shrink-0">{tab.icon}</span>
+              <span className="shrink-0">{tab.icon}</span>
               <div>
                 <div className="font-semibold text-sm">{tab.label}</div>
                 <div className="text-xs opacity-60">{tab.sublabel}</div>
               </div>
               {activePage === tab.id && (
-                <span className="ml-auto w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: '#2FA084' }} />
+                <span className="ml-auto w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: '#2FA084' }} />
               )}
             </button>
           ))}

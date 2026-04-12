@@ -91,7 +91,7 @@ const LogSection = ({ type, content, visible, isTyping = false, typingText = '' 
             {!done && <span className="typing-cursor" />}
           </p>
         ) : (
-          <pre className="text-xs sm:text-sm leading-relaxed font-mono whitespace-pre-wrap break-words" style={{ color: style.text, margin: 0 }}>
+          <pre className="text-xs sm:text-sm leading-relaxed font-mono whitespace-pre-wrap" style={{ color: style.text, margin: 0, overflowWrap: 'anywhere' }}>
             {content}
           </pre>
         )}
@@ -354,7 +354,7 @@ Trạng thái: THÀNH CÔNG`,
         {/* ── Simulator Panel ────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
           <div className="flex items-center gap-3 mb-5 pb-4" style={{ borderBottom: '1px solid #EEEEEE' }}>
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#2FA08415' }}>
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: '#2FA08415', flexShrink: 0 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2FA084" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
               </svg>

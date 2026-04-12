@@ -14,6 +14,8 @@ All services must write and read this structure exactly.
   "actuator": {
     "valve_state": "OPEN",
     "control_mode": "AUTO"
+    "valve_state": "OPEN",
+    "control_mode": "AUTO"
   },
   "ai_status": {
     "is_processing": false,
@@ -196,6 +198,8 @@ Request body:
 
 ```json
 {
+  "valve_state": "OPEN",
+  "control_mode": "MANUAL"
   "valve_state": "OPEN",
   "control_mode": "MANUAL"
 }

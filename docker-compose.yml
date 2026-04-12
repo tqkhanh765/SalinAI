@@ -23,10 +23,10 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:80}
 
       # Firebase Admin (Realtime DB)
-      FIREBASE_DATABASE_URL: ${FIREBASE_DATABASE_URL}
+      FIREBASE_DATABASE_URL: ${https://salin-ai-hackathon-default-rtdb.asia-southeast1.firebasedatabase.app/}
 
       # Gemini / Google AI
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      GOOGLE_API_KEY: ${AIzaSyC74thjZo8qOmVGP9MO5Hs8vy57KDMMChI}
 
       # Notifications (P1 — Optional for MVP)
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
