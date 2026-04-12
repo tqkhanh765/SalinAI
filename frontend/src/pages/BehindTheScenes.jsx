@@ -160,7 +160,7 @@ const EmptyTerminal = () => (
     <div className="text-center">
       <p className="font-semibold text-sm" style={{ color: '#4ade80' }}>Terminal Sẵn Sàng</p>
       <p className="text-xs mt-1" style={{ color: '#6b7280' }}>
-        Nhấn <span style={{ color: '#2FA084' }}>Kích Hoạt SalinAI Agent</span> bên trên để xem nhật ký.
+        Nhấn <span style={{ color: '#2FA084' }}>Kích Hoạt SalinAI Agentic</span> bên trên để xem nhật ký.
       </p>
     </div>
     <div className="flex items-center gap-2 mt-1">
@@ -290,7 +290,7 @@ Quyết định: ĐÓNG VAN. Không khuyến cáo tưới tiêu trong điều ki
         id: 'CONTEXT_MATCHED',
         content: `Nội Dung Hệ Thống (System Prompt):
 ─────────────────────────────────
-"Bạn là SalinAI, một AI agent thông minh kiểm soát tưới tiêu. Nhiệm vụ
+"Bạn là SalinAI, một AI Agentic thông minh kiểm soát tưới tiêu. Nhiệm vụ
 của bạn là phân tích dữ liệu cảm biến và đưa ra quyết định an toàn về
 việc kiểm soát van tưới tiêu.
 
@@ -458,7 +458,7 @@ Trạng thái: THÀNH CÔNG`,
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="10"/><path d="M12 8l4 4-4 4M8 12h8"/>
                     </svg>
-                    <span>Kích Hoạt SalinAI Agent</span>
+                    <span>Kích Hoạt SalinAI Agentic</span>
                   </>
                 )}
               </button>

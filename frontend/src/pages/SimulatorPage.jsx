@@ -221,7 +221,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
             Trình Mô Phỏng Đồng Ruộng
           </h1>
           <p className="text-sm md:text-base text-gray-500 mt-1">
-            Điều chỉnh dữ liệu cảm biến và kích hoạt AI agent để kiểm soát van tưới tiêu.
+            Điều chỉnh dữ liệu cảm biến và kích hoạt AI Agentic để kiểm soát van tưới tiêu.
           </p>
         </div>
 
@@ -361,7 +361,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
                     <circle cx="12" cy="12" r="10"/>
                     <path d="M12 8l4 4-4 4M8 12h8"/>
                   </svg>
-                  <span>Kích Hoạt SalinAI Agent</span>
+                  <span>Kích Hoạt SalinAI Agentic</span>
                 </>
               )}
             </button>

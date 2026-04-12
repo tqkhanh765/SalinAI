@@ -1,6 +1,6 @@
 # SalinAI Frontend
 
-This is the frontend interface for the SalinAI (Agriculture AI Agent) platform. It features the **Farmer Dashboard** for monitoring field conditions and the **AI Behind-the-Scenes Simulator** for visualizing AI logic decisions.
+This is the frontend interface for the SalinAI (Agriculture AI Agentic) platform. It features the **Farmer Dashboard** for monitoring field conditions and the **AI Behind-the-Scenes Simulator** for visualizing AI logic decisions.
 
 ## 🚀 Quick Start for Developers
 

@@ -134,7 +134,7 @@ const EmptyTerminal = () => (
     <div className="text-center">
       <p className="font-semibold text-sm" style={{ color: '#4ade80' }}>Terminal Sẵn Sàng</p>
       <p className="text-xs mt-1" style={{ color: '#6b7280' }}>
-        Kích hoạt SalinAI agent từ tab{' '}
+        Kích hoạt SalinAI Agentic từ tab{' '}
         <span style={{ color: '#2FA084' }}>Mô Phỏng</span> để xem nhật ký.
       </p>
     </div>
@@ -247,7 +247,7 @@ Quyết định: ĐÓNG VAN. Không khuyến cáo tưới tiêu trong điều ki
       },
       {
         id: 'CONTEXT_MATCHED',
-        content: `Nội Dung Hệ Thống (System Prompt):\n─────────────────────────────────\n"Bạn là SalinAI, một AI agent thông minh kiểm soát tưới tiêu. Nhiệm vụ của bạn là phân tích dữ liệu cảm biến thời gian thực và đưa ra quyết định an toàn, dựa trên dữ liệu về việc kiểm soát van tưới tiêu.\n\nQuy TẮc An Toàn:\n  QUY_TẮc_01: độ_mặn <= 4‰ VÀ nắng   → MỞ\n  QUY_TẮc_02: 4 < độ_mặn <= 6‰ + nắng → MỞ (theo dõi)\n  QUY_TẮc_03: Mưa To                  → ĐÓNG  \n  QUY_TẮc_04: Hạn Hán                 → ĐÓNG  \n  QUY_TẮc_05: độ_mặn > 6‰             → ĐÓNG"\n─────────────────────────────────\nKhớp: ${matchedRule}\nĐộ ưu tiên: CAO\nYêu cầu lệnh ghi đè: không`,
+        content: `Nội Dung Hệ Thống (System Prompt):\n─────────────────────────────────\n"Bạn là SalinAI, một AI Agentic thông minh kiểm soát tưới tiêu. Nhiệm vụ của bạn là phân tích dữ liệu cảm biến thời gian thực và đưa ra quyết định an toàn, dựa trên dữ liệu về việc kiểm soát van tưới tiêu.\n\nQuy TẮc An Toàn:\n  QUY_TẮc_01: độ_mặn <= 4‰ VÀ nắng   → MỞ\n  QUY_TẮc_02: 4 < độ_mặn <= 6‰ + nắng → MỞ (theo dõi)\n  QUY_TẮc_03: Mưa To                  → ĐÓNG  \n  QUY_TẮc_04: Hạn Hán                 → ĐÓNG  \n  QUY_TẮc_05: độ_mặn > 6‰             → ĐÓNG"\n─────────────────────────────────\nKhớp: ${matchedRule}\nĐộ ưu tiên: CAO\nYêu cầu lệnh ghi đè: không`,
       },
       {
         id: 'AGENT_REASONING',
