@@ -9,6 +9,7 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
+import { useRealtimeFarmState } from '../hooks/useRealtimeFarmState';
 
 // Fix leaflet default icon
 const DefaultIcon = L.icon({
@@ -72,7 +73,7 @@ const generateHistoryData = (currentSalinity) => {
 
 const StatCard = ({ icon, label, value, unit, color, bg }) => (
   <div className="bg-white rounded-2xl p-4 md:p-5 flex items-center gap-4 shadow-sm border" style={{ borderColor: '#1F6F5F15' }}>
-    <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: bg }}>
+    <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: bg }}>
       <span className="text-xl">{icon}</span>
     </div>
     <div className="min-w-0">
@@ -101,6 +102,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 // ─── Main FarmerDashboard ──────────────────────────────────────────────────────
 
 export default function FarmerDashboard() {
+  const { sensorData, actuator, aiStatus, actionLogs, sensorHistory, setControlMode: setRemoteControlMode } = useRealtimeFarmState();
   const [valves, setValves] = useState(INITIAL_VALVES);
   const [controlScope, setControlScope] = useState('all'); // 'all' | 'single'
   const [activeValveId, setActiveValveId] = useState(INITIAL_VALVES[0].id);
@@ -109,7 +111,8 @@ export default function FarmerDashboard() {
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [notification, setNotification] = useState(null);
   const [historyData, setHistoryData] = useState([]);
-  const [controlMode, setControlMode] = useState('manual');
+  const [uiControlMode, setUiControlMode] = useState('manual');
+  const [isModeUpdating, setIsModeUpdating] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
 
   // Derived logical states based on Scope
@@ -137,11 +140,37 @@ export default function FarmerDashboard() {
     setHistoryData(generateHistoryData(readings.salinity));
   }, []);
 
+  useEffect(() => {
+    const mode = (actuator.control_mode || 'AUTO').toLowerCase();
+    setUiControlMode(mode);
+  }, [actuator.control_mode]);
+
   // Auto-refresh timestamp every minute
   useEffect(() => {
     const interval = setInterval(() => setLastUpdated(new Date()), 60000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleControlModeChange = async (nextMode) => {
+    setUiControlMode(nextMode);
+    setIsModeUpdating(true);
+    try {
+      await setRemoteControlMode(nextMode.toUpperCase());
+      setNotification({
+        type: 'success',
+        text: nextMode === 'manual' ? '🛠️ Đã chuyển sang chế độ MANUAL.' : '🤖 Đã chuyển sang chế độ AUTO.',
+      });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error) {
+      setNotification({
+        type: 'warning',
+        text: `❌ Không thể cập nhật control mode: ${error.message}`,
+      });
+      setTimeout(() => setNotification(null), 3000);
+    } finally {
+      setIsModeUpdating(false);
+    }
+  };
 
   const executeValveToggle = () => {
     setIsToggling(true);
@@ -170,7 +199,15 @@ export default function FarmerDashboard() {
     }, 1000);
   };
 
-  const salinityColor = readings.salinity <= 4 ? '#6FCF97' : readings.salinity <= 6 ? '#F2C94C' : '#EB5757';
+  const realtimeSalinity = Number(sensorData.salinity || 0);
+  const realtimeMoisture = Number(sensorData.moisture || 0);
+  const realtimeValveOpen = (actuator.valve_state || 'CLOSED') === 'OPEN';
+  const salinityColor = realtimeSalinity <= 4 ? '#6FCF97' : realtimeSalinity <= 6 ? '#F2C94C' : '#EB5757';
+  const trendData = sensorHistory.map((item) => ({
+    time: item.timestamp ? new Date(item.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
+    salinity: Number(item.salinity || 0),
+    moisture: Number(item.moisture || 0),
+  }));
 
   const formatTime = (d) =>
     d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -207,6 +244,85 @@ export default function FarmerDashboard() {
             </p>
           </div>
         )}
+
+        {/* ── Realtime Agent Monitor (Phase 1) ────────────────────── */}
+        <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
+            <div>
+              <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>Theo Dõi Agent Realtime</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Firebase sensor_data · actuator · ai_status · action_logs</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: '#1F6F5F10', color: '#1F6F5F' }}>
+                Mode: {actuator.control_mode || 'AUTO'}
+              </span>
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: aiStatus.is_processing ? '#F2C94C20' : '#6FCF9720', color: aiStatus.is_processing ? '#B45309' : '#1F6F5F' }}>
+                {aiStatus.is_processing ? 'AI is thinking...' : 'AI idle'}
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <StatCard icon="💧" label="Độ Mặn (Firebase)" value={realtimeSalinity.toFixed(1)} unit="‰" color={salinityColor} bg={`${salinityColor}20`} />
+            <StatCard icon="🌱" label="Độ Ẩm (Firebase)" value={realtimeMoisture.toFixed(0)} unit="%" color="#2FA084" bg="#2FA08420" />
+            <StatCard icon="🚰" label="Trạng Thái Van" value={realtimeValveOpen ? 'MỞ' : 'ĐÓNG'} unit="" color={realtimeValveOpen ? '#2FA084' : '#1F6F5F'} bg={realtimeValveOpen ? '#2FA08420' : '#1F6F5F20'} />
+            <StatCard icon="🤖" label="Control Mode" value={(actuator.control_mode || 'AUTO').toUpperCase()} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+          </div>
+
+          <div className="flex items-center gap-2 mb-4">
+            <button
+              disabled={isModeUpdating}
+              onClick={() => handleControlModeChange('auto')}
+              className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
+              style={uiControlMode === 'auto' ? { background: '#2FA084', color: 'white' } : { background: '#f3f4f6', color: '#4b5563' }}
+            >
+              Chuyển AUTO
+            </button>
+            <button
+              disabled={isModeUpdating}
+              onClick={() => handleControlModeChange('manual')}
+              className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
+              style={uiControlMode === 'manual' ? { background: '#1F6F5F', color: 'white' } : { background: '#f3f4f6', color: '#4b5563' }}
+            >
+              Chuyển MANUAL
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="rounded-xl border p-3" style={{ borderColor: '#1F6F5F20' }}>
+              <p className="text-xs text-gray-400 mb-2">Biểu đồ realtime (sensor_data)</p>
+              <div style={{ width: '100%', height: 180 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trendData} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} interval="preserveEnd" />
+                    <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="salinity" stroke="#2FA084" strokeWidth={2.2} dot={false} />
+                    <Line type="monotone" dataKey="moisture" stroke="#1F6F5F" strokeWidth={2.2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="rounded-xl border p-3" style={{ borderColor: '#1F6F5F20' }}>
+              <p className="text-xs text-gray-400 mb-2">Action Logs (mới nhất)</p>
+              <div className="space-y-2 max-h-[180px] overflow-auto pr-1">
+                {actionLogs.slice(0, 8).map((log) => (
+                  <div key={log.id} className="rounded-lg px-3 py-2" style={{ background: '#f8faf9' }}>
+                    <p className="text-xs font-semibold" style={{ color: '#1F6F5F' }}>
+                      {log.action || 'NO_ACTION'} · {log.actor || 'AI'}
+                    </p>
+                    <p className="text-xs text-gray-500">{log.reason || 'No reason provided'}</p>
+                  </div>
+                ))}
+                {!actionLogs.length && (
+                  <p className="text-xs text-gray-400">Chưa có action_logs trong Firebase.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* ── Field Map Section ─────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
@@ -272,7 +388,7 @@ export default function FarmerDashboard() {
         {/* ── Valve Control Section ─────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
           <div className="flex items-center gap-3 mb-6 pb-4" style={{ borderBottom: '1px solid #EEEEEE' }}>
-            <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: '#6FCF9715' }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6FCF97" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
@@ -294,8 +410,8 @@ export default function FarmerDashboard() {
             {/* 1. Visual status & action button combined */}
             <button
               onClick={() => setConfirmAction(valveOpen ? 'close' : 'open')}
-              disabled={controlMode === 'auto' || isToggling}
-              className={`flex-shrink-0 w-[176px] h-[176px] flex flex-col items-center justify-center rounded-2xl p-4 gap-2.5 transition-all duration-700 relative overflow-hidden ${controlMode === 'auto' || isToggling ? 'cursor-not-allowed opacity-80' : 'cursor-pointer hover:opacity-90 active:scale-95'
+              disabled={uiControlMode === 'auto' || isToggling}
+              className={`shrink-0 w-44 h-44 flex flex-col items-center justify-center rounded-2xl p-4 gap-2.5 transition-all duration-700 relative overflow-hidden ${uiControlMode === 'auto' || isToggling ? 'cursor-not-allowed opacity-80' : 'cursor-pointer hover:opacity-90 active:scale-95'
                 }`}
               style={{
                 background: isToggling
@@ -304,7 +420,7 @@ export default function FarmerDashboard() {
                     ? 'linear-gradient(135deg, #6FCF97 0%, #2FA084 100%)'
                     : 'linear-gradient(135deg, #EB5757 0%, #c12a2a 100%)',
                 border: 'none',
-                boxShadow: (controlMode === 'auto' || isToggling) 
+                boxShadow: (uiControlMode === 'auto' || isToggling) 
                   ? 'none' 
                   : valveOpen
                     ? '0 8px 25px rgba(47,160,132,0.35)'
@@ -337,12 +453,12 @@ export default function FarmerDashboard() {
                 )}
               </div>
               <div className="text-center relative z-10 w-full">
-                <p className="text-white font-extrabold text-lg leading-none break-words">
+                <p className="text-white font-extrabold text-lg leading-none wrap-break-word">
                   {controlScope === 'all' ? 'TẤT CẢ ' : 'VAN '}
                   {isToggling ? '...' : valveOpen ? 'ĐÃ MỞ' : 'ĐÃ ĐÓNG'}
                 </p>
                 <p className="text-white/80 text-xs mt-1.5 flex items-center justify-center gap-1 font-medium">
-                  {isToggling ? 'Đang xử lý...' : controlMode === 'auto' ? (
+                  {isToggling ? 'Đang xử lý...' : uiControlMode === 'auto' ? (
                     <>Không thể mở/đóng</>
                   ) : valveOpen ? (
                     <>Nhấn để đóng</>
@@ -361,15 +477,15 @@ export default function FarmerDashboard() {
                 <label className="text-sm font-semibold" style={{ color: '#1F6F5F' }}>CHẾ ĐỘ ĐIỀU KHIỂN</label>
                 <div className="flex bg-gray-100 p-1.5 rounded-2xl">
                   <button
-                    onClick={() => setControlMode('auto')}
-                    className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all ${controlMode === 'auto' ? 'bg-white shadow border border-gray-200/50 text-[#2FA084]' : 'text-gray-500 hover:bg-gray-200/50 hover:text-gray-700'
+                    onClick={() => handleControlModeChange('auto')}
+                    className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all ${uiControlMode === 'auto' ? 'bg-white shadow border border-gray-200/50 text-[#2FA084]' : 'text-gray-500 hover:bg-gray-200/50 hover:text-gray-700'
                       }`}
                   >
                     Tự Động (AI)
                   </button>
                   <button
-                    onClick={() => setControlMode('manual')}
-                    className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all ${controlMode === 'manual' ? 'bg-white shadow border border-gray-200/50 text-[#1F6F5F]' : 'text-gray-500 hover:bg-gray-200/50 hover:text-gray-700'
+                    onClick={() => handleControlModeChange('manual')}
+                    className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all ${uiControlMode === 'manual' ? 'bg-white shadow border border-gray-200/50 text-[#1F6F5F]' : 'text-gray-500 hover:bg-gray-200/50 hover:text-gray-700'
                       }`}
                   >
                     Thủ Công
@@ -399,7 +515,7 @@ export default function FarmerDashboard() {
 
         {/* ── Confirmation Modal ─────────────────────────── */}
         {confirmAction && createPortal(
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-99999 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">
               <div className="p-6">
                 <div className="w-12 h-12 rounded-full flex items-center justify-center mb-4" style={{ background: confirmAction === 'open' ? '#2FA08420' : '#F2C94C20' }}>

@@ -1,72 +1,82 @@
-# Product Requirements Document (PRD): SalinAI v2.0
+# Product Requirements Document (PRD): SalinAI v2.2
 
 ## 1. Product Vision
-SalinAI is an **autonomous Agentic AI system** designed to protect agriculture in the Mekong Delta from sudden salinity intrusion. It continuously monitors environmental data (soil salinity, moisture, and macro weather forecasts) and autonomously controls water valves to protect crops — while keeping farmers and buyers informed in real time.
+SalinAI is an autonomous AI agentic system for protecting Mekong Delta crops from salinity intrusion. The active product focuses on realtime sensing, safe valve control, and retrieval-augmented decision support over MongoDB, with Node.js and LangChain controlling the runtime agent and LangFlow used only to visualize the pipeline in the UI.
 
 ---
 
-## 2. Core Features (v2.0)
+## 2. Core Scope
 
 | # | Feature | Priority |
 |---|---|---|
-| 1 | Real-time sensor monitoring (salinity, moisture) via Firebase | P0 |
-| 2 | AI-driven autonomous valve control using Gemini 2.5 Flash | P0 |
-| 3 | Weather-integration for proactive, predictive valve control | P1 |
-| 4 | RAG-based action history retrieval via MongoDB Atlas | P1 |
-| 5 | Manual override with AI lock (MANUAL mode) | P0 |
-| 6 | Automated Telegram / Email alerts to farmers & buyers | P1 |
-| 7 | Natural-language chat interface on the Dashboard | P1 |
-| 8 | Real-time Dashboard (charts, logs, valve status) | P0 |
+| 1 | Real-time sensor monitoring for salinity and moisture via Firebase | P0 |
+| 2 | Autonomous valve control in AUTO mode using the AI pipeline | P0 |
+| 3 | Manual override with hard lockout for AI actions | P0 |
+| 4 | RAG over MongoDB Atlas action history and domain context | P0 |
+| 5 | LangFlow pipeline visualization for reusable AI subflows | P0 |
+| 6 | Real-time dashboard for sensor values, valve state, and action logs | P0 |
+| 7 | Optional weather enrichment for proactive decisions | P1 |
+
+### Explicitly out of active scope
+- Chatbot UI and chat endpoints
+- Telegram, email, or other notification delivery
+- Any agent behavior that is not tied to sensor-driven control or RAG
 
 ---
 
-## 3. Hackathon Constraints (CRITICAL)
-- **NO Physical Hardware:** Use a React-based Web Simulator to mock ESP32 sensor data pushes to Firebase.
-- **Time Constraint:** Prioritize the **core Agentic Loop** (P0 features) over aesthetics and P1 features.
-- **Secrets Management:** All API keys (Gemini, OpenWeatherMap, Telegram, MongoDB) must be stored in `.env`, never hardcoded.
+## 3. Why LangFlow
+LangFlow is useful here because it lets the team visualize the AI system as smaller reusable flows instead of one large agent file. That makes it easier to explain, demo, and split across substeps, while LangChain still performs the runtime control and reasoning.
+
+Recommended submodel split:
+- Context ingestion submodel: collects Firebase sensor state, weather, and control mode.
+- RAG retrieval submodel: queries MongoDB for relevant past actions and guidance.
+- Decision submodel: reasons about the current situation and proposes the next action.
+- Safety submodel: validates the proposed action against hard rules before writing to Firebase.
+- Visualization submodel: represents the flow in LangFlow for easier UI explanation.
 
 ---
 
 ## 4. Core User Flows
 
-### Flow A: Autonomous AI Control (AUTO mode)
-1. User drags salinity/moisture sliders on the **Simulator Page** and clicks "Push Data".
-2. Firebase Realtime DB updates instantly.
-3. Backend **Event Filter** detects the change and checks if the anomaly threshold is exceeded.
-4. **LangChain Agent** is triggered → fetches weather → performs RAG retrieval → reasons with **Gemini 2.5 Flash**.
-5. If `salinity >= 2 ppt` or weather is risky, Gemini calls `execute_valve_control("CLOSED")`.
-6. Valve command written to Firebase → Hardware relay closes → Dashboard UI updates.
-7. Agent calls `send_alert` → Telegram notification sent to stakeholders.
+### Flow A: Autonomous Control in AUTO mode
+1. User pushes sensor values from the Simulator Page to Firebase.
+2. Firebase listener detects the change and filters out duplicates or low-signal updates.
+3. LangChain runs the orchestration flow.
+4. The context ingestion substep builds the current state.
+5. The RAG retrieval substep fetches relevant history from MongoDB.
+6. The decision substep evaluates salinity, moisture, and optional weather context.
+7. The safety substep confirms the action is valid.
+8. If needed, the system writes the valve state to Firebase and stores the action log in MongoDB.
 
 ### Flow B: Manual Override
-1. User clicks "Manual Override" on the Dashboard → `control_mode` set to `MANUAL` in Firebase.
-2. AI agent is locked out — all `execute_valve_control` calls are blocked.
-3. User manually controls the valve via the Dashboard.
-4. User clicks "Return to Auto" → `control_mode` set back to `AUTO`.
+1. User switches `control_mode` to `MANUAL` from the dashboard.
+2. The listener and AI pipeline treat the system as locked.
+3. No autonomous valve command is written while MANUAL is active.
+4. User can return to `AUTO` when ready.
 
-### Flow C: Chat Query
-1. User types a natural-language question in the Dashboard chat panel (e.g., "Why did the valve close?").
-2. Frontend POSTs to `POST /api/chat`.
-3. LangChain agent uses RAG + context to generate a precise answer from Gemini.
-4. Response is displayed in the chat panel.
+### Flow C: RAG-Driven History Review
+1. The user inspects past actions through the dashboard logs.
+2. The backend retrieves the related MongoDB action history.
+3. The UI can show why a prior valve decision was made.
 
 ---
 
-## 5. AI Decision Rules (System Prompt Constraints)
+## 5. Decision Rules
 
-The Gemini agent MUST follow these hard-coded rules:
+The active AI pipeline must obey these hard rules:
 
 | Condition | Required Action |
 |---|---|
-| `salinity >= 2 ppt` | Call `execute_valve_control("CLOSED")` |
-| `salinity < 1 ppt` AND valve is CLOSED | Call `execute_valve_control("OPEN")` |
-| Weather `is_risky == true` | Call `execute_valve_control("CLOSED")` proactively |
-| `control_mode == "MANUAL"` | Skip all valve control. Log reasoning only. |
-| Any action taken | Must provide a `reason` string |
+| `control_mode == "MANUAL"` | Stop before any autonomous valve action |
+| `salinity >= 2 ppt` | Recommend or apply `CLOSED` depending on safety gate |
+| `salinity < 1 ppt` and valve is `CLOSED` | Recommend `OPEN` if no other risk is present |
+| MongoDB retrieval returns relevant history | Use it as supporting context, not as a replacement for safety rules |
+| Any action taken | Produce a clear reason string and store the decision trail |
 
 ---
 
 ## 6. Non-Functional Requirements
-- **Latency:** Full loop (Simulator push → Dashboard update) MUST complete in < 3 seconds.
-- **Reliability:** Event Filter must debounce duplicate triggers to prevent spam-invoking the LLM.
-- **Observability:** All agent actions (including "NO_ACTION" with reasoning) must be logged to both Firebase `action_logs` and MongoDB.
+- **Latency:** End-to-end sensor push to dashboard update should stay under 3 seconds.
+- **Reliability:** Duplicate sensor events must not trigger repeated AI runs.
+- **Traceability:** Every action or no-action decision must be written to Firebase and MongoDB.
+- **Modularity:** Each substep should be independently testable, and LangFlow should be able to visualize the same structure.
