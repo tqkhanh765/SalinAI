@@ -1,7 +1,8 @@
 # Product Requirements Document (PRD): SalinAI v2.2
 
 ## 1. Product Vision
-SalinAI is an autonomous AI agentic system for protecting Mekong Delta crops from salinity intrusion. The active product focuses on realtime sensing, safe valve control, and retrieval-augmented decision support over MongoDB, with Node.js and LangChain controlling the runtime agent and LangFlow used only to visualize the pipeline in the UI.
+SalinAI is a standalone Multi-Agent system that **Studies, Responds, and Learns** to protect Mekong Delta crops.
+It ingests unstructured data (PDFs/papers) via automated chunking RAG. Its Researcher Subagent constantly learns by reading past decisions before allowing the Orchestrator Agent to control the hardware. LangChain powers the runtime intelligence, while LangFlow is used strictly to visualize this cognitive pipeline.
 
 ---
 

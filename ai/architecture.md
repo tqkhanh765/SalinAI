@@ -29,23 +29,20 @@ SalinAI is built as a three-layer, event-driven AI Agentic system. Firebase rema
 | Frontend | React (Vite) | Dashboard, simulator, and AI Agentic visual pages |
 | Notifications | Telegram Bot / SMTP | Delivers anomaly or action alerts |
 
-## 2. Mandatory RAG Decision Flow
-The production decision chain must always follow this sequence:
+## 2. Mandatory RAG Decision Flow (Multi-Agent Supervisor)
+The production decision chain follows the "Study -> Respond -> Learn" cognitive paradigm:
 
-1. Listener receives new sensor payload from Firebase.
-2. Backend composes multi-factor retrieval query with salinity, moisture, crop_stage, weather_risk, and recent action summary.
-3. Embedding generator creates the query vector.
-4. LangChain retriever executes MongoDB Atlas Vector Search on agricultural guideline corpus.
-5. Retriever returns top-k guideline chunks with scores and metadata.
-6. System prompt for Gemini 2.5 Flash is assembled with:
-   - Hard safety rules.
-   - Real-time factors (salinity, moisture, crop_stage, weather, control_mode).
-   - Retrieved guideline context from MongoDB.
-7. Gemini reasons and decides tool call or NO_ACTION.
-8. Tool executor rechecks control_mode before writing actuator updates.
-9. Result is logged to Firebase and MongoDB action logs.
-
-Fallback rule: if retrieval returns no document above threshold, the chain continues with hard safety rules only and logs retrieval_miss=true.
+1. **Unstructured Ingestion (Study):** Extracted text (PDFs/News) -> Recursive Chunking -> Embeddings -> MongoDB Vector Search.
+2. **Pre-Filter Firewall:** Listener receives sensor payload. If conditions are absolutely nominal (e.g., safe limits), it drops the event to save LLM API costs.
+3. **Researcher Subagent (Memory & Context):**
+   - The Researcher agent wakes up.
+   - It searches the MongoDB Vector database for agricultural guideline chunks.
+   - It queries MongoDB `action_logs` to "Learn" what the AI did in the past.
+   - It outputs a compiled Summary Report.
+4. **Orchestrator Agent (Decision):**
+   - Receives the raw sensor data and the Subagent's Summary Report.
+   - Reasons about the safest hardware action.
+5. **Execution & Consequence:** Tool executor enforces MANUAL lock. Result is merged back into MongoDB `action_logs` so the Subagent can learn from it next time.
 
 ## 3. Langflow Visual Specification (Canonical)
 Langflow is the required visual representation for the AI Agentic pipeline. The visual canvas must mirror backend runtime behavior.

@@ -53,6 +53,10 @@ Target: Apr 12-14 | Owner: A (primary) + C
   - Execute tools and persist logs.
 - [x] Task 3.5 🔴 [C] Register listener and chain bootstrap in backend/server.js.
 - [x] Task 3.6 🔴 [A + C] Enforce dual logging for every decision to Firebase action_logs and MongoDB action_logs.
+- [x] Task 3.7 🔴 [A] Build Unstructured Data Ingestion pipeline (Text extraction -> Overlap Chunking -> Embeddings -> MongoDB).
+- [x] Task 3.8 🔴 [A] Refactor single-shot chain into a Multi-Agent Supervisor workflow (Researcher Subagent + Orchestrator).
+- [x] Task 3.9 🔴 [C] Implement Enterprise Pre-Filter anomaly firewall in listener for API cost savings.
+- [x] Task 3.10 🔴 [A] Implement persistent memory via query_action_history tool so the Agent studies past consequences.
 
 ## Phase 4: Langflow Visual Pipeline (MVP)
 Target: Apr 13-14 | Owner: A + B
