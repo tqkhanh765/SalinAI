@@ -25,34 +25,34 @@ Target: Apr 10-11 | Owner: B + C
 ## Phase 2: MongoDB Vector Search Setup (MVP)
 Target: Apr 12 | Owner: C (primary) + A
 
-- [ ] Task 2.1 🔴 [C] Create guideline_documents collection schema and seed initial agricultural guideline corpus.
-- [ ] Task 2.2 🔴 [C] Generate and persist embeddings for seeded guideline documents.
-- [ ] Task 2.3 🔴 [C] Create Atlas Vector Search index on guideline_documents.embedding.
-- [ ] Task 2.4 🔴 [A] Implement retrieval utility in backend/agent/langchain.js with top_k and min_score policy.
-- [ ] Task 2.5 🔴 [A] Add metadata filter support for crop_stage and region in retrieval query.
-- [ ] Task 2.6 🔴 [A + C] Verify retrieval returns relevant guideline chunks for at least 5 crop_stage scenarios.
+- [x] Task 2.1 🔴 [C] Create guideline_documents collection schema and seed initial agricultural guideline corpus.
+- [x] Task 2.2 🔴 [C] Generate and persist embeddings for seeded guideline documents.
+- [x] Task 2.3 🔴 [C] Create Atlas Vector Search index on guideline_documents.embedding.
+- [x] Task 2.4 🔴 [A] Implement retrieval utility in backend/agent/langchain.js with top_k and min_score policy.
+- [x] Task 2.5 🔴 [A] Add metadata filter support for crop_stage and region in retrieval query.
+- [x] Task 2.6 🔴 [A + C] Verify retrieval returns relevant guideline chunks for at least 5 crop_stage scenarios.
 
 ## Phase 3: AI Agentic Runtime Chain (LangChain + Gemini)
 Target: Apr 12-14 | Owner: A (primary) + C
 
-- [ ] Task 3.1 🔴 [A] Implement backend/listeners/firebase-listener.js:
+- [x] Task 3.1 🔴 [A] Implement backend/listeners/firebase-listener.js:
   - Subscribe to sensor_data updates.
   - Abort actuator writes when control_mode is MANUAL.
   - Apply minimum 10 second debounce between AI Agentic invocations.
-- [ ] Task 3.2 🔴 [A] Implement backend/agent/prompt.js:
+- [x] Task 3.2 🔴 [A] Implement backend/agent/prompt.js:
   - Include hard safety rules and multi-factor context (salinity, moisture, crop_stage, weather, control_mode).
   - Inject retrieved guideline snippets and source ids into Gemini system prompt.
-- [ ] Task 3.3 🔴 [A] Implement backend/agent/tools.js:
+- [x] Task 3.3 🔴 [A] Implement backend/agent/tools.js:
   - execute_valve_control(state, reason, source_ids) with strict MANUAL lock guard.
   - check_weather() returning condition, is_risky, description.
   - send_alert(channel, message).
-- [ ] Task 3.4 🔴 [A] Implement backend/agent/langchain.js end-to-end chain:
+- [x] Task 3.4 🔴 [A] Implement backend/agent/langchain.js end-to-end chain:
   - Build retrieval query from environmental factors plus crop_stage.
   - Generate embedding and query Atlas Vector Search.
   - Inject retrieved context into Gemini 2.5 Flash prompt.
   - Execute tools and persist logs.
-- [ ] Task 3.5 🔴 [C] Register listener and chain bootstrap in backend/server.js.
-- [ ] Task 3.6 🔴 [A + C] Enforce dual logging for every decision to Firebase action_logs and MongoDB action_logs.
+- [x] Task 3.5 🔴 [C] Register listener and chain bootstrap in backend/server.js.
+- [x] Task 3.6 🔴 [A + C] Enforce dual logging for every decision to Firebase action_logs and MongoDB action_logs.
 
 ## Phase 4: Langflow Visual Pipeline (MVP)
 Target: Apr 13-14 | Owner: A + B
