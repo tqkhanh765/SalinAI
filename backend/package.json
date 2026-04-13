@@ -16,6 +16,7 @@
     "@google/genai": "^1.48.0",
     "@langchain/google-genai": "^2.1.26",
     "@langchain/textsplitters": "^1.0.1",
+    "axios": "^1.15.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.1",
     "express": "^5.2.1",
