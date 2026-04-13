@@ -61,7 +61,7 @@ Target: Apr 12-14 | Owner: A (primary) + C
 ## Phase 4: Langflow Visual Pipeline (MVP)
 Target: Apr 13-14 | Owner: A + B
 
-- [ ] Task 4.1 🔴 [A] Build Langflow canvas mirroring production nodes: trigger, filter, weather, query builder, embedding, vector retrieval, prompt builder, Gemini, tool router, log sink.
+- [x] Task 4.1 🔴 [A] Build Langflow canvas mirroring production nodes: trigger, filter, subagent query, embedding, vector retrieval, prompt builder, orchestrator, tool router, log sink.
 - [ ] Task 4.2 🔴 [A] Validate node IO parity between Langflow visual and backend chain interfaces.
 - [ ] Task 4.3 🟡 [B] Add visual export artifact (PNG or JSON) to ai/ references for demo walkthrough.
 - [ ] Task 4.4 🟡 [B] Update dashboard behind-the-scenes page labels to AI Agentic wording.

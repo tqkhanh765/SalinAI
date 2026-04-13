@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { onValue, ref, set } from 'firebase/database';
-import { db } from '../lib/firebaseClient';
+import {
+  API_BASE_URL,
+  fetchFarmState,
+  overrideActuator,
+  pushSensorData,
+  updateControlMode,
+} from '../lib/apiClient';
 
 const DEFAULT_SENSOR = { salinity: 0, moisture: 0, timestamp: null };
 const DEFAULT_ACTUATOR = { valve_state: 'CLOSED', control_mode: 'AUTO' };
@@ -12,63 +17,80 @@ export function useRealtimeFarmState() {
   const [aiStatus, setAiStatus] = useState(DEFAULT_AI_STATUS);
   const [actionLogs, setActionLogs] = useState([]);
   const [sensorHistory, setSensorHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    const offSensor = onValue(ref(db, 'sensor_data'), (snapshot) => {
-      const val = snapshot.val();
-      if (!val) return;
+    let mounted = true;
+    let stream = null;
 
-      const next = {
-        salinity: Number(val.salinity ?? 0),
-        moisture: Number(val.moisture ?? 0),
-        timestamp: val.timestamp || new Date().toISOString(),
-      };
+    const applyFarmPayload = (payload) => {
+      const nextSensor = payload.sensorData || DEFAULT_SENSOR;
+      setSensorData(nextSensor);
+      setActuator(payload.actuator || DEFAULT_ACTUATOR);
+      setAiStatus(payload.aiStatus || DEFAULT_AI_STATUS);
+      setActionLogs(payload.actionLogs || []);
 
-      setSensorData(next);
       setSensorHistory((prev) => {
-        if (prev.length && prev[prev.length - 1].timestamp === next.timestamp) {
+        const point = {
+          salinity: Number(nextSensor.salinity || 0),
+          moisture: Number(nextSensor.moisture || 0),
+          timestamp: nextSensor.timestamp || new Date().toISOString(),
+        };
+
+        if (prev.length && prev[prev.length - 1].timestamp === point.timestamp) {
           return prev;
         }
-        return [...prev.slice(-29), next];
+        return [...prev.slice(-29), point];
       });
-    });
+    };
 
-    const offActuator = onValue(ref(db, 'actuator'), (snapshot) => {
-      const val = snapshot.val();
-      if (!val) return;
-      setActuator({
-        valve_state: val.valve_state || 'CLOSED',
-        control_mode: val.control_mode || 'AUTO',
+    const loadInitialState = async () => {
+      try {
+        const payload = await fetchFarmState(30);
+        if (!mounted) return;
+
+        applyFarmPayload(payload);
+        setError(null);
+      } catch (err) {
+        if (!mounted) return;
+        setError(err.message || 'Unable to fetch farm state');
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    const connectRealtimeStream = () => {
+      stream = new EventSource(`${API_BASE_URL}/api/farm-stream?logLimit=30`);
+
+      stream.addEventListener('farm_state', (event) => {
+        if (!mounted) return;
+        try {
+          const payload = JSON.parse(event.data);
+          applyFarmPayload(payload);
+          setError(null);
+          setLoading(false);
+        } catch {
+          setError('Invalid stream payload received from backend');
+        }
       });
-    });
 
-    const offAiStatus = onValue(ref(db, 'ai_status'), (snapshot) => {
-      const val = snapshot.val();
-      if (!val) return;
-      setAiStatus({
-        is_processing: Boolean(val.is_processing),
-        last_reasoning: val.last_reasoning || '',
+      stream.addEventListener('error', () => {
+        if (!mounted) return;
+        setError('Realtime stream disconnected. Reconnecting...');
       });
-    });
+    };
 
-    const offLogs = onValue(ref(db, 'action_logs'), (snapshot) => {
-      const val = snapshot.val() || {};
-      const parsed = Object.entries(val)
-        .map(([id, item]) => ({ id, ...item }))
-        .sort((a, b) => {
-          const at = new Date(a.timestamp || 0).getTime();
-          const bt = new Date(b.timestamp || 0).getTime();
-          return bt - at;
-        });
-
-      setActionLogs(parsed);
-    });
+    loadInitialState();
+    connectRealtimeStream();
 
     return () => {
-      offSensor();
-      offActuator();
-      offAiStatus();
-      offLogs();
+      mounted = false;
+      if (stream) {
+        stream.close();
+      }
     };
   }, []);
 
@@ -84,7 +106,15 @@ export function useRealtimeFarmState() {
   );
 
   const setControlMode = async (mode) => {
-    await set(ref(db, 'actuator/control_mode'), mode);
+    await updateControlMode(mode);
+  };
+
+  const setValveState = async (state) => {
+    await overrideActuator({ valve_state: state });
+  };
+
+  const submitSensorData = async (payload) => {
+    await pushSensorData(payload);
   };
 
   return {
@@ -94,6 +124,10 @@ export function useRealtimeFarmState() {
     actionLogs,
     sensorHistory,
     liveSummary,
+    loading,
+    error,
     setControlMode,
+    setValveState,
+    submitSensorData,
   };
 }

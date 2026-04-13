@@ -2,14 +2,13 @@ import { useState } from 'react';
 import Navbar from './components/Navbar';
 import FarmerDashboard from './pages/FarmerDashboard';
 import SimulatorPage from './pages/SimulatorPage';
-import BehindTheScenes from './pages/BehindTheScenes';
 import './index.css';
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
 
   return (
-    <div className="min-h-screen" style={{ background: '#EEEEEE', fontFamily: "'Inter', sans-serif" }}>
+    <div className="min-h-screen" style={{ background: '#EEEEEE', fontFamily: 'var(--font-vn)' }}>
       <Navbar activePage={activePage} setActivePage={setActivePage} />
       <main>
         <div style={{ display: activePage === 'dashboard' ? 'block' : 'none' }}>
@@ -17,9 +16,6 @@ function App() {
         </div>
         <div style={{ display: activePage === 'simulator' ? 'block' : 'none' }}>
           <SimulatorPage />
-        </div>
-        <div style={{ display: activePage === 'ai-logic' ? 'block' : 'none' }}>
-          <BehindTheScenes />
         </div>
       </main>
     </div>

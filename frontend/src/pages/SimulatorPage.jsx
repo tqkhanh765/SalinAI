@@ -1,6 +1,4 @@
 import { useState } from 'react';
-import { ref, set } from 'firebase/database';
-import { db } from '../lib/firebaseClient';
 import { useRealtimeFarmState } from '../hooks/useRealtimeFarmState';
 
 // ─── Helper sub-components ─────────────────────────────────────────────────────
@@ -151,7 +149,7 @@ const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading
 // ─── Main SimulatorPage ────────────────────────────────────────────────────────
 
 export default function SimulatorPage() {
-  const { actuator, aiStatus, actionLogs } = useRealtimeFarmState();
+  const { actuator, aiStatus, actionLogs, submitSensorData } = useRealtimeFarmState();
 
   const [salinityLevel, setSalinityLevel] = useState(4.5);
   const [moistureLevel, setMoistureLevel] = useState(65);
@@ -159,7 +157,7 @@ export default function SimulatorPage() {
   const [cropStage, setCropStage] = useState('VEGETATIVE');
   const [isPushing, setIsPushing] = useState(false);
 
-  // Derived state from Firebase
+  // Derived state from backend farm-state API
   const isLoading = isPushing || aiStatus.is_processing;
   const valveOpen = actuator.valve_state === 'OPEN';
   
@@ -179,12 +177,11 @@ export default function SimulatorPage() {
 
     setIsPushing(true);
     try {
-      await set(ref(db, 'sensor_data'), {
+      await submitSensorData({
         salinity: Number(salinityLevel.toFixed(2)),
         moisture: Number(moistureLevel.toFixed(2)),
         crop_stage: cropStage,
-        weather: weatherCondition, // Added to simulator
-        timestamp: new Date().toISOString(),
+        weather: weatherCondition,
       });
     } catch (error) {
       console.error(error);
@@ -210,7 +207,7 @@ export default function SimulatorPage() {
             </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold leading-tight" style={{ color: '#1F6F5F' }}>
-            Trình Mô Phỏng Đồng Ruộng
+            Trình Mô Phỏng Và Hậu Trường
           </h1>
           <p className="text-sm md:text-base text-gray-500 mt-1">
             Điều chỉnh dữ liệu cảm biến và kích hoạt AI Agentic để kiểm soát van tưới tiêu.
@@ -414,7 +411,7 @@ export default function SimulatorPage() {
                   <svg className="animate-spin w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
                   </svg>
-                  <span>Đang gửi Firebase...</span>
+                  <span>Đang gửi dữ liệu...</span>
                 </>
               ) : (
                 <>
@@ -523,6 +520,48 @@ export default function SimulatorPage() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className="mt-6 bg-[#111827] rounded-2xl overflow-hidden shadow-xl" style={{ border: '1px solid #1F6F5F30' }}>
+          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+            <div>
+              <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: '#60a5fa' }}>
+                Hậu Trường Agent
+              </p>
+              <p className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                Nhật ký quyết định và hành động mới nhất
+              </p>
+            </div>
+            <span className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>
+              {actionLogs.length > 0 ? `${actionLogs.length} logs` : 'chờ dữ liệu'}
+            </span>
+          </div>
+
+          <div className="p-4 space-y-3 max-h-96 overflow-auto">
+            {!actionLogs.length && (
+              <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                <p className="text-sm" style={{ color: 'rgba(255,255,255,0.65)' }}>
+                  Chưa có lịch sử hành động. Hãy chạy mô phỏng để xem quá trình suy luận.
+                </p>
+              </div>
+            )}
+
+            {actionLogs.slice(0, 8).map((log) => (
+              <div key={log.id} className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-xs font-bold" style={{ color: '#6FCF97' }}>
+                    {log.action || 'NO_ACTION'} · {log.actor || 'AI_AGENT'}
+                  </span>
+                  <span className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>
+                    {log.timestamp ? new Date(log.timestamp).toLocaleTimeString('vi-VN') : '--:--:--'}
+                  </span>
+                </div>
+                <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.82)' }}>
+                  {log.reason || 'Không có giải thích'}
+                </p>
+              </div>
+            ))}
           </div>
         </div>
       </div>

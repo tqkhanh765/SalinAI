@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import logo from '../assets/SalinAI-logo.png';
+import { NAV_TABS } from './navigationTabs';
 
 const MenuIcon = ({ open }) => (
   <div className="w-6 h-5 flex flex-col justify-between cursor-pointer" aria-label="Toggle menu">
@@ -21,8 +23,6 @@ const MenuIcon = ({ open }) => (
   </div>
 );
 
-import logo from '../assets/SalinAI-logo.png';
-
 const SalinLogo = () => (
   <div className="flex items-center gap-2.5">
     <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-white border border-white/25 backdrop-blur-md overflow-hidden p-1 shadow-inner">
@@ -38,43 +38,6 @@ const SalinLogo = () => (
 export default function Navbar({ activePage, setActivePage }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const tabs = [
-    {
-      id: 'dashboard',
-      label: 'Bảng Điều Khiển',
-      sublabel: 'Nông Dân',
-      icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
-          <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
-        </svg>
-      ),
-    },
-    {
-      id: 'simulator',
-      label: 'Mô Phỏng',
-      sublabel: 'Push Sensor Data',
-      icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M12 2v20" />
-          <path d="M5 9l7-7 7 7" />
-          <path d="M5 15l7 7 7-7" />
-        </svg>
-      ),
-    },
-    {
-      id: 'ai-logic',
-      label: 'Hậu Trường',
-      sublabel: 'Logic AI & Mô Phỏng',
-      icon: (
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="16 18 22 12 16 6" />
-          <polyline points="8 6 2 12 8 18" />
-        </svg>
-      ),
-    },
-  ];
-
   const handleTabClick = (id) => {
     setActivePage(id);
     setMenuOpen(false);
@@ -87,12 +50,10 @@ export default function Navbar({ activePage, setActivePage }) {
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
-          {/* Logo */}
           <SalinLogo />
 
-          {/* Desktop Tabs */}
           <div className="hidden md:flex items-center gap-2 bg-white/10 rounded-xl p-1.5 border border-white/20">
-            {tabs.map((tab) => (
+            {NAV_TABS.map((tab) => (
               <button
                 key={tab.id}
                 id={`nav-tab-${tab.id}`}
@@ -114,13 +75,11 @@ export default function Navbar({ activePage, setActivePage }) {
             ))}
           </div>
 
-          {/* Status badge */}
           <div className="hidden md:flex items-center gap-2 bg-white/10 rounded-full px-3 py-1.5 border border-white/20">
             <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: '#6FCF97' }} />
             <span className="text-white/90 text-xs font-medium">AI Đang Hoạt Động</span>
           </div>
 
-          {/* Mobile hamburger */}
           <button
             id="mobile-menu-btn"
             className="md:hidden flex items-center justify-center w-11 h-11 rounded-xl bg-white/10 border border-white/20 active:bg-white/20 transition-colors"
@@ -132,14 +91,13 @@ export default function Navbar({ activePage, setActivePage }) {
         </div>
       </div>
 
-      {/* Mobile Menu */}
       <div
         className={`md:hidden overflow-hidden transition-all duration-300 ease-in-out ${menuOpen ? 'max-h-64 opacity-100' : 'max-h-0 opacity-0'
           }`}
         style={{ background: 'rgba(31,111,95,0.97)', borderTop: '1px solid rgba(255,255,255,0.15)' }}
       >
         <div className="px-4 py-3 space-y-2">
-          {tabs.map((tab) => (
+          {NAV_TABS.map((tab) => (
             <button
               key={tab.id}
               id={`mobile-nav-tab-${tab.id}`}

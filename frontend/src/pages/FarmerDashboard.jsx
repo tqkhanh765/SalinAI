@@ -51,9 +51,6 @@ const FIELD_BOUNDARY = [
   [10.761, 106.663],
 ];
 
-// Mock data generator and mock initial valves removed -> fully reactive based on Firebase state.
-
-
 // ─── Stat Card ─────────────────────────────────────────────────────────────────
 
 const StatCard = ({ icon, label, value, unit, color, bg }) => (
@@ -87,8 +84,15 @@ const CustomTooltip = ({ active, payload, label }) => {
 // ─── Main FarmerDashboard ──────────────────────────────────────────────────────
 
 export default function FarmerDashboard() {
-  const { sensorData, actuator, aiStatus, actionLogs, sensorHistory, setControlMode: setRemoteControlMode } = useRealtimeFarmState();
-  const [valves, setValves] = useState(INITIAL_VALVES);
+  const {
+    sensorData,
+    actuator,
+    aiStatus,
+    actionLogs,
+    sensorHistory,
+    setControlMode: setRemoteControlMode,
+    setValveState: setRemoteValveState,
+  } = useRealtimeFarmState();
   const [controlScope, setControlScope] = useState('all'); // 'all' | 'single'
   const [activeValveId, setActiveValveId] = useState(INITIAL_VALVES[0].id);
 
@@ -99,27 +103,22 @@ export default function FarmerDashboard() {
   const [isModeUpdating, setIsModeUpdating] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
 
-  // Derived logical states based on Scope
-  const valveOpen = controlScope === 'all'
-    ? valves.every(v => v.open)
-    : valves.find(v => v.id === activeValveId)?.open || false;
+  const realtimeValveOpen = (actuator.valve_state || 'CLOSED') === 'OPEN';
 
-  const currentFlowRate = controlScope === 'all'
-    ? (valves.filter(v => v.open).length * 12.5).toFixed(1)
-    : (valveOpen ? '12.5' : '0.0');
+  // Derived logical states based on Scope
+  const valveOpen = realtimeValveOpen;
+  const controlledValveCount = controlScope === 'all' ? INITIAL_VALVES.length : 1;
+  const currentFlowRate = valveOpen ? (controlledValveCount * 12.5).toFixed(1) : '0.0';
 
   const activeValveDisplay = controlScope === 'all' ? 'TẤT CẢ VAN' : activeValveId;
 
-  // Live sensor readings mapped directly from Firebase sensorData.
-  // Note: some properties (like pH or temperature) are mocked by default assuming basic sensors, 
-  // but salinity, moisture, and weather come straight from the hardware or simulation.
   const readings = {
     salinity: Number(sensorData.salinity || 0),
-    temperature: sensorData.temperature || 31.5,
-    humidity: sensorData.humidity || 68,
+    temperature: sensorData.temperature,
+    humidity: sensorData.humidity,
     soilMoisture: Number(sensorData.moisture || 0),
-    ph: sensorData.ph || 6.8,
-    weather: sensorData.weather || 'Chưa rõ',
+    ph: sensorData.ph,
+    weather: sensorData.weather || '--',
   };
 
   useEffect(() => {
@@ -127,11 +126,10 @@ export default function FarmerDashboard() {
     setUiControlMode(mode);
   }, [actuator.control_mode]);
 
-  // Auto-refresh timestamp every minute
   useEffect(() => {
-    const interval = setInterval(() => setLastUpdated(new Date()), 60000);
-    return () => clearInterval(interval);
-  }, []);
+    if (!sensorData.timestamp) return;
+    setLastUpdated(new Date(sensorData.timestamp));
+  }, [sensorData.timestamp]);
 
   const handleControlModeChange = async (nextMode) => {
     setUiControlMode(nextMode);
@@ -154,19 +152,15 @@ export default function FarmerDashboard() {
     }
   };
 
-  const executeValveToggle = () => {
+  const executeValveToggle = async () => {
     setIsToggling(true);
     const action = confirmAction;
     setConfirmAction(null);
-    setTimeout(() => {
-      const isOpening = action === 'open';
-      setValves(prev => prev.map(v =>
-        (controlScope === 'all' || v.id === activeValveId)
-          ? { ...v, open: isOpening }
-          : v
-      ));
 
-      setIsToggling(false);
+    try {
+      const isOpening = action === 'open';
+      await setRemoteValveState(isOpening ? 'OPEN' : 'CLOSED');
+
       setLastUpdated(new Date());
 
       const msg = controlScope === 'all'
@@ -178,12 +172,19 @@ export default function FarmerDashboard() {
         text: msg,
       });
       setTimeout(() => setNotification(null), 4000);
-    }, 1000);
+    } catch (error) {
+      setNotification({
+        type: 'warning',
+        text: `❌ Không thể cập nhật trạng thái van: ${error.message}`,
+      });
+      setTimeout(() => setNotification(null), 4000);
+    } finally {
+      setIsToggling(false);
+    }
   };
 
   const realtimeSalinity = Number(sensorData.salinity || 0);
   const realtimeMoisture = Number(sensorData.moisture || 0);
-  const realtimeValveOpen = (actuator.valve_state || 'CLOSED') === 'OPEN';
   const salinityColor = realtimeSalinity <= 4 ? '#6FCF97' : realtimeSalinity <= 6 ? '#F2C94C' : '#EB5757';
   const trendData = sensorHistory.map((item) => ({
     time: item.timestamp ? new Date(item.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
@@ -232,7 +233,7 @@ export default function FarmerDashboard() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
             <div>
               <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>Theo Dõi Agent Realtime</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Firebase sensor_data · actuator · ai_status · action_logs</p>
+              <p className="text-xs text-gray-500 mt-0.5">Backend API · sensor_data · actuator · ai_status · action_logs</p>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: '#1F6F5F10', color: '#1F6F5F' }}>
@@ -245,8 +246,8 @@ export default function FarmerDashboard() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <StatCard icon="💧" label="Độ Mặn (Firebase)" value={realtimeSalinity.toFixed(1)} unit="‰" color={salinityColor} bg={`${salinityColor}20`} />
-            <StatCard icon="🌱" label="Độ Ẩm (Firebase)" value={realtimeMoisture.toFixed(0)} unit="%" color="#2FA084" bg="#2FA08420" />
+            <StatCard icon="💧" label="Độ Mặn (Backend)" value={realtimeSalinity.toFixed(1)} unit="‰" color={salinityColor} bg={`${salinityColor}20`} />
+            <StatCard icon="🌱" label="Độ Ẩm (Backend)" value={realtimeMoisture.toFixed(0)} unit="%" color="#2FA084" bg="#2FA08420" />
             <StatCard icon="🚰" label="Trạng Thái Van" value={realtimeValveOpen ? 'MỞ' : 'ĐÓNG'} unit="" color={realtimeValveOpen ? '#2FA084' : '#1F6F5F'} bg={realtimeValveOpen ? '#2FA08420' : '#1F6F5F20'} />
             <StatCard icon="🤖" label="Control Mode" value={(actuator.control_mode || 'AUTO').toUpperCase()} unit="" color="#1F6F5F" bg="#1F6F5F20" />
           </div>
@@ -289,7 +290,7 @@ export default function FarmerDashboard() {
 
             <div className="rounded-xl border p-3" style={{ borderColor: '#1F6F5F20' }}>
               <p className="text-xs text-gray-400 mb-2">Action Logs (mới nhất)</p>
-              <div className="space-y-2 max-h-[180px] overflow-auto pr-1">
+              <div className="space-y-2 max-h-45 overflow-auto pr-1">
                 {actionLogs.slice(0, 8).map((log) => (
                   <div key={log.id} className="rounded-lg px-3 py-2" style={{ background: '#f8faf9' }}>
                     <p className="text-xs font-semibold" style={{ color: '#1F6F5F' }}>
@@ -299,7 +300,7 @@ export default function FarmerDashboard() {
                   </div>
                 ))}
                 {!actionLogs.length && (
-                  <p className="text-xs text-gray-400">Chưa có action_logs trong Firebase.</p>
+                  <p className="text-xs text-gray-400">Chưa có action logs từ backend.</p>
                 )}
               </div>
             </div>
@@ -340,11 +341,11 @@ export default function FarmerDashboard() {
               />
               <Polygon positions={FIELD_BOUNDARY} pathOptions={{ color: '#2FA084', fillColor: '#2FA084', fillOpacity: 0.15, weight: 2 }} />
 
-              {valves.map(v => (
+              {INITIAL_VALVES.map(v => (
                 <Marker
                   key={v.id}
                   position={[v.lat, v.lng]}
-                  icon={createCustomIcon(v.open, controlScope === 'single' && activeValveId === v.id)}
+                  icon={createCustomIcon(realtimeValveOpen, controlScope === 'single' && activeValveId === v.id)}
                   eventHandlers={{
                     click: () => {
                       setControlScope('single');
@@ -356,8 +357,8 @@ export default function FarmerDashboard() {
                     <div className="text-center">
                       <strong style={{ color: '#1F6F5F' }}>{v.id}</strong><br />
                       <span className="text-xs text-gray-600">{v.name}</span><br />
-                      <span className={`text-xs font-bold mt-1 inline-block ${v.open ? 'text-[#2FA084]' : 'text-gray-500'}`}>
-                        {v.open ? 'TRẠNG THÁI: ĐANG MỞ' : 'TRẠNG THÁI: ĐANG ĐÓNG'}
+                      <span className={`text-xs font-bold mt-1 inline-block ${realtimeValveOpen ? 'text-[#2FA084]' : 'text-gray-500'}`}>
+                        {realtimeValveOpen ? 'TRẠNG THÁI: ĐANG MỞ' : 'TRẠNG THÁI: ĐANG ĐÓNG'}
                       </span>
                     </div>
                   </Popup>
@@ -539,10 +540,10 @@ export default function FarmerDashboard() {
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
             <StatCard icon="💧" label="Độ Mặn" value={readings.salinity.toFixed(1)} unit="‰" color={salinityColor} bg={`${salinityColor}20`} />
-            <StatCard icon="🌡️" label="Nhiệt Độ" value={readings.temperature.toFixed(1)} unit="°C" color="#F2994A" bg="#F2994A20" />
-            <StatCard icon="💦" label="Độ Ẩm KK" value={readings.humidity} unit="%" color="#2FA084" bg="#2FA08420" />
+            <StatCard icon="🌡️" label="Nhiệt Độ" value={readings.temperature != null ? Number(readings.temperature).toFixed(1) : '--'} unit="°C" color="#F2994A" bg="#F2994A20" />
+            <StatCard icon="💦" label="Độ Ẩm KK" value={readings.humidity != null ? Number(readings.humidity).toFixed(0) : '--'} unit="%" color="#2FA084" bg="#2FA08420" />
             <StatCard icon="🌱" label="Độ Ẩm Đất" value={readings.soilMoisture} unit="%" color="#6FCF97" bg="#6FCF9720" />
-            <StatCard icon="⚗️" label="Độ pH" value={readings.ph.toFixed(1)} unit="pH" color="#9B59B6" bg="#9B59B620" />
+            <StatCard icon="⚗️" label="Độ pH" value={readings.ph != null ? Number(readings.ph).toFixed(1) : '--'} unit="pH" color="#9B59B6" bg="#9B59B620" />
             <StatCard icon="🌤️" label="Thời Tiết" value={readings.weather} unit="" color="#1F6F5F" bg="#1F6F5F20" />
           </div>
         </div>
@@ -582,33 +583,6 @@ export default function FarmerDashboard() {
           </div>
         </div>
 
-        {/* ── Field Health Overview ──────────────────────────────────── */}
-        <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
-          <h2 className="font-bold text-base mb-4" style={{ color: '#1F6F5F' }}>ĐÁNH GIÁ TÌNH TRẠNG ĐỒNG RUỘNG</h2>
-          <div className="space-y-3">
-            {[
-              { label: 'Chất lượng nước', value: 78, color: '#6FCF97', status: 'Tốt' },
-              { label: 'Độ pH đất', value: 85, color: '#2FA084', status: 'Lý tưởng' },
-              { label: 'Độ ẩm đất', value: 62, color: '#F2C94C', status: 'Trung bình' },
-              { label: 'Rủi ro ngập mặn', value: 32, color: '#EB5757', status: 'Thấp' },
-            ].map((item) => (
-              <div key={item.label}>
-                <div className="flex justify-between text-sm mb-1.5">
-                  <span className="font-medium" style={{ color: '#374151' }}>{item.label}</span>
-                  <span className="font-bold text-xs px-2 py-0.5 rounded-full" style={{ background: `${item.color}20`, color: item.color }}>
-                    {item.status} — {item.value}%
-                  </span>
-                </div>
-                <div className="h-2 rounded-full" style={{ background: '#f0f0f0' }}>
-                  <div
-                    className="h-2 rounded-full transition-all duration-1000"
-                    style={{ width: `${item.value}%`, background: item.color }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
     </div>
   );
