@@ -17,9 +17,9 @@
 Target: Apr 10-11 | Owner: B + C
 
 - [x] Task 1.1 🔴 [C] Initialize Express backend, Firebase Admin SDK, CORS, and GET /api/health.
-- [ ] Task 1.2 🔴 [C] Add MongoDB Atlas config module at backend/config/mongodb.js and validate startup connectivity.
-- [ ] Task 1.3 🔴 [C] Update .env.example with MONGODB_URI, GEMINI_API_KEY, EMBEDDING_MODEL, VECTOR_TOP_K, VECTOR_MIN_SCORE.
-- [ ] Task 1.4 🔴 [B] Ensure simulator writes salinity, moisture, crop_stage, timestamp to Firebase sensor_data.
+- [x] Task 1.2 🔴 [C] Add MongoDB Atlas config module at backend/config/mongodb.js and validate startup connectivity.
+- [x] Task 1.3 🔴 [C] Update .env.example with MONGODB_URI, GEMINI_API_KEY, EMBEDDING_MODEL, VECTOR_TOP_K, VECTOR_MIN_SCORE.
+- [x] Task 1.4 🔴 [B] Ensure simulator writes salinity, moisture, crop_stage, timestamp to Firebase sensor_data.
 - [ ] Task 1.5 🟡 [B] Add crop_stage selector in simulator and dashboard filter panels.
 
 ## Phase 2: MongoDB Vector Search Setup (MVP)

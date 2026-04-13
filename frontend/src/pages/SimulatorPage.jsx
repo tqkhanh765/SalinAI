@@ -153,6 +153,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
   const [salinityLevel, setSalinityLevel] = useState(4.5);
   const [moistureLevel, setMoistureLevel] = useState(65);
   const [weatherCondition, setWeatherCondition] = useState('Sunny');
+  const [cropStage, setCropStage] = useState('VEGETATIVE');
   const [valveOpen, setValveOpen] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
@@ -161,6 +162,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
   const [showNotification, setShowNotification] = useState(false);
 
   const weatherOptions = ['Sunny', 'Heavy Rain', 'Drought'];
+  const cropStageOptions = ['SEEDLING', 'VEGETATIVE', 'FLOWERING', 'FRUITING', 'HARVEST'];
 
   const salinityColor = salinityLevel <= 3 ? '#6FCF97' : salinityLevel <= 6 ? '#F2C94C' : '#EB5757';
   const sliderBg = `linear-gradient(to right, ${salinityColor} 0%, ${salinityColor} ${(salinityLevel / 10) * 100}%, #d1d5db ${(salinityLevel / 10) * 100}%, #d1d5db 100%)`;
@@ -173,6 +175,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
       await set(ref(db, 'sensor_data'), {
         salinity: Number(salinityLevel.toFixed(2)),
         moisture: Number(moistureLevel.toFixed(2)),
+        crop_stage: cropStage,
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -389,6 +392,31 @@ export default function SimulatorPage({ onAgentTrigger }) {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Crop Stage Dropdown */}
+            <div className="space-y-2 mt-4">
+              <label className="text-sm font-semibold" style={{ color: '#1F6F5F' }}
+                htmlFor="crop-select">
+                🌾 Giai Đoạn Sinh Trưởng (Crop Stage)
+              </label>
+              <select
+                id="crop-select"
+                value={cropStage}
+                onChange={(e) => setCropStage(e.target.value)}
+                className="w-full appearance-none rounded-xl px-4 font-semibold text-sm transition-all duration-200 outline-none cursor-pointer"
+                style={{
+                  height: '52px',
+                  background: '#F7F9F9',
+                  border: '1.5px solid #1F6F5F30',
+                  color: '#1F6F5F',
+                  fontSize: '15px',
+                }}
+              >
+                {cropStageOptions.map((opt) => (
+                  <option key={opt} value={opt}>{opt === 'SEEDLING' ? 'Gieo Sạ (SEEDLING)' : opt === 'VEGETATIVE' ? 'Sinh Trưởng (VEGETATIVE)' : opt === 'FLOWERING' ? 'Ra Hoa (FLOWERING)' : opt === 'FRUITING' ? 'Kết Trái (FRUITING)' : 'Thu Hoạch (HARVEST)'}</option>
+                ))}
+              </select>
             </div>
 
             {/* Trigger Button */}
