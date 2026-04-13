@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { ref, set } from 'firebase/database';
 import { db } from '../lib/firebaseClient';
+import { useRealtimeFarmState } from '../hooks/useRealtimeFarmState';
 
 // ─── Helper sub-components ─────────────────────────────────────────────────────
 
@@ -149,17 +150,23 @@ const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading
 
 // ─── Main SimulatorPage ────────────────────────────────────────────────────────
 
-export default function SimulatorPage({ onAgentTrigger }) {
+export default function SimulatorPage() {
+  const { actuator, aiStatus, actionLogs } = useRealtimeFarmState();
+
   const [salinityLevel, setSalinityLevel] = useState(4.5);
   const [moistureLevel, setMoistureLevel] = useState(65);
   const [weatherCondition, setWeatherCondition] = useState('Sunny');
   const [cropStage, setCropStage] = useState('VEGETATIVE');
-  const [valveOpen, setValveOpen] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
-  const [notificationMsg, setNotificationMsg] = useState('');
-  const [hasTriggered, setHasTriggered] = useState(false);
-  const [showNotification, setShowNotification] = useState(false);
+
+  // Derived state from Firebase
+  const isLoading = isPushing || aiStatus.is_processing;
+  const valveOpen = actuator.valve_state === 'OPEN';
+  
+  // Show notification if we have an action log and we're not loading
+  const lastLog = actionLogs && actionLogs.length > 0 ? actionLogs[0] : null;
+  const showNotification = !!lastLog && !isLoading;
+  const notificationMsg = lastLog ? lastLog.reason : '';
 
   const weatherOptions = ['Sunny', 'Heavy Rain', 'Drought'];
   const cropStageOptions = ['SEEDLING', 'VEGETATIVE', 'FLOWERING', 'FRUITING', 'HARVEST'];
@@ -168,7 +175,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
   const sliderBg = `linear-gradient(to right, ${salinityColor} 0%, ${salinityColor} ${(salinityLevel / 10) * 100}%, #d1d5db ${(salinityLevel / 10) * 100}%, #d1d5db 100%)`;
 
   const handleTrigger = async () => {
-    if (isLoading || isPushing) return;
+    if (isLoading) return;
 
     setIsPushing(true);
     try {
@@ -176,53 +183,14 @@ export default function SimulatorPage({ onAgentTrigger }) {
         salinity: Number(salinityLevel.toFixed(2)),
         moisture: Number(moistureLevel.toFixed(2)),
         crop_stage: cropStage,
+        weather: weatherCondition, // Added to simulator
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      setShowNotification(true);
-      setHasTriggered(false);
-      setNotificationMsg(`❌ Không thể gửi dữ liệu lên Firebase: ${error.message}`);
+      console.error(error);
+    } finally {
       setIsPushing(false);
-      return;
     }
-
-    setIsPushing(false);
-    setIsLoading(true);
-    setShowNotification(false);
-    setHasTriggered(false);
-
-    // Simulate AI processing delay (1.5–2.5s)
-    const delay = 1500 + Math.random() * 1000;
-
-    setTimeout(() => {
-      // Decision logic
-      const isSafe =
-        salinityLevel <= 4 &&
-        weatherCondition !== 'Drought' &&
-        weatherCondition !== 'Heavy Rain';
-
-      const open = isSafe || (salinityLevel <= 6 && weatherCondition === 'Sunny');
-
-      setValveOpen(open);
-      setIsLoading(false);
-      setHasTriggered(true);
-      setShowNotification(true);
-
-      if (open) {
-        setNotificationMsg(
-          `✅ Dữ liệu đã gửi Firebase. Chất lượng nước an toàn (${salinityLevel.toFixed(1)}‰, ẩm đất ${moistureLevel.toFixed(0)}%). Van đã mở để tưới tiêu.`
-        );
-      } else {
-        setNotificationMsg(
-          `🚫 Dữ liệu đã gửi Firebase. Điều kiện không an toàn — Độ mặn: ${salinityLevel.toFixed(1)}‰, ẩm đất ${moistureLevel.toFixed(0)}%, thời tiết: ${translateWeather(weatherCondition)}. Van vẫn đóng.`
-        );
-      }
-
-      // Notify parent (for AI Logic page)
-      if (onAgentTrigger) {
-        onAgentTrigger({ salinityLevel, moistureLevel, weatherCondition, valveOpen: open });
-      }
-    }, delay);
   };
 
   const translateWeather = (w) => {
@@ -480,7 +448,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
                 </div>
               </div>
 
-              {!hasTriggered && !isLoading ? (
+              {!lastLog && !isLoading ? (
                 <div className="flex flex-col items-center justify-center py-10 gap-3">
                   <div className="w-16 h-16 rounded-full flex items-center justify-center"
                     style={{ background: '#EEEEEE' }}>
@@ -506,7 +474,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
             </div>
 
             {/* Notification Card */}
-            {showNotification && !isLoading && (
+            {showNotification && (
               <div
                 className="log-entry bg-white rounded-2xl shadow-sm border p-5"
                 style={{ borderColor: valveOpen ? '#6FCF9740' : '#1F6F5F40', borderLeftWidth: '4px', borderLeftColor: valveOpen ? '#6FCF97' : '#1F6F5F' }}
@@ -526,7 +494,7 @@ export default function SimulatorPage({ onAgentTrigger }) {
                       Quyết Định Của Agent
                     </p>
                     <p className="text-sm font-medium leading-relaxed" style={{ color: '#1F6F5F' }}>
-                      {notificationMsg}
+                      {notificationMsg || 'Không có lý do'}
                     </p>
                   </div>
                 </div>

@@ -1,39 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
-
-// ─── Log Section Tags ──────────────────────────────────────────────────────────
+import { useRealtimeFarmState } from '../hooks/useRealtimeFarmState';
+import { ref, set } from 'firebase/database';
+import { db } from '../lib/firebaseClient';
 
 const TAG_STYLES = {
-  DATA_RECEIVED: {
-    label: 'DỮ LIỆU ĐẦU VÀO',
-    bg: '#1e3a5f',
-    text: '#60a5fa',
-    border: '#2563eb40',
-    icon: '📡',
-  },
-  CONTEXT_MATCHED: {
-    label: 'QUY TẮC KHỚP',
-    bg: '#1a3a2a',
-    text: '#4ade80',
-    border: '#16a34a40',
-    icon: '🔍',
-  },
-  AGENT_REASONING: {
-    label: 'LUẬN GIẢI CỦA AI',
-    bg: '#2d1f3a',
-    text: '#c084fc',
-    border: '#9333ea40',
-    icon: '🧠',
-  },
-  FUNCTION_EXECUTION: {
-    label: 'GỌI HÀM ĐIỀU KHIỂN',
-    bg: '#3a2a1a',
-    text: '#fb923c',
-    border: '#ea580c40',
-    icon: '⚡',
-  },
+  DATA_RECEIVED: { label: 'DỮ LIỆU ĐẦU VÀO', bg: '#1e3a5f', text: '#60a5fa', border: '#2563eb40', icon: '📡' },
+  CONTEXT_MATCHED: { label: 'QUY TẮC KHỚP', bg: '#1a3a2a', text: '#4ade80', border: '#16a34a40', icon: '🔍' },
+  AGENT_REASONING: { label: 'LUẬN GIẢI CỦA AI', bg: '#2d1f3a', text: '#c084fc', border: '#9333ea40', icon: '🧠' },
+  FUNCTION_EXECUTION: { label: 'GỌI HÀM ĐIỀU KHIỂN', bg: '#3a2a1a', text: '#fb923c', border: '#ea580c40', icon: '⚡' },
 };
-
-// ─── Typing Effect Hook ────────────────────────────────────────────────────────
 
 function useTypingEffect(text, speed = 18, active = false) {
   const [displayed, setDisplayed] = useState('');
@@ -64,8 +39,6 @@ function useTypingEffect(text, speed = 18, active = false) {
 
   return { displayed, done };
 }
-
-// ─── Log Section ──────────────────────────────────────────────────────────────
 
 const LogSection = ({ type, content, visible, isTyping = false, typingText = '' }) => {
   const style = TAG_STYLES[type];
@@ -100,8 +73,6 @@ const LogSection = ({ type, content, visible, isTyping = false, typingText = '' 
   );
 };
 
-// ─── Salinity Gauge ────────────────────────────────────────────────────────────
-
 const SalinityGauge = ({ value }) => {
   const pct = (value / 10) * 100;
   const color = value <= 3 ? '#6FCF97' : value <= 6 ? '#F2C94C' : '#EB5757';
@@ -119,8 +90,6 @@ const SalinityGauge = ({ value }) => {
     </div>
   );
 };
-
-// ─── Weather Icon ──────────────────────────────────────────────────────────────
 
 const WeatherIcon = ({ condition }) => {
   if (condition === 'Sunny') return (
@@ -147,8 +116,6 @@ const WeatherIcon = ({ condition }) => {
   );
 };
 
-// ─── Empty Terminal ────────────────────────────────────────────────────────────
-
 const EmptyTerminal = () => (
   <div className="flex flex-col items-center justify-center py-14 gap-4">
     <div className="w-14 h-14 rounded-2xl flex items-center justify-center"
@@ -170,28 +137,21 @@ const EmptyTerminal = () => (
   </div>
 );
 
-// ─── Main BehindTheScenes ──────────────────────────────────────────────────────
-
 export default function BehindTheScenes() {
-  // Simulator state
-  const [salinityLevel, setSalinityLevel] = useState(4.5);
-  const [weatherCondition, setWeatherCondition] = useState('Sunny');
-  const [isSimLoading, setIsSimLoading] = useState(false);
-  const [simResult, setSimResult] = useState(null);
+  const { actionLogs, aiStatus } = useRealtimeFarmState();
 
-  // AI Log state
-  const [logs, setLogs] = useState([]);
-  const [visibleSections, setVisibleSections] = useState({});
-  const [isRunning, setIsRunning] = useState(false);
-  const [runCount, setRunCount] = useState(0);
-  const [timestamp, setTimestamp] = useState('');
+  const [salinityLevel, setSalinityLevel] = useState(4.5);
+  const [moistureLevel, setMoistureLevel] = useState(65);
+  const [weatherCondition, setWeatherCondition] = useState('Sunny');
+  const [isPushing, setIsPushing] = useState(false);
+
   const logContainerRef = useRef(null);
 
   useEffect(() => {
     if (logContainerRef.current) {
       logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
     }
-  }, [visibleSections]);
+  }, [actionLogs, aiStatus.is_processing]);
 
   const weatherOptions = ['Sunny', 'Heavy Rain', 'Drought'];
   const translateWeather = (w) => ({ Sunny: 'Nắng', 'Heavy Rain': 'Mưa To', Drought: 'Hạn Hán' })[w] || w;
@@ -199,145 +159,30 @@ export default function BehindTheScenes() {
   const salinityColor = salinityLevel <= 3 ? '#6FCF97' : salinityLevel <= 6 ? '#F2C94C' : '#EB5757';
   const sliderBg = `linear-gradient(to right, ${salinityColor} 0%, ${salinityColor} ${(salinityLevel / 10) * 100}%, #d1d5db ${(salinityLevel / 10) * 100}%, #d1d5db 100%)`;
 
-  const handleTrigger = () => {
-    if (isSimLoading || isRunning) return;
-    setIsSimLoading(true);
-    setSimResult(null);
-    setVisibleSections({});
-    setLogs([]);
+  const handleTrigger = async () => {
+    if (isPushing || aiStatus.is_processing) return;
+    setIsPushing(true);
 
-    const delay = 1500 + Math.random() * 800;
-    setTimeout(() => {
-      const isSafe = salinityLevel <= 4 && weatherCondition !== 'Drought' && weatherCondition !== 'Heavy Rain';
-      const valveOpen = isSafe || (salinityLevel <= 6 && weatherCondition === 'Sunny');
-
-      setSimResult({ valveOpen, salinityLevel, weatherCondition });
-      setIsSimLoading(false);
-
-      // Start terminal
-      runAgentLog({ salinityLevel, weatherCondition, valveOpen });
-    }, delay);
-  };
-
-  const runAgentLog = ({ salinityLevel, weatherCondition, valveOpen }) => {
-    const ts = new Date().toISOString();
-    setTimestamp(ts);
-    setIsRunning(true);
-    setRunCount((c) => c + 1);
-
-    const roundedSalinity = parseFloat(salinityLevel.toFixed(2));
-    const isSafe = valveOpen;
-
-    let matchedRule = '';
-    if (roundedSalinity <= 4 && weatherCondition === 'Sunny') {
-      matchedRule = 'QUY_TẮC_01: độ_mặn <= 4‰ VÀ thời_tiết == "Nắng" → MỞ_VAN';
-    } else if (roundedSalinity <= 6 && weatherCondition === 'Sunny') {
-      matchedRule = 'QUY_TẮC_02: 4 < độ_mặn <= 6‰ VÀ thời_tiết == "Nắng" → MỞ_VAN (có điều kiện)';
-    } else if (weatherCondition === 'Heavy Rain') {
-      matchedRule = 'QUY_TẮC_03: thời_tiết == "Mưa To" → ĐÓNG_VAN (nguy cơ ngập lụt)';
-    } else if (weatherCondition === 'Drought') {
-      matchedRule = 'QUY_TẮC_04: thời_tiết == "Hạn Hán" → ĐÓNG_VAN (bảo tồn nước)';
-    } else {
-      matchedRule = 'QUY_TẮC_05: độ_mặn > 6‰ → ĐÓNG_VAN (nguy cơ tổn thương mùa vụ)';
+    try {
+      await set(ref(db, 'sensor_data'), {
+        salinity: Number(salinityLevel.toFixed(2)),
+        moisture: Number(moistureLevel.toFixed(2)),
+        weather: weatherCondition,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsPushing(false);
     }
-
-    const reasoningText = isSafe
-      ? `Đang phân tích điều kiện đồng ruộng hiện tại...
-
-Số liệu độ mặn ${roundedSalinity}‰ nằm trong ngưỡng chấp nhận được cho tưới tiêu (tối đa 4.0‰ để lúa phát triển tốt nhất). Điều kiện thời tiết hiện tại (${translateWeather(weatherCondition)}) không gây nguy cơ ngập lụt hay hạn hán.
-
-Đối chiếu với dữ liệu lịch sử của mảnh ruộng này:
-→ Điều kiện tương tự ngày 14/03/2024: đã mở van, năng suất tăng +12%
-→ Điều kiện tương tự ngày 22/07/2024: đã mở van, không có thiệt hại mùa vụ
-
-Độ tin cậy: 94.7%
-
-Quyết định: MỞ VAN. Điều kiện đang tối ưu cho việc tưới tiêu. Nông dân có thể tiến hành tưới theo lịch định.`
-      : `Đang phân tích điều kiện đồng ruộng hiện tại...
-
-Số liệu độ mặn ${roundedSalinity}‰ ${roundedSalinity > 6 ? 'vượt ngưỡng an toàn (tối đa 6.0‰)' : 'trong mức chấp nhận, TUY NHIÊN'}. Điều kiện thời tiết "${translateWeather(weatherCondition)}" ${weatherCondition === 'Heavy Rain' ? 'gây nguy cơ cao ngập lụt và rửa trôi đất' : weatherCondition === 'Drought' ? 'cho thấy thiếu nước — tưới lúc này lãng phí và không hiệu quả' : 'kết hợp với độ mặn cao gây nguy hại cho mùa vụ'}.
-
-Đánh giá rủi ro:
-→ Xác suất thiệt hại cây trồng: ${roundedSalinity > 8 ? '87%' : '65%'}
-→ Dự đoán giảm năng suất nếu tưới: ~${roundedSalinity > 8 ? '35-50%' : '15-30%'}
-
-Độ tin cậy: 96.2%
-
-Quyết định: ĐÓNG VAN. Không khuyến cáo tưới tiêu trong điều kiện hiện tại.`;
-
-    const functionCall = isSafe
-      ? `dieu_khien_van(hanh_dong="MO", van_id="CANH_DONG_01_CHINH", thoi_gian_phut=45, luu_luong_L_phut=12.5)`
-      : `dieu_khien_van(hanh_dong="DONG", van_id="CANH_DONG_01_CHINH", canh_bao_nong_dan=True, ly_do="${weatherCondition === 'Heavy Rain' ? 'nguy_co_ngap_lut' : weatherCondition === 'Drought' ? 'bao_ton_nuoc_han_han' : 'do_man_cao'}")`;
-
-    const allLogs = [
-      {
-        id: 'DATA_RECEIVED',
-        content: JSON.stringify({
-          timestamp: ts,
-          sensor_id: 'SALIN-CẢM-BIẾN-001',
-          field_id: 'CANH_DONG_01',
-          payload: {
-            salinity_ppt: roundedSalinity,
-            weather_condition: translateWeather(weatherCondition),
-            temperature_c: weatherCondition === 'Sunny' ? 32.4 : weatherCondition === 'Heavy Rain' ? 24.1 : 38.6,
-            humidity_pct: weatherCondition === 'Sunny' ? 65 : weatherCondition === 'Heavy Rain' ? 92 : 28,
-            soil_moisture: weatherCondition === 'Drought' ? 12 : 55,
-          },
-          agent: 'SalinAI-v2.1',
-        }, null, 2),
-      },
-      {
-        id: 'CONTEXT_MATCHED',
-        content: `Nội Dung Hệ Thống (System Prompt):
-─────────────────────────────────
-"Bạn là SalinAI, một AI Agentic thông minh kiểm soát tưới tiêu. Nhiệm vụ
-của bạn là phân tích dữ liệu cảm biến và đưa ra quyết định an toàn về
-việc kiểm soát van tưới tiêu.
-
-Quy Tắc An Toàn:
-  QUY_TẮC_01: độ_mặn <= 4‰ VÀ nắng   → MỞ
-  QUY_TẮC_02: 4 < độ_mặn <= 6‰ + nắng → MỞ (theo dõi)
-  QUY_TẮC_03: Mưa To                  → ĐÓNG
-  QUY_TẮC_04: Hạn Hán                 → ĐÓNG
-  QUY_TẮC_05: độ_mặn > 6‰             → ĐÓNG"
-─────────────────────────────────
-Khớp: ${matchedRule}
-Độ ưu tiên: CAO
-Yêu cầu lệnh ghi đè: không`,
-      },
-      { id: 'AGENT_REASONING', isTyping: true, content: reasoningText },
-      {
-        id: 'FUNCTION_EXECUTION',
-        content: `> Gọi hàm: dieu_khien_van()
-> ${functionCall}
-
-✓ Cổng IoT: CANH_DONG_01_CHINH đã xác nhận
-✓ Trạng thái van vật lý: ${isSafe ? 'ĐÃ MỞ' : 'ĐÃ ĐÓNG'}
-✓ Mã xác nhận: van_ack_${Math.random().toString(36).substring(2, 9).toUpperCase()}
-✓ Thông báo SMS gửi nông dân: ĐÃ GỬI
-
-Thời gian thực thi: ${(120 + Math.random() * 80).toFixed(0)}ms
-Trạng thái: THÀNH CÔNG`,
-      },
-    ];
-
-    setLogs(allLogs);
-    const delays = [0, 900, 2000, 5200];
-    allLogs.forEach((log, i) => {
-      setTimeout(() => {
-        setVisibleSections((prev) => ({ ...prev, [log.id]: true }));
-        if (i === allLogs.length - 1) setIsRunning(false);
-      }, delays[i]);
-    });
   };
 
-  const hasLogs = logs.length > 0;
+  const hasLogs = actionLogs.length > 0;
+  const isAgentWorking = isPushing || aiStatus.is_processing;
 
   return (
     <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8" style={{ background: '#EEEEEE' }}>
       <div className="max-w-5xl mx-auto space-y-5">
-
-        {/* ── Header ────────────────────────────────────────────────── */}
         <div>
           <span className="text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-widest"
             style={{ background: '#1F6F5F20', color: '#1F6F5F' }}>
@@ -351,7 +196,6 @@ Trạng thái: THÀNH CÔNG`,
           </p>
         </div>
 
-        {/* ── Simulator Panel ────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
           <div className="flex items-center gap-3 mb-5 pb-4" style={{ borderBottom: '1px solid #EEEEEE' }}>
             <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: '#2FA08415', flexShrink: 0 }}>
@@ -370,7 +214,6 @@ Trạng thái: THÀNH CÔNG`,
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 md:gap-6">
-            {/* Salinity slider */}
             <div className="md:col-span-2 space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-semibold" style={{ color: '#1F6F5F' }} htmlFor="sim-salinity-slider">
@@ -395,7 +238,6 @@ Trạng thái: THÀNH CÔNG`,
                 <span>10 ‰</span>
               </div>
 
-              {/* Weather */}
               <div className="space-y-2 pt-1">
                 <label className="text-sm font-semibold" style={{ color: '#1F6F5F' }} htmlFor="sim-weather-select">
                   🌤️ Điều Kiện Thời Tiết
@@ -409,7 +251,7 @@ Trạng thái: THÀNH CÔNG`,
                     style={{ height: '50px', background: '#F7F9F9', border: '1.5px solid #1F6F5F30', color: '#1F6F5F', fontSize: '15px' }}
                   >
                     {weatherOptions.map((opt) => (
-                      <option key={opt} value={opt}>{opt === 'Sunny' ? '☀️ Nắng' : opt === 'Heavy Rain' ? '🌧️ Mưa To' : '🏜️ Hạn Hán'}</option>
+                      <option key={opt} value={opt}>{translateWeather(opt)}</option>
                     ))}
                   </select>
                   <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2" style={{ color: '#2FA084' }}>
@@ -421,37 +263,36 @@ Trạng thái: THÀNH CÔNG`,
                     <button key={opt} onClick={() => setWeatherCondition(opt)}
                       className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
                       style={weatherCondition === opt ? { background: '#2FA084', color: 'white' } : { background: '#f0f0f0', color: '#666' }}>
-                      {opt === 'Sunny' ? '☀️ Nắng' : opt === 'Heavy Rain' ? '🌧️ Mưa To' : '🏜️ Hạn Hán'}
+                      {translateWeather(opt)}
                     </button>
                   ))}
                 </div>
               </div>
             </div>
 
-            {/* Gauge + button */}
             <div className="flex flex-col items-center gap-4">
               <SalinityGauge value={salinityLevel} />
 
               <button
                 id="sim-trigger-btn"
                 onClick={handleTrigger}
-                disabled={isSimLoading || isRunning}
+                disabled={isAgentWorking}
                 className="w-full rounded-xl font-bold text-white text-sm transition-all duration-300 flex items-center justify-center gap-2 active:scale-95"
                 style={{
                   minHeight: '50px',
-                  background: isSimLoading || isRunning
+                  background: isAgentWorking
                     ? 'linear-gradient(135deg, #94a3b8, #64748b)'
                     : 'linear-gradient(135deg, #2FA084 0%, #1F6F5F 100%)',
-                  boxShadow: isSimLoading || isRunning ? 'none' : '0 6px 20px rgba(47,160,132,0.4)',
-                  cursor: isSimLoading || isRunning ? 'not-allowed' : 'pointer',
+                  boxShadow: isAgentWorking ? 'none' : '0 6px 20px rgba(47,160,132,0.4)',
+                  cursor: isAgentWorking ? 'not-allowed' : 'pointer',
                 }}
               >
-                {isSimLoading || isRunning ? (
+                {isAgentWorking ? (
                   <>
                     <svg className="animate-spin w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                       <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
                     </svg>
-                    <span>Đang xử lý...</span>
+                    <span>{isPushing ? 'Đang gửi...' : 'Đang xử lý...'}</span>
                   </>
                 ) : (
                   <>
@@ -462,29 +303,11 @@ Trạng thái: THÀNH CÔNG`,
                   </>
                 )}
               </button>
-
-              {/* Sim result badge */}
-              {simResult && (
-                <div className="log-entry w-full rounded-xl px-3 py-2.5 text-center"
-                  style={{
-                    background: simResult.valveOpen ? '#6FCF9715' : '#1F6F5F15',
-                    border: `1.5px solid ${simResult.valveOpen ? '#6FCF9740' : '#1F6F5F40'}`,
-                  }}>
-                  <p className="text-xs font-bold" style={{ color: simResult.valveOpen ? '#2FA084' : '#1F6F5F' }}>
-                    {simResult.valveOpen ? '✅ Kết quả: MỞ VAN' : '🚫 Kết quả: ĐÓNG VAN'}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    {simResult.salinityLevel.toFixed(1)}‰ · {translateWeather(simResult.weatherCondition)}
-                  </p>
-                </div>
-              )}
             </div>
           </div>
         </div>
 
-        {/* ── AI Logic Terminal ──────────────────────────────────────── */}
         <div className="rounded-2xl overflow-hidden shadow-xl" style={{ border: '1px solid #1F6F5F30' }}>
-          {/* Title bar */}
           <div className="flex items-center justify-between px-4 py-3"
             style={{ background: '#0f1117', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
             <div className="flex items-center gap-2">
@@ -496,62 +319,70 @@ Trạng thái: THÀNH CÔNG`,
               </span>
             </div>
             <div className="flex items-center gap-3">
-              {isRunning && (
+              {isAgentWorking && (
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#2FA084' }} />
                   <span style={{ color: '#2FA084', fontSize: '11px', fontFamily: 'monospace' }}>ĐANG XỬ LÝ</span>
                 </div>
               )}
-              {!isRunning && hasLogs && (
+              {!isAgentWorking && hasLogs && (
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full" style={{ background: '#6FCF97' }} />
-                  <span style={{ color: '#6FCF97', fontSize: '11px', fontFamily: 'monospace' }}>XONG — Lần #{runCount}</span>
+                  <span style={{ color: '#6FCF97', fontSize: '11px', fontFamily: 'monospace' }}>XONG — Cập nhật: {new Date(actionLogs[0]?.timestamp).toLocaleTimeString()}</span>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Terminal body */}
-          <div ref={logContainerRef} className="overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4"
+          <div ref={logContainerRef} className="flex flex-col-reverse overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4 space-y-reverse"
             style={{ background: '#111827', minHeight: '420px', maxHeight: '65vh' }}>
-            <div className="flex items-center gap-2 font-mono text-xs sm:text-sm mb-2">
+            {isAgentWorking && (
+              <div className="flex items-center gap-2 font-mono text-xs sm:text-sm mb-2 opacity-50 pulse-safe">
+                 <span style={{ color: '#60a5fa' }}>▶</span>
+                 <span style={{ color: 'rgba(255,255,255,0.7)' }}>Agent Orchestrator is running LangChain models...</span>
+              </div>
+            )}
+            {!hasLogs && !isAgentWorking ? (
+              <EmptyTerminal />
+            ) : (
+              <>
+                {actionLogs.map((log) => (
+                  <div key={log.id} className="mb-4">
+                     <LogSection type="DATA_RECEIVED" content={JSON.stringify(log.sensor_snapshot, null, 2)} visible={true} />
+                     <div className="h-2"></div>
+                     <LogSection type="CONTEXT_MATCHED" content={log.subagent_summary} visible={true} />
+                     <div className="h-2"></div>
+                     <LogSection type="AGENT_REASONING" content={log.reason} visible={true} />
+                     <div className="h-2"></div>
+                     <LogSection type="FUNCTION_EXECUTION" content={'Thực thi: ' + log.action + '\nDiễn viên: ' + log.actor + '\nThời điểm: ' + new Date(log.timestamp).toLocaleString()} visible={true} />
+                     
+                     <div className="mt-4 border-b border-gray-700/50 pb-4 log-entry flex items-center gap-2 font-mono text-xs">
+                        <span style={{ color: '#6FCF97' }}>✓</span>
+                        <span style={{ color: 'rgba(255,255,255,0.5)' }}>Tiến trình hoàn thành lúc {new Date(log.timestamp).toLocaleTimeString()} · Mã thoát: 0</span>
+                     </div>
+                  </div>
+                ))}
+              </>
+            )}
+            
+            <div className="flex items-center gap-2 font-mono text-xs sm:text-sm mt-auto pb-4">
               <span style={{ color: '#2FA084' }}>salinai</span>
               <span style={{ color: 'rgba(255,255,255,0.3)' }}>@</span>
               <span style={{ color: '#60a5fa' }}>agent</span>
               <span style={{ color: 'rgba(255,255,255,0.3)' }}>:~$</span>
               <span style={{ color: 'rgba(255,255,255,0.7)' }}>
-                {hasLogs ? `chay_agent --thoi-diem ${timestamp}` : 'dang cho lenh...'}
+                {isAgentWorking ? 'running...' : 'dang cho lenh... tu langgraph'}
               </span>
             </div>
-
-            {!hasLogs ? (
-              <EmptyTerminal />
-            ) : (
-              <>
-                {logs.map((log) => (
-                  <LogSection key={log.id} type={log.id} content={log.content}
-                    visible={!!visibleSections[log.id]}
-                    isTyping={!!log.isTyping}
-                    typingText={log.isTyping ? log.content : ''} />
-                ))}
-                {!isRunning && hasLogs && (
-                  <div className="log-entry flex items-center gap-2 font-mono text-xs pt-2">
-                    <span style={{ color: '#6FCF97' }}>✓</span>
-                    <span style={{ color: 'rgba(255,255,255,0.5)' }}>Agent hoàn thành · Mã thoát: 0</span>
-                  </div>
-                )}
-              </>
-            )}
           </div>
 
-          {/* Footer */}
           <div className="px-4 py-2.5 flex items-center justify-between"
             style={{ background: '#0f1117', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
             <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px', fontFamily: 'monospace' }}>
               SalinAI v2.1 · Node: LLM-GEMINI-FLASH
             </span>
             <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '11px', fontFamily: 'monospace' }}>
-              {runCount > 0 ? `${runCount} lần chạy` : 'chờ'}
+              {actionLogs.length > 0 ? actionLogs.length + ' lần chạy' : 'chờ'}
             </span>
           </div>
         </div>

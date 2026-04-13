@@ -51,23 +51,8 @@ const FIELD_BOUNDARY = [
   [10.761, 106.663],
 ];
 
-// ─── Mock data generator ───────────────────────────────────────────────────────
+// Mock data generator and mock initial valves removed -> fully reactive based on Firebase state.
 
-const generateHistoryData = (currentSalinity) => {
-  const now = new Date();
-  return Array.from({ length: 24 }, (_, i) => {
-    const t = new Date(now.getTime() - (23 - i) * 30 * 60 * 1000);
-    const hour = t.getHours().toString().padStart(2, '0');
-    const min = t.getMinutes().toString().padStart(2, '0');
-    const base = currentSalinity;
-    const noise = (Math.random() - 0.5) * 1.5;
-    const wave = Math.sin((i / 24) * Math.PI * 2) * 1.2;
-    return {
-      time: `${hour}:${min}`,
-      salinity: Math.max(0, Math.min(10, parseFloat((base + wave + noise).toFixed(2)))),
-    };
-  });
-};
 
 // ─── Stat Card ─────────────────────────────────────────────────────────────────
 
@@ -110,7 +95,6 @@ export default function FarmerDashboard() {
   const [isToggling, setIsToggling] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [notification, setNotification] = useState(null);
-  const [historyData, setHistoryData] = useState([]);
   const [uiControlMode, setUiControlMode] = useState('manual');
   const [isModeUpdating, setIsModeUpdating] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
@@ -126,19 +110,17 @@ export default function FarmerDashboard() {
 
   const activeValveDisplay = controlScope === 'all' ? 'TẤT CẢ VAN' : activeValveId;
 
-  // Mock live sensor readings
-  const [readings] = useState({
-    salinity: 3.2,
-    temperature: 31.5,
-    humidity: 68,
-    soilMoisture: 62,
-    ph: 6.8,
-    weather: 'Nắng',
-  });
-
-  useEffect(() => {
-    setHistoryData(generateHistoryData(readings.salinity));
-  }, []);
+  // Live sensor readings mapped directly from Firebase sensorData.
+  // Note: some properties (like pH or temperature) are mocked by default assuming basic sensors, 
+  // but salinity, moisture, and weather come straight from the hardware or simulation.
+  const readings = {
+    salinity: Number(sensorData.salinity || 0),
+    temperature: sensorData.temperature || 31.5,
+    humidity: sensorData.humidity || 68,
+    soilMoisture: Number(sensorData.moisture || 0),
+    ph: sensorData.ph || 6.8,
+    weather: sensorData.weather || 'Chưa rõ',
+  };
 
   useEffect(() => {
     const mode = (actuator.control_mode || 'AUTO').toLowerCase();
@@ -580,7 +562,7 @@ export default function FarmerDashboard() {
           <div className="overflow-x-auto">
             <div style={{ minWidth: '400px', height: '200px' }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={historyData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                <AreaChart data={trendData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="salinGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#2FA084" stopOpacity={0.25} />
