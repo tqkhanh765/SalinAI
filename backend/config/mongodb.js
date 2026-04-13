@@ -17,7 +17,7 @@ async function connectMongoDB() {
   if (!client) return null;
   try {
     await client.connect();
-    database = client.db();
+    database = client.db("salinai");
     console.log('[MongoDB] Successfully connected to MongoDB Atlas');
     return database;
   } catch (error) {
@@ -35,5 +35,5 @@ if (client) {
 module.exports = {
   client,
   connectMongoDB,
-  getDb: () => database || (client ? client.db() : null)
+  getDb: () => database || (client ? client.db("salinai") : null)
 };

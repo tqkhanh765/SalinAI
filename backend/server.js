@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("dotenv").config({ path: '../.env' });
 const express = require("express");
 const cors = require("cors");
 
@@ -7,6 +7,10 @@ const db = require("./config/firebase");
 
 // ─── MongoDB Atlas ────────────────────────────────────────────────────────────
 const mongoConfig = require("./config/mongodb");
+
+// ─── Firebase Listener (Agent Trigger) ───────────────────────────────────────
+const { startListener } = require("./listeners/firebase-listener");
+startListener();
 
 // ─── Express Setup ────────────────────────────────────────────────────────────
 const app = express();
