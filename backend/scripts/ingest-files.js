@@ -3,7 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const { MongoClient } = require('mongodb');
 const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
-const { RecursiveCharacterTextSplitter } = require("langchain/text_splitter");
+const { RecursiveCharacterTextSplitter } = require("@langchain/textsplitters");
+const pdfParse = require('pdf-parse');
 
 const URI = process.env.MONGODB_URI;
 const DATA_DIR = path.join(__dirname, '../data/knowledge_base');
@@ -26,10 +27,10 @@ async function ingestFiles() {
         return;
     }
 
-    const files = fs.readdirSync(DATA_DIR).filter(f => f.endsWith('.txt'));
+    const files = fs.readdirSync(DATA_DIR).filter(f => f.endsWith('.txt') || f.endsWith('.pdf'));
     
     if (files.length === 0) {
-        console.log("No text files found to process.");
+        console.log("No text or PDF files found to process.");
         return;
     }
 
@@ -42,7 +43,22 @@ async function ingestFiles() {
     });
 
     for (const file of files) {
-        const rawContent = fs.readFileSync(path.join(DATA_DIR, file), 'utf8');
+        let rawContent = "";
+        
+        if (file.endsWith('.pdf')) {
+            console.log(`📄 Extracting text from PDF: ${file}`);
+            const dataBuffer = fs.readFileSync(path.join(DATA_DIR, file));
+            const pdfData = await pdfParse(dataBuffer);
+            rawContent = pdfData.text;
+        } else {
+            console.log(`📝 Extracting text from document: ${file}`);
+            rawContent = fs.readFileSync(path.join(DATA_DIR, file), 'utf8');
+        }
+        
+        if (!rawContent || rawContent.trim().length === 0) {
+             console.log(`⚠️ Skipped ${file} (No readable text found)`);
+             continue;
+        }
         
         // Split text
         const chunks = await splitter.splitText(rawContent);
