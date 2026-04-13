@@ -10,6 +10,7 @@ import L from 'leaflet';
 import iconUrl from 'leaflet/dist/images/marker-icon.png';
 import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
 import { useRealtimeFarmState } from '../hooks/useRealtimeFarmState';
+import { API_BASE_URL } from '../lib/apiClient';
 
 // Fix leaflet default icon
 const DefaultIcon = L.icon({
@@ -102,6 +103,7 @@ export default function FarmerDashboard() {
   const [uiControlMode, setUiControlMode] = useState('manual');
   const [isModeUpdating, setIsModeUpdating] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
+  const [decisionDetails, setDecisionDetails] = useState(null);
 
   const realtimeValveOpen = (actuator.valve_state || 'CLOSED') === 'OPEN';
 
@@ -111,11 +113,16 @@ export default function FarmerDashboard() {
   const currentFlowRate = valveOpen ? (controlledValveCount * 12.5).toFixed(1) : '0.0';
 
   const activeValveDisplay = controlScope === 'all' ? 'TẤT CẢ VAN' : activeValveId;
+  const controlModeVi = (actuator.control_mode || 'AUTO').toUpperCase() === 'AUTO' ? 'TỰ ĐỘNG' : 'THỦ CÔNG';
 
   const readings = {
-    salinity: Number(sensorData.salinity || 0),
-    temperature: sensorData.temperature,
-    humidity: sensorData.humidity,
+    salinity: Number(decisionDetails?.sensorMetrics?.salinity?.value ?? sensorData.salinity ?? 0),
+    temperature: decisionDetails?.weatherMetrics?.temperature?.value ?? sensorData.temperature,
+    humidity: decisionDetails?.weatherMetrics?.humidity?.value ?? sensorData.humidity,
+    rainfall24h: decisionDetails?.weatherMetrics?.rainfall_24h?.value,
+    tideStatus: decisionDetails?.tideInfo?.status,
+    riverWaterLevel: decisionDetails?.sensorMetrics?.water_level?.value ?? sensorData.river_water_level,
+    cropStage: decisionDetails?.sensorMetrics?.crop_stage?.value,
     soilMoisture: Number(sensorData.moisture || 0),
     ph: sensorData.ph,
     weather: sensorData.weather || '--',
@@ -131,6 +138,30 @@ export default function FarmerDashboard() {
     setLastUpdated(new Date(sensorData.timestamp));
   }, [sensorData.timestamp]);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchDecisionDetails = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/decision-details`);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (mounted && json?.data) {
+          setDecisionDetails(json.data);
+        }
+      } catch {
+        // Keep dashboard usable when the details endpoint is temporarily unavailable.
+      }
+    };
+
+    fetchDecisionDetails();
+    const interval = setInterval(fetchDecisionDetails, 5000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   const handleControlModeChange = async (nextMode) => {
     setUiControlMode(nextMode);
     setIsModeUpdating(true);
@@ -138,13 +169,13 @@ export default function FarmerDashboard() {
       await setRemoteControlMode(nextMode.toUpperCase());
       setNotification({
         type: 'success',
-        text: nextMode === 'manual' ? '🛠️ Đã chuyển sang chế độ MANUAL.' : '🤖 Đã chuyển sang chế độ AUTO.',
+        text: nextMode === 'manual' ? '🛠️ Đã chuyển sang chế độ THỦ CÔNG.' : '🤖 Đã chuyển sang chế độ TỰ ĐỘNG.',
       });
       setTimeout(() => setNotification(null), 3000);
     } catch (error) {
       setNotification({
         type: 'warning',
-        text: `❌ Không thể cập nhật control mode: ${error.message}`,
+        text: `❌ Không thể cập nhật chế độ điều khiển: ${error.message}`,
       });
       setTimeout(() => setNotification(null), 3000);
     } finally {
@@ -183,17 +214,77 @@ export default function FarmerDashboard() {
     }
   };
 
-  const realtimeSalinity = Number(sensorData.salinity || 0);
-  const realtimeMoisture = Number(sensorData.moisture || 0);
-  const salinityColor = realtimeSalinity <= 4 ? '#6FCF97' : realtimeSalinity <= 6 ? '#F2C94C' : '#EB5757';
+  const salinityColor = readings.salinity <= 4 ? '#6FCF97' : readings.salinity <= 6 ? '#F2C94C' : '#EB5757';
   const trendData = sensorHistory.map((item) => ({
     time: item.timestamp ? new Date(item.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
     salinity: Number(item.salinity || 0),
     moisture: Number(item.moisture || 0),
   }));
 
+  const historyChartData = trendData.length >= 2
+    ? trendData
+    : [
+      {
+        time: new Date(Date.now() - 10 * 60 * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        salinity: Number(readings.salinity || 0),
+        moisture: Number(readings.soilMoisture || 0),
+      },
+      {
+        time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        salinity: Number(readings.salinity || 0),
+        moisture: Number(readings.soilMoisture || 0),
+      },
+    ];
+
   const formatTime = (d) =>
     d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+  const formatActionLabel = (action) => {
+    const normalized = String(action || '').toUpperCase();
+    if (!normalized) return 'KHÔNG HÀNH ĐỘNG';
+    if (normalized.includes('OPEN')) return 'MỞ VAN';
+    if (normalized.includes('CLOSE')) return 'ĐÓNG VAN';
+    if (normalized.includes('OVERRIDE')) return 'GHI ĐÈ ĐIỀU KHIỂN';
+    if (normalized.includes('NO_ACTION')) return 'KHÔNG HÀNH ĐỘNG';
+    return 'HÀNH ĐỘNG HỆ THỐNG';
+  };
+
+  const formatActorLabel = (actor) => {
+    const normalized = String(actor || '').toUpperCase();
+    if (!normalized) return 'HỆ THỐNG';
+    if (normalized.includes('AI')) return 'TRỢ LÝ AI';
+    if (normalized.includes('MANUAL') || normalized.includes('USER')) return 'NGƯỜI DÙNG';
+    return 'HỆ THỐNG';
+  };
+
+  const buildLogSummary = (log) => {
+    const action = String(log?.action || '').toUpperCase();
+    const reason = String(log?.reason || 'Không có mô tả chi tiết.');
+
+    if (action.includes('OPEN')) {
+      return {
+        headline: 'Đã mở van cấp nước',
+        impact: 'Nước bắt đầu chảy vào ruộng. Theo dõi độ ẩm và mực nước để tránh dư nước.',
+      };
+    }
+    if (action.includes('CLOSE')) {
+      return {
+        headline: 'Đã đóng van cấp nước',
+        impact: 'Ngừng cấp nước tạm thời để giảm rủi ro ngập hoặc nhiễm mặn.',
+      };
+    }
+    if (action.includes('NO_ACTION')) {
+      return {
+        headline: 'Giữ nguyên trạng thái hệ thống',
+        impact: 'Hệ thống chưa đổi van. Tiếp tục theo dõi các chỉ số môi trường.',
+      };
+    }
+
+    return {
+      headline: 'Hệ thống ghi nhận một hành động mới',
+      impact: reason,
+    };
+  };
 
   return (
     <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8" style={{ background: '#EEEEEE' }}>
@@ -228,55 +319,55 @@ export default function FarmerDashboard() {
           </div>
         )}
 
-        {/* ── Realtime Agent Monitor (Phase 1) ────────────────────── */}
+        {/* ── Unified Environment Grid ───────────────────────────────── */}
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-wider mb-3" style={{ color: '#9ca3af' }}>
+            Tổng Quan Môi Trường Hiện Tại
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
+            <StatCard icon="💧" label="Độ Mặn" value={readings.salinity.toFixed(1)} unit="‰" color={salinityColor} bg={`${salinityColor}20`} />
+            <StatCard icon="🌡️" label="Nhiệt Độ" value={readings.temperature != null ? Number(readings.temperature).toFixed(1) : '--'} unit="°C" color="#F2994A" bg="#F2994A20" />
+            <StatCard icon="💦" label="Độ Ẩm KK" value={readings.humidity != null ? Number(readings.humidity).toFixed(0) : '--'} unit="%" color="#2FA084" bg="#2FA08420" />
+            <StatCard icon="🌱" label="Độ Ẩm Đất" value={Number(readings.soilMoisture || 0).toFixed(0)} unit="%" color="#6FCF97" bg="#6FCF9720" />
+            <StatCard icon="⚗️" label="Độ pH" value={readings.ph != null ? Number(readings.ph).toFixed(1) : '--'} unit="pH" color="#9B59B6" bg="#9B59B620" />
+            <StatCard icon="🌧️" label="Mưa 24h" value={readings.rainfall24h != null ? Number(readings.rainfall24h).toFixed(1) : '--'} unit="mm" color="#2D9CDB" bg="#2D9CDB20" />
+            <StatCard icon="🌊" label="Thủy Triều" value={readings.tideStatus || '--'} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+            <StatCard icon="🌾" label="Giai Đoạn Cây" value={readings.cropStage || '--'} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+            <StatCard icon="📏" label="Mực Nước Sông" value={readings.riverWaterLevel != null ? Number(readings.riverWaterLevel).toFixed(2) : '--'} unit="m" color="#56CCF2" bg="#56CCF220" />
+            <StatCard icon="🌤️" label="Điều Kiện Trời" value={readings.weather} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+          </div>
+        </div>
+
+        {/* ── Theo Doi AI Theo Thoi Gian Thuc ────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
             <div>
-              <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>Theo Dõi Agent Realtime</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Backend API · sensor_data · actuator · ai_status · action_logs</p>
+              <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>Theo Dõi AI Theo Thời Gian Thực</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Dữ liệu máy chủ · cảm biến · trạng thái van · trạng thái AI · nhật ký hành động</p>
             </div>
             <div className="flex items-center gap-2">
               <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: '#1F6F5F10', color: '#1F6F5F' }}>
-                Mode: {actuator.control_mode || 'AUTO'}
+                Chế độ: {controlModeVi}
               </span>
               <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: aiStatus.is_processing ? '#F2C94C20' : '#6FCF9720', color: aiStatus.is_processing ? '#B45309' : '#1F6F5F' }}>
-                {aiStatus.is_processing ? 'AI is thinking...' : 'AI idle'}
+                {aiStatus.is_processing ? 'AI đang xử lý...' : 'AI đang chờ'}
               </span>
             </div>
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <StatCard icon="💧" label="Độ Mặn (Backend)" value={realtimeSalinity.toFixed(1)} unit="‰" color={salinityColor} bg={`${salinityColor}20`} />
-            <StatCard icon="🌱" label="Độ Ẩm (Backend)" value={realtimeMoisture.toFixed(0)} unit="%" color="#2FA084" bg="#2FA08420" />
             <StatCard icon="🚰" label="Trạng Thái Van" value={realtimeValveOpen ? 'MỞ' : 'ĐÓNG'} unit="" color={realtimeValveOpen ? '#2FA084' : '#1F6F5F'} bg={realtimeValveOpen ? '#2FA08420' : '#1F6F5F20'} />
-            <StatCard icon="🤖" label="Control Mode" value={(actuator.control_mode || 'AUTO').toUpperCase()} unit="" color="#1F6F5F" bg="#1F6F5F20" />
-          </div>
-
-          <div className="flex items-center gap-2 mb-4">
-            <button
-              disabled={isModeUpdating}
-              onClick={() => handleControlModeChange('auto')}
-              className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
-              style={uiControlMode === 'auto' ? { background: '#2FA084', color: 'white' } : { background: '#f3f4f6', color: '#4b5563' }}
-            >
-              Chuyển AUTO
-            </button>
-            <button
-              disabled={isModeUpdating}
-              onClick={() => handleControlModeChange('manual')}
-              className="px-4 py-2 rounded-xl text-sm font-bold transition-all"
-              style={uiControlMode === 'manual' ? { background: '#1F6F5F', color: 'white' } : { background: '#f3f4f6', color: '#4b5563' }}
-            >
-              Chuyển MANUAL
-            </button>
+            <StatCard icon="🤖" label="Chế Độ Điều Khiển" value={controlModeVi} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+            <StatCard icon="⚙️" label="Trạng Thái AI" value={aiStatus.is_processing ? 'ĐANG XỬ LÝ' : 'ĐANG CHỜ'} unit="" color={aiStatus.is_processing ? '#B45309' : '#2FA084'} bg={aiStatus.is_processing ? '#F2C94C20' : '#2FA08420'} />
+            <StatCard icon="📌" label="Vùng Điều Khiển" value={controlScope === 'all' ? 'TOÀN VÙNG' : 'ĐƠN VAN'} unit="" color="#1F6F5F" bg="#1F6F5F20" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="rounded-xl border p-3" style={{ borderColor: '#1F6F5F20' }}>
-              <p className="text-xs text-gray-400 mb-2">Biểu đồ realtime (sensor_data)</p>
+              <p className="text-xs text-gray-400 mb-2">Biểu đồ thời gian thực (dữ liệu cảm biến)</p>
               <div style={{ width: '100%', height: 180 }}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={trendData} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
+                  <LineChart data={historyChartData} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} interval="preserveEnd" />
                     <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
@@ -289,18 +380,43 @@ export default function FarmerDashboard() {
             </div>
 
             <div className="rounded-xl border p-3" style={{ borderColor: '#1F6F5F20' }}>
-              <p className="text-xs text-gray-400 mb-2">Action Logs (mới nhất)</p>
-              <div className="space-y-2 max-h-45 overflow-auto pr-1">
+              <p className="text-xs text-gray-400 mb-2">Nhật Ký Hành Động Dễ Hiểu</p>
+              <div className="space-y-3 max-h-60 overflow-auto pr-1">
                 {actionLogs.slice(0, 8).map((log) => (
-                  <div key={log.id} className="rounded-lg px-3 py-2" style={{ background: '#f8faf9' }}>
-                    <p className="text-xs font-semibold" style={{ color: '#1F6F5F' }}>
-                      {log.action || 'NO_ACTION'} · {log.actor || 'AI'}
+                  <div key={log.id} className="rounded-xl p-3 border" style={{ background: '#f8faf9', borderColor: '#1F6F5F1A' }}>
+                    <div className="flex items-start justify-between gap-2 mb-1.5">
+                      <p className="text-sm font-bold" style={{ color: '#1F6F5F' }}>
+                        {buildLogSummary(log).headline}
+                      </p>
+                      <span className="text-[11px] text-gray-500 whitespace-nowrap">
+                        {log.timestamp ? new Date(log.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-gray-600 mb-2">
+                      Người thực hiện: <strong>{formatActorLabel(log.actor)}</strong>
                     </p>
-                    <p className="text-xs text-gray-500">{log.reason || 'No reason provided'}</p>
+
+                    <p className="text-xs leading-relaxed text-gray-700 mb-2">
+                      {log.reason || 'Không có mô tả chi tiết.'}
+                    </p>
+
+                    <div className="rounded-lg px-2.5 py-2" style={{ background: '#2FA08412' }}>
+                      <p className="text-[11px] font-semibold" style={{ color: '#1F6F5F' }}>
+                        Ảnh hưởng:
+                      </p>
+                      <p className="text-[11px] text-gray-700 leading-relaxed">
+                        {buildLogSummary(log).impact}
+                      </p>
+                    </div>
+
+                    <p className="mt-2 text-[11px] text-gray-500">
+                      Loại hành động: {formatActionLabel(log.action)}
+                    </p>
                   </div>
                 ))}
                 {!actionLogs.length && (
-                  <p className="text-xs text-gray-400">Chưa có action logs từ backend.</p>
+                  <p className="text-xs text-gray-400">Chưa có nhật ký hành động từ máy chủ.</p>
                 )}
               </div>
             </div>
@@ -533,21 +649,6 @@ export default function FarmerDashboard() {
           document.body
         )}
 
-        {/* ── Sensor Stats Grid ─────────────────────────────────────── */}
-        <div>
-          <h2 className="text-sm font-bold uppercase tracking-wider mb-3" style={{ color: '#9ca3af' }}>
-            Số Liệu Cảm Biến Hiện Tại
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
-            <StatCard icon="💧" label="Độ Mặn" value={readings.salinity.toFixed(1)} unit="‰" color={salinityColor} bg={`${salinityColor}20`} />
-            <StatCard icon="🌡️" label="Nhiệt Độ" value={readings.temperature != null ? Number(readings.temperature).toFixed(1) : '--'} unit="°C" color="#F2994A" bg="#F2994A20" />
-            <StatCard icon="💦" label="Độ Ẩm KK" value={readings.humidity != null ? Number(readings.humidity).toFixed(0) : '--'} unit="%" color="#2FA084" bg="#2FA08420" />
-            <StatCard icon="🌱" label="Độ Ẩm Đất" value={readings.soilMoisture} unit="%" color="#6FCF97" bg="#6FCF9720" />
-            <StatCard icon="⚗️" label="Độ pH" value={readings.ph != null ? Number(readings.ph).toFixed(1) : '--'} unit="pH" color="#9B59B6" bg="#9B59B620" />
-            <StatCard icon="🌤️" label="Thời Tiết" value={readings.weather} unit="" color="#1F6F5F" bg="#1F6F5F20" />
-          </div>
-        </div>
-
         {/* ── Salinity Trend Chart ───────────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
           <div className="flex items-center justify-between mb-4">
@@ -563,7 +664,7 @@ export default function FarmerDashboard() {
           <div className="overflow-x-auto">
             <div style={{ minWidth: '400px', height: '200px' }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                <AreaChart data={historyChartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="salinGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#2FA084" stopOpacity={0.25} />

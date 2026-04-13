@@ -31,6 +31,17 @@ export function useRealtimeFarmState() {
       setAiStatus(payload.aiStatus || DEFAULT_AI_STATUS);
       setActionLogs(payload.actionLogs || []);
 
+      if (Array.isArray(payload.sensorHistory) && payload.sensorHistory.length) {
+        setSensorHistory(
+          payload.sensorHistory.map((item) => ({
+            salinity: Number(item.salinity || 0),
+            moisture: Number(item.moisture || 0),
+            timestamp: item.timestamp || new Date().toISOString(),
+          })).slice(-30)
+        );
+        return;
+      }
+
       setSensorHistory((prev) => {
         const point = {
           salinity: Number(nextSensor.salinity || 0),

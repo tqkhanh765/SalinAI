@@ -1,10 +1,12 @@
 const db = require("../config/firebase");
 const { fetchWeatherData } = require("../services/weatherService");
 const { getTideData } = require("../services/tideService");
+const { getDb } = require("../config/mongodb");
 
 const CROP_STAGES = ["SEEDLING", "VEGETATIVE", "FLOWERING", "FRUITING", "HARVEST"];
 const CONTROL_MODES = ["AUTO", "MANUAL"];
 const VALVE_STATES = ["OPEN", "CLOSED"];
+const SENSOR_HISTORY_COLLECTION = "sensor_history";
 
 function toNumber(value, fallback = 0) {
   const n = Number(value);
@@ -86,7 +88,46 @@ function normalizeActionLogs(rawLogs, limit = 20) {
   return entries.slice(0, limit);
 }
 
-function buildFarmStatePayload(root, limit = 20) {
+async function getLatestSensorHistory(limit = 30) {
+  try {
+    const mongo = getDb();
+    if (!mongo) return [];
+
+    const docs = await mongo
+      .collection(SENSOR_HISTORY_COLLECTION)
+      .find({}, { projection: { _id: 0, timestamp: 1, salinity: 1, moisture: 1 } })
+      .sort({ timestamp: -1 })
+      .limit(limit)
+      .toArray();
+
+    return docs.reverse();
+  } catch (error) {
+    console.error("[Farm API] Failed to load sensor history from MongoDB:", error.message);
+    return [];
+  }
+}
+
+async function persistSensorHistoryPoint(payload) {
+  try {
+    const mongo = getDb();
+    if (!mongo) return;
+
+    await mongo.collection(SENSOR_HISTORY_COLLECTION).insertOne({
+      salinity: toNumber(payload.salinity, 0),
+      moisture: toNumber(payload.moisture, 0),
+      timestamp: payload.timestamp || new Date().toISOString(),
+      crop_stage: payload.crop_stage || "VEGETATIVE",
+      river_water_level: payload.river_water_level != null ? toNumber(payload.river_water_level, null) : null,
+      weather: payload.weather || null,
+      external_forecast: payload.external_forecast || {},
+      createdAt: new Date(),
+    });
+  } catch (error) {
+    console.error("[Farm API] Failed to persist sensor history to MongoDB:", error.message);
+  }
+}
+
+function buildFarmStatePayload(root, limit = 20, sensorHistory = []) {
   const sensorData = root.sensor_data || {};
   const actuator = root.actuator || {};
   const aiStatus = root.ai_status || {};
@@ -131,6 +172,7 @@ function buildFarmStatePayload(root, limit = 20) {
         : [],
     },
     actionLogs,
+    sensorHistory,
     fetchedAt: new Date().toISOString(),
   };
 }
@@ -140,8 +182,9 @@ async function getFarmState(req, res) {
     const limit = Math.min(Math.max(Number(req.query.logLimit || 20), 1), 100);
     const snapshot = await db.ref("/").once("value");
     const root = snapshot.val() || {};
+    const sensorHistory = await getLatestSensorHistory(30);
 
-    res.status(200).json(buildFarmStatePayload(root, limit));
+    res.status(200).json(buildFarmStatePayload(root, limit, sensorHistory));
   } catch (error) {
     console.error("[Farm API] Failed to read farm state:", error.message);
     res.status(500).json({ error: "Failed to read farm state", details: error.message });
@@ -166,9 +209,10 @@ function streamFarmState(req, res) {
     res.write(`data: ${JSON.stringify(payload)}\n\n`);
   };
 
-  const onRootValue = (snapshot) => {
+  const onRootValue = async (snapshot) => {
     const root = snapshot.val() || {};
-    send("farm_state", buildFarmStatePayload(root, limit));
+    const sensorHistory = await getLatestSensorHistory(30);
+    send("farm_state", buildFarmStatePayload(root, limit, sensorHistory));
   };
 
   const onRootError = (error) => {
@@ -212,6 +256,7 @@ async function submitSensorData(req, res) {
     };
 
     await db.ref("sensor_data").set(payload);
+    await persistSensorHistoryPoint(payload);
 
     await db.ref("action_logs").push({
       timestamp: new Date().toISOString(),
