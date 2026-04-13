@@ -1,107 +1,115 @@
-# System Architecture (v3.0 - AI Agentic + RAG Pipeline)
+# System Architecture (v4.0 - Agentic RAG + Weather + Self-Learning)
 
 ## 1. High-Level Architecture
-SalinAI is built as a three-layer, event-driven AI Agentic system. Firebase remains the real-time command bus, while RAG is mandatory and uses only MongoDB Atlas Vector Search.
+SalinAI is a 3-layer event-driven irrigation intelligence system.
 
-### Layer 1: Perception (Data Ingestion)
+1. **Realtime state bus:** Firebase Realtime DB (sensor, actuator, ai_status, action_logs).
+2. **Decision intelligence:** Node.js backend + Gemini + MongoDB Atlas Vector Search.
+3. **User interfaces:** React dashboard/simulator + hardware endpoint behavior.
 
-| Component | Technology | Description |
+## 2. Runtime Layers
+
+### Layer A: Data Ingestion
+
+| Component | Technology | Responsibility |
 |---|---|---|
-| IoT Sensor Mockup | ESP32 / React Simulator | Writes salinity, moisture, and crop_stage into Firebase sensor_data |
-| Weather Feed | OpenWeatherMap API | Provides macro weather risk context |
+| Simulator / Device payload | React + ESP32-style schema | Sends nested payload (`sensor_telemetry`, `actuator`, `station_metadata`, `external_forecast`) |
+| Input normalization & validation | `farmPayloadMapper` | Normalizes salinity/moisture/stage/water-level; validates against CROP_STAGES, CONTROL_MODES, VALVE_STATES |
+| Sensor ingestion pipeline | `farmSensorIngestionService` | Orchestrates weather/tide enrichment, MongoDB persistence, Firebase write |
+| Weather enrichment | Open-Meteo + cache (via `weatherService`) | Adds `temperature`, `humidity`, `rainfall_24h`, weather code |
+| Tide enrichment | Tide inference (`tideService`) | Adds inferred `tide_status`, confidence, direction |
+| History persistence | `farmHistoryService` + MongoDB | Stores sensor points in `sensor_history` collection for chart continuity |
 
-### Layer 2: AI Agentic Core (Backend on Render)
+### Layer B: Agentic Decision Core
 
-| Submodel | Role | Notes |
+| Component | File(s) | Responsibility |
 |---|---|---|
-| Event Filter + Throttle | Firebase listener middleware | Prevents spam invocation and enforces minimum trigger interval |
-| Orchestrator | LangChain.js | Coordinates retrieval, prompt assembly, and tool execution |
-| Embedding Generator | Gemini embedding model (via LangChain integration) | Converts multi-factor query state into vector representation |
-| Vector Database | MongoDB Atlas Vector Search | Retrieves agricultural guideline chunks filtered by crop_stage and context |
-| Reasoning Model | Gemini 2.5 Flash | Produces decision and tool arguments based on retrieved context |
+| Firebase listener trigger | `backend/listeners/firebase-listener.js` | Detects sensor updates and triggers agentic flow |
+| Agent orchestration | `backend/agent/agentOrchestration.js` | Coordinates retrieval + reasoning + safe output |
+| Retrieval module | `backend/agent/agentRetrieval.js` | Vector search against `guideline_documents` |
+| Agent utilities/fallback | `backend/agent/agentUtils.js` | Timeout guard, fallback decision, resilience |
+| Prompt and tools | `backend/agent/prompt.js`, `backend/agent/tools.js` | Human-readable reasoning + safe actuator tool contract |
 
-### Layer 3: Execution + Interfaces
+### Layer C: Execution and UX
 
-| Component | Technology | Description |
+| Component | Technology | Responsibility |
 |---|---|---|
-| Command Bus | Firebase Realtime DB | Stores valve_state, control_mode, AI status, and action logs |
-| Actuator | Valve Relay | Executes OPEN or CLOSED state |
-| Frontend | React (Vite) | Dashboard, simulator, and AI Agentic visual pages |
-| Notifications | Telegram Bot / SMTP | Delivers anomaly or action alerts |
+| Control write path | Firebase actuator node | Writes `valve_state` only when policy allows |
+| Manual safety lock | Backend tool guard | In `MANUAL`, AI may reason but write is blocked |
+| Dashboard + Simulator | React (Vite) | Realtime monitoring, manual controls, decision explanation |
+| Decision explanation API | `/api/decision-details` | Returns fully formatted human-readable analysis |
 
-## 2. Mandatory RAG Decision Flow (Multi-Agent Supervisor)
-The production decision chain follows the "Study -> Respond -> Learn" cognitive paradigm:
+## 3. Core Data Stores
 
-1. **Unstructured Ingestion (Study):** Extracted text (PDFs/News) -> Recursive Chunking -> Embeddings -> MongoDB Vector Search.
-2. **Pre-Filter Firewall:** Listener receives sensor payload. If conditions are absolutely nominal (e.g., safe limits), it drops the event to save LLM API costs.
-3. **Researcher Subagent (Memory & Context):**
-   - The Researcher agent wakes up.
-   - It searches the MongoDB Vector database for agricultural guideline chunks.
-   - It queries MongoDB `action_logs` to "Learn" what the AI did in the past.
-   - It outputs a compiled Summary Report.
-4. **Orchestrator Agent (Decision):**
-   - Receives the raw sensor data and the Subagent's Summary Report.
-   - Reasons about the safest hardware action.
-5. **Execution & Consequence:** Tool executor enforces MANUAL lock. Result is merged back into MongoDB `action_logs` so the Subagent can learn from it next time.
+### Firebase Realtime DB (operational state)
+- `sensor_data`
+- `actuator`
+- `ai_status`
+- `action_logs`
 
-## 3. Langflow Visual Specification (Canonical)
-Langflow is the required visual representation for the AI Agentic pipeline. The visual canvas must mirror backend runtime behavior.
+### MongoDB Atlas (knowledge and history)
+- `guideline_documents`: embedded RAG guideline chunks.
+- `action_logs`: long-term decision audit and retrieval trace metadata.
+- `sensor_history`: persisted chart history for dashboard reload/cross-device continuity.
 
-### 3.1 Langflow Nodes
+## 4. Decision Flow (Current)
 
-| Node ID | Node Type | Input | Output |
-|---|---|---|---|
-| N1 | Firebase Trigger Node | sensor_data update | sensor_event |
-| N2 | Event Filter Node | sensor_event | filtered_event |
-| N3 | Weather Context Node | filtered_event | enriched_event |
-| N4 | Query Builder Node | enriched_event | retrieval_query_text |
-| N5 | Embedding Node | retrieval_query_text | query_vector |
-| N6 | MongoDB Atlas Vector Search Node | query_vector + crop_stage filter | retrieved_guidelines |
-| N7 | Prompt Builder Node | enriched_event + retrieved_guidelines | system_prompt |
-| N8 | Gemini 2.5 Flash Node | system_prompt + tool schemas | model_decision |
-| N9 | Tool Router Node | model_decision | tool_execution_result |
-| N10 | Log Sink Node | tool_execution_result | firebase_log + mongo_log |
+1. Sensor payload is submitted to `POST /api/sensor-data` (handled by thin `farmController`).
+2. `farmPayloadMapper` normalizes nested schema (sensor_telemetry, actuator, station_metadata).
+3. `farmSensorIngestionService` enriches with weather (Open-Meteo) + tide context in parallel.
+4. Enriched snapshot is committed: Firebase `sensor_data` + MongoDB `sensor_history`.
+5. Firebase listener in `firebase-listener.js` detects change and triggers agent processing.
+6. `agentRetrieval` gets top relevant guidelines from MongoDB Vector Search.
+7. `agentOrchestration` + Gemini 2.5 Flash reason over sensor + weather + tide + guidelines.
+8. `tools.js` enforces safety policy via control-mode gate (via `farmActuatorService`):
+   - `AUTO`: AI may execute actuator writes to Firebase.
+   - `MANUAL`: AI reasoning logged but write blocked.
+9. Action result + rationale + retrieval metadata logged to Firebase `action_logs` and MongoDB audit trail.
+10. Frontend consumes `/api/farm-state` (includes `sensorHistory` from MongoDB) and `/api/farm-stream` (SSE realtime) and `/api/decision-details` (rich explanation).
 
-### 3.2 Langflow Edges
+## 5. API Surface (Implemented)
 
-| Edge | From | To | Purpose |
-|---|---|---|---|
-| E1 | N1 | N2 | Initial trigger handoff |
-| E2 | N2 | N3 | Pass valid events only |
-| E3 | N3 | N4 | Build retrieval query from multi-factor state |
-| E4 | N4 | N5 | Generate embedding |
-| E5 | N5 | N6 | Execute vector retrieval |
-| E6 | N3 + N6 | N7 | Merge live context and retrieved context |
-| E7 | N7 | N8 | Run Gemini reasoning |
-| E8 | N8 | N9 | Execute tool decision safely |
-| E9 | N9 | N10 | Persist outcome and observability metadata |
+### Farm state/control APIs
+- `GET /api/farm-state`
+- `GET /api/farm-stream` (SSE realtime stream)
+- `POST /api/sensor-data`
+- `PATCH /api/control-mode`
+- `POST /api/override`
 
-## 4. Control Mode State Machine
+### Decision and performance APIs
+- `GET /api/decision-details`
+- `GET /api/performance`
+- `GET /api/performance/report`
+
+### Health/weather APIs
+- `GET /api/health`
+- `GET /api/weather`
+
+## 6. Control Mode State Machine
 
 ```text
 AUTO   -- user sets MANUAL --> MANUAL
 MANUAL -- user sets AUTO   --> AUTO
 
-AUTO:   AI Agentic pipeline may execute valve writes.
-MANUAL: AI Agentic pipeline may reason, but actuator write tools are blocked.
+AUTO:   AI can execute actuator writes.
+MANUAL: AI reasoning/logging still runs, actuator write is blocked.
 ```
 
-## 5. End-to-End Data Flow
+## 7. Frontend Data Strategy (Current)
 
-| Step | Description |
-|---|---|
-| 1 | Sensor payload with salinity, moisture, crop_stage arrives in Firebase |
-| 2 | Listener applies throttle and control checks |
-| 3 | Backend enriches with weather context |
-| 4 | Retrieval query string is built from multi-factor state |
-| 5 | Query embedding is generated |
-| 6 | MongoDB Atlas Vector Search returns top-k guideline chunks |
-| 7 | Retrieved context is injected into Gemini 2.5 Flash system prompt |
-| 8 | Gemini emits action decision + reason |
-| 9 | Tool layer enforces MANUAL lock and writes safe state |
-| 10 | Action and retrieval metadata are persisted for audit and future RAG |
+1. Baseline fetch: `/api/farm-state`.
+2. Realtime updates: `/api/farm-stream` via EventSource.
+3. Rich explanation polling: `/api/decision-details`.
+4. Chart history source: `sensorHistory` from backend (MongoDB-backed), not browser-only storage.
 
-## 6. Repository Mapping
+## 8. Key Reliability Rules
+
+1. Weather service uses cached Open-Meteo responses (5-minute TTL) to reduce API pressure.
+2. Agent timeout paths fall back to deterministic safety behavior.
+3. Manual mode is a hard safety boundary for actuator writes.
+4. All major actions are logged for audit and self-learning evaluation.
+
+## 9. Repository Mapping (Updated)
 
 ```text
 /SalinAI
@@ -113,28 +121,46 @@ MANUAL: AI Agentic pipeline may reason, but actuator write tools are blocked.
  │    └── testing.md
  ├── /backend
  │    ├── /agent
- │    │    ├── langchain.js      # Retrieval chain + model invocation
- │    │    ├── prompt.js         # Prompt template with retrieved context injection
- │    │    └── tools.js          # Safe tool execution contracts
+ │    │    ├── langchain.js
+ │    │    ├── agentUtils.js
+ │    │    ├── agentRetrieval.js
+ │    │    ├── agentOrchestration.js
+ │    │    ├── prompt.js
+ │    │    └── tools.js
+ │    ├── /controllers
+ │    │    └── farmController.js (thin orchestration layer)
+ │    ├── /routes
+ │    │    ├── farm.js
+ │    │    ├── performance.js
+ │    │    └── health.js
+ │    ├── /services
+ │    │    ├── farmPayloadMapper.js (normalization + validation)
+ │    │    ├── farmHistoryService.js (MongoDB sensor history get/set)
+ │    │    ├── farmRealtimeStreamService.js (SSE stream management)
+ │    │    ├── farmSensorIngestionService.js (weather/tide enrichment pipeline)
+ │    │    ├── farmActuatorService.js (control mode + override validation)
+ │    │    ├── weatherService.js
+ │    │    ├── tideService.js
+ │    │    ├── outcomeService.js
+ │    │    └── explanationService.js
  │    ├── /listeners
  │    │    └── firebase-listener.js
  │    ├── /config
  │    │    ├── firebase.js
- │    │    └── mongodb.js        # Atlas connection + vector index helpers
+ │    │    └── mongodb.js
  │    └── server.js
  ├── /frontend
  └── /hardware
 ```
 
-## 7. Technology Summary
+## 10. Technology Summary
 
-| Layer | Technology | Purpose |
+| Layer | Technology | Role |
 |---|---|---|
-| Frontend | React.js (Vite) | Vercel |
-| Backend AI Agentic Core | Node.js, Express, LangChain.js | Render |
-| LLM | Gemini 2.5 Flash | Google AI Studio |
-| Embeddings | Gemini embeddings via LangChain | Google AI Studio |
-| Realtime Bus | Firebase Realtime DB | Firebase |
-| Vector Database | MongoDB Atlas Vector Search | MongoDB Atlas |
-| Notification | Telegram Bot API / SMTP | External APIs |
-| Weather | OpenWeatherMap API | External API |
+| Frontend | React + Vite | Dashboard and simulator UX |
+| Backend | Node.js + Express | APIs, orchestration, control policies |
+| LLM | Gemini 2.5 Flash | Reasoning and decision output |
+| Embeddings | Gemini embedding model | Query/doc vectorization |
+| Realtime bus | Firebase Realtime DB | Event and command synchronization |
+| Vector DB + history | MongoDB Atlas | RAG retrieval + persistent history |
+| Weather source | Open-Meteo API | External weather context |
