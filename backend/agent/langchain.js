@@ -1,169 +1,27 @@
-const { GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { researcherPromptTemplate, orchestratorPromptTemplate } = require("./prompt");
-const { researcherTools, orchestratorTools } = require("./tools");
 const { getDb } = require("../config/mongodb");
 const fbdb = require("../config/firebase");
+const { researcherTools, orchestratorTools } = require("./tools");
 
-// ─── AI Models Initialization ──────────────────────────────────────────────────
-const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.5-flash", 
-  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-  temperature: 0.2
-});
+// ─── Orchestration Utils & Services ────────────────────────────────────────────
+const {
+    isQuotaError,
+    parseRetrySeconds,
+    withTimeout,
+    buildFallbackAction,
+} = require("./agentUtils");
 
-const embeddings = new GoogleGenerativeAIEmbeddings({
-  model: process.env.EMBEDDING_MODEL || "gemini-embedding-001",
-  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-});
+const { executeRAGTool } = require("./agentRetrieval");
 
-// Bind tools to separate agent personas
-const researcherAgent = llm.bindTools(researcherTools);
-const orchestratorAgent = llm.bindTools(orchestratorTools);
+const {
+    researcherAgent,
+    orchestratorAgent,
+    finalizeAction,
+} = require("./agentOrchestration");
 
 const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS || "1", 10));
 const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "1", 10));
 const AGENT_PHASE_TIMEOUT_MS = Math.max(3000, parseInt(process.env.AGENT_PHASE_TIMEOUT_MS || "12000", 10));
-
-// ─── RAG Tool Logic ──────────────────────────────────────────────────────────
-async function executeRAGTool(salinity, moisture, mongoDb) {
-    const queryText = `Salinity is ${salinity} ppt, moisture is ${moisture}%.`;
-    try {
-        const queryVector = await embeddings.embedQuery(queryText);
-        const cursor = mongoDb.collection("guideline_documents").aggregate([
-          {
-            "$vectorSearch": {
-              "index": "vector_index",
-              "path": "embedding",
-              "queryVector": queryVector,
-              "numCandidates": 10,
-              "limit": parseInt(process.env.VECTOR_TOP_K || "3")
-            }
-          },
-          { "$project": { "_id": 1, "title": 1, "content": 1, "score": { "$meta": "vectorSearchScore" } } }
-        ]);
-        const results = await cursor.toArray();
-        const minScore = parseFloat(process.env.VECTOR_MIN_SCORE || "0.72");
-        const validResults = results.filter(r => r.score >= minScore);
-        
-        if (validResults.length === 0) {
-            return { hitCount: 0, sourceIds: [], context: "No guidelines found via search." };
-        }
-        
-        let sourceIds = [];
-        let contextDocs = [];
-        validResults.forEach(doc => {
-            sourceIds.push(doc._id);
-            contextDocs.push(`[${doc._id}] ${doc.title}: ${doc.content}`);
-        });
-        
-        return { hitCount: validResults.length, sourceIds, context: contextDocs.join("\n\n") };
-    } catch (err) {
-        console.error("Vector Retrieval Error:", err);
-        return { hitCount: 0, sourceIds: [], context: "Vector Search offline." };
-    }
-}
-
-function isQuotaError(err) {
-    const status = err?.status;
-    const text = String(err?.message || "").toLowerCase();
-    return status === 429 || text.includes("quota") || text.includes("too many requests");
-}
-
-function parseRetrySeconds(err) {
-    const details = err?.errorDetails || [];
-    const retryInfo = details.find((d) => d?.["@type"]?.includes("RetryInfo"));
-    const retryDelay = retryInfo?.retryDelay;
-    if (typeof retryDelay === "string") {
-        const parsed = parseInt(retryDelay.replace("s", ""), 10);
-        if (Number.isFinite(parsed)) return parsed;
-    }
-
-    const message = String(err?.message || "");
-    const match = message.match(/retry in\s+([\d.]+)s/i);
-    if (match) {
-        const parsed = Math.ceil(Number(match[1]));
-        if (Number.isFinite(parsed)) return parsed;
-    }
-
-    return null;
-}
-
-async function withTimeout(promise, timeoutMs, label) {
-    let timeoutId;
-    const timeoutPromise = new Promise((_, reject) => {
-        timeoutId = setTimeout(() => {
-            const error = new Error(`${label} timed out after ${timeoutMs}ms`);
-            error.code = "AGENT_TIMEOUT";
-            reject(error);
-        }, timeoutMs);
-    });
-
-    try {
-        return await Promise.race([promise, timeoutPromise]);
-    } finally {
-        clearTimeout(timeoutId);
-    }
-}
-
-async function buildFallbackAction(sensorData, reason) {
-    const salinity = Number(sensorData?.salinity || 0);
-    const desiredState = salinity >= 2 ? "CLOSED" : "OPEN";
-    const actuatorSnap = await fbdb.ref("actuator").once("value");
-    const actuator = actuatorSnap.val() || {};
-    const blockedByManual = actuator.control_mode === "MANUAL";
-
-    return {
-        executed_state: desiredState,
-        reason,
-        source_ids: [],
-        blocked_by_manual: blockedByManual,
-    };
-}
-
-async function finalizeAction({
-    actionResult,
-    sensorData,
-    finalHitCount,
-    finalSourceIds,
-    researcherSummary,
-    actor,
-    mongoDb,
-}) {
-    if (!actionResult) {
-        return;
-    }
-
-    if (!actionResult.blocked_by_manual && (actionResult.executed_state === "OPEN" || actionResult.executed_state === "CLOSED")) {
-        await fbdb.ref("actuator/valve_state").set(actionResult.executed_state);
-    }
-
-    await fbdb.ref("ai_status").update({
-        is_processing: false,
-        last_reasoning: actionResult.reason,
-        last_retrieval_hit_count: finalHitCount,
-        last_retrieval_source_ids: finalSourceIds,
-    });
-
-    const actionLogPayload = {
-        timestamp: new Date().toISOString(),
-        actor,
-        action: actionResult.executed_state,
-        reason: actionResult.reason + (actionResult.blocked_by_manual ? " (BLOCKED BY MANUAL MODE)" : ""),
-        retrieval: {
-            hit_count: finalHitCount,
-            source_ids: finalSourceIds,
-            retrieval_miss: finalHitCount === 0,
-        },
-        sensor_snapshot: sensorData,
-        subagent_summary: researcherSummary,
-    };
-
-    await fbdb.ref("action_logs").push(actionLogPayload);
-
-    if (mongoDb) {
-        await mongoDb.collection("action_logs").insertOne(actionLogPayload);
-    }
-}
 
 // ─── Pipeline Execution ──────────────────────────────────────────────────────
 async function runAgent(sensorData) {

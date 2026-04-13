@@ -5,17 +5,25 @@ All services must write and read this structure exactly.
 
 ```json
 {
-  "sensor_data": {
-    "salinity": 1.5,
-    "moisture": 70.0,
-    "crop_stage": "VEGETATIVE",
-    "timestamp": "2026-04-12T09:00:00Z"
+  "sensor_telemetry": {
+    "river_salinity": 1.5,
+    "soil_moisture": 70.0,
+    "river_water_level": 1.2
   },
   "actuator": {
     "valve_state": "OPEN",
+    "pump_state": "OFF",
     "control_mode": "AUTO"
-    "valve_state": "OPEN",
-    "control_mode": "AUTO"
+  },
+  "station_metadata": {
+    "field_elevation": 1.0,
+    "crop_type": "RICE",
+    "growth_stage": "VEGETATIVE"
+  },
+  "external_forecast": {
+    "tide_status": "RISING",
+    "rainfall_24h": 15.5,
+    "temperature": 32.0
   },
   "ai_status": {
     "is_processing": false,
@@ -41,9 +49,12 @@ All services must write and read this structure exactly.
 ```
 
 ### 1.1 Field Rules
-- sensor_data.crop_stage is required.
-- sensor_data.crop_stage enum: SEEDLING, VEGETATIVE, FLOWERING, FRUITING, HARVEST.
+- sensor_telemetry.river_salinity is required.
+- sensor_telemetry.soil_moisture is required.
+- sensor_telemetry.river_water_level is optional.
+- station_metadata.growth_stage enum: SEEDLING, VEGETATIVE, FLOWERING, FRUITING, HARVEST.
 - actuator.control_mode enum: AUTO, MANUAL.
+- actuator.pump_state enum: ON, OFF.
 - action_logs.actor enum: AI_AGENTIC, USER.
 - action_logs.action enum: OPEN, CLOSED, NO_ACTION.
 
@@ -198,8 +209,6 @@ Request body:
 
 ```json
 {
-  "valve_state": "OPEN",
-  "control_mode": "MANUAL"
   "valve_state": "OPEN",
   "control_mode": "MANUAL"
 }

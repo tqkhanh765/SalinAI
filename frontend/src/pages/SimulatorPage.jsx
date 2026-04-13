@@ -149,7 +149,7 @@ const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading
 // ─── Main SimulatorPage ────────────────────────────────────────────────────────
 
 export default function SimulatorPage() {
-  const { actuator, aiStatus, actionLogs, submitSensorData } = useRealtimeFarmState();
+  const { actuator, aiStatus, actionLogs, sensorData, submitSensorData } = useRealtimeFarmState();
 
   const [salinityLevel, setSalinityLevel] = useState(4.5);
   const [moistureLevel, setMoistureLevel] = useState(65);
@@ -178,10 +178,26 @@ export default function SimulatorPage() {
     setIsPushing(true);
     try {
       await submitSensorData({
-        salinity: Number(salinityLevel.toFixed(2)),
-        moisture: Number(moistureLevel.toFixed(2)),
-        crop_stage: cropStage,
-        weather: weatherCondition,
+        sensor_telemetry: {
+          river_salinity: Number(salinityLevel.toFixed(2)),
+          soil_moisture: Number(moistureLevel.toFixed(2)),
+          river_water_level: Number((sensorData.river_water_level ?? 1.2).toFixed(2)),
+        },
+        actuator: {
+          valve_state: actuator.valve_state || 'CLOSED',
+          pump_state: actuator.pump_state || 'OFF',
+          control_mode: actuator.control_mode || 'AUTO',
+        },
+        station_metadata: {
+          field_elevation: Number((sensorData.station_metadata?.field_elevation ?? 1.0).toFixed(2)),
+          crop_type: sensorData.station_metadata?.crop_type || 'Rice',
+          growth_stage: cropStage,
+        },
+        external_forecast: {
+          tide_status: weatherCondition === 'Heavy Rain' ? 'RISING' : 'FALLING',
+          rainfall_24h: weatherCondition === 'Heavy Rain' ? 24.5 : weatherCondition === 'Drought' ? 0 : 15.5,
+          temperature: weatherCondition === 'Drought' ? 34.0 : 32.0,
+        },
       });
     } catch (error) {
       console.error(error);
