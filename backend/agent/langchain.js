@@ -20,8 +20,9 @@ const embeddings = new GoogleGenerativeAIEmbeddings({
 const researcherAgent = llm.bindTools(researcherTools);
 const orchestratorAgent = llm.bindTools(orchestratorTools);
 
-const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS || "2", 10));
-const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "2", 10));
+const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS || "1", 10));
+const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "1", 10));
+const AGENT_PHASE_TIMEOUT_MS = Math.max(3000, parseInt(process.env.AGENT_PHASE_TIMEOUT_MS || "12000", 10));
 
 // ─── RAG Tool Logic ──────────────────────────────────────────────────────────
 async function executeRAGTool(salinity, moisture, mongoDb) {
@@ -85,6 +86,23 @@ function parseRetrySeconds(err) {
     }
 
     return null;
+}
+
+async function withTimeout(promise, timeoutMs, label) {
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+            const error = new Error(`${label} timed out after ${timeoutMs}ms`);
+            error.code = "AGENT_TIMEOUT";
+            reject(error);
+        }, timeoutMs);
+    });
+
+    try {
+        return await Promise.race([promise, timeoutPromise]);
+    } finally {
+        clearTimeout(timeoutId);
+    }
 }
 
 async function buildFallbackAction(sensorData, reason) {
@@ -178,7 +196,11 @@ async function runAgent(sensorData) {
         let researchLoop = 0;
         while (researchLoop < MAX_RESEARCH_LOOPS) {
             researchLoop++;
-            const response = await researcherAgent.invoke(researcherMessages);
+            const response = await withTimeout(
+                researcherAgent.invoke(researcherMessages),
+                AGENT_PHASE_TIMEOUT_MS,
+                "Researcher phase"
+            );
             researcherMessages.push(response);
 
             if (!response.tool_calls || response.tool_calls.length === 0) {
@@ -224,7 +246,11 @@ async function runAgent(sensorData) {
         let orchestrationLoop = 0;
         while (orchestrationLoop < MAX_ORCHESTRATION_LOOPS) {
             orchestrationLoop++;
-            const response = await orchestratorAgent.invoke(orchestratorMessages);
+            const response = await withTimeout(
+                orchestratorAgent.invoke(orchestratorMessages),
+                AGENT_PHASE_TIMEOUT_MS,
+                "Orchestrator phase"
+            );
             orchestratorMessages.push(response);
 
             if (!response.tool_calls || response.tool_calls.length === 0) {
@@ -283,6 +309,25 @@ async function runAgent(sensorData) {
                 finalHitCount,
                 finalSourceIds,
                 researcherSummary: researcherSummary || "Fallback mode: LLM quota exceeded.",
+                actor: "FALLBACK_RULE_ENGINE",
+                mongoDb,
+            });
+
+            return;
+        }
+
+        if (err?.code === "AGENT_TIMEOUT") {
+            const fallbackReason = `${err.message}. Applied fallback safety rule (close if salinity >= 2.0).`;
+            console.warn(`[Fallback] ${fallbackReason}`);
+
+            const fallbackAction = await buildFallbackAction(sensorData, fallbackReason);
+
+            await finalizeAction({
+                actionResult: fallbackAction,
+                sensorData,
+                finalHitCount,
+                finalSourceIds,
+                researcherSummary: researcherSummary || "Fallback mode: agent phase timed out.",
                 actor: "FALLBACK_RULE_ENGINE",
                 mongoDb,
             });

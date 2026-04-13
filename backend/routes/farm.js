@@ -138,6 +138,14 @@ router.post("/api/sensor-data", async (req, res) => {
 
     await db.ref("sensor_data").set(payload);
 
+    await db.ref("action_logs").push({
+      timestamp: new Date().toISOString(),
+      actor: "USER",
+      action: "NO_ACTION",
+      reason: `Sensor trigger submitted from simulator. Salinity=${payload.salinity}, Moisture=${payload.moisture}, Stage=${payload.crop_stage}`,
+      sensor_snapshot: payload,
+    });
+
     res.status(200).json({
       status: "OK",
       updated: payload,

@@ -10,6 +10,13 @@ let lastSensorSignature = null;
 function startListener() {
   console.log("[Listener] Starting Firebase sensor_data listener...");
 
+  fbdb.ref("ai_status").update({
+    is_processing: false,
+    last_reasoning: "Idle",
+  }).catch((err) => {
+    console.error("[Listener] Failed to reset ai_status on startup:", err.message);
+  });
+
   fbdb.ref("sensor_data").on("value", async (snapshot) => {
     const data = snapshot.val();
     if (!data) return;
