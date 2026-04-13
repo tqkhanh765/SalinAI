@@ -15,27 +15,23 @@ startListener();
 // ─── Express Setup ────────────────────────────────────────────────────────────
 const app = express();
 
-const defaultAllowedOrigins = [
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-  "http://localhost:5174",
-  "http://127.0.0.1:5174",
-  "http://localhost:80",
-  "http://127.0.0.1:80",
-];
+const CORS_ALLOW_ALL_ORIGINS = String(process.env.CORS_ALLOW_ALL_ORIGINS || "false").toLowerCase() === "true";
+const localhostOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
 
 const envAllowedOrigins = (process.env.FRONTEND_URL || "")
   .split(",")
   .map((item) => item.trim())
   .filter(Boolean);
 
-const allowedOrigins = new Set([...defaultAllowedOrigins, ...envAllowedOrigins]);
+const allowedOrigins = new Set(envAllowedOrigins);
 
 app.use(
   cors({
     origin: (origin, callback) => {
       // Allow same-origin and non-browser requests (curl/postman) without Origin header.
       if (!origin) return callback(null, true);
+      if (CORS_ALLOW_ALL_ORIGINS) return callback(null, true);
+      if (localhostOriginPattern.test(origin)) return callback(null, true);
       if (allowedOrigins.has(origin)) return callback(null, true);
       return callback(new Error(`CORS blocked for origin: ${origin}`));
     },

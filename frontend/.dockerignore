@@ -1,24 +1,14 @@
-# node_modules, build artefacts
 node_modules
 dist
 .vite
-
-# Secrets
 .env
 .env.local
 .env.*.local
-
-# Git
+*.log
+npm-debug.log*
 .git
 .gitignore
-
-# Logs
-*.log
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Editor
 .vscode
 .idea
+.DS_Store
+Thumbs.db
