@@ -84,6 +84,9 @@ async function ingestFiles() {
                 },
                 { upsert: true }
             );
+            
+            // Wait 2.5 seconds to avoid Gemini API Rate Limits!
+            await new Promise(resolve => setTimeout(resolve, 2500));
         }
         console.log(`✅ Saved all chunks for: ${file}`);
     }
