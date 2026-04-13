@@ -18,6 +18,8 @@ const app = express();
 const defaultAllowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
+  "http://localhost:5174",
+  "http://127.0.0.1:5174",
   "http://localhost:80",
   "http://127.0.0.1:80",
 ];
@@ -47,9 +49,11 @@ app.use(express.json());
 // ─── Routes ───────────────────────────────────────────────────────────────────
 const healthRoute = require("./routes/health");
 const farmRoute = require("./routes/farm");
+const performanceRoute = require("./routes/performance");
 
 app.use(healthRoute);
 app.use(farmRoute);
+app.use(performanceRoute);
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;

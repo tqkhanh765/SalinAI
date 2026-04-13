@@ -4,6 +4,7 @@ const router = express.Router();
 // ─── Dependencies ─────────────────────────────────────────────────────────────
 const db = require("../config/firebase");
 const mongoConfig = require("../config/mongodb");
+const { fetchWeatherData } = require("../services/weatherService");
 
 /**
  * GET /api/health
@@ -34,6 +35,27 @@ router.get("/api/health", async (req, res) => {
     });
   } catch (error) {
     console.error("[Health Check] API error:", error.message);
+    res.status(500).json({
+      status: "ERROR",
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/weather
+ * Fetches current weather data from Open-Meteo API
+ */
+router.get("/api/weather", async (req, res) => {
+  try {
+    const weatherData = await fetchWeatherData();
+    res.status(200).json({
+      status: "OK",
+      timestamp: new Date().toISOString(),
+      weather: weatherData
+    });
+  } catch (error) {
+    console.error("[Weather API] Error:", error.message);
     res.status(500).json({
       status: "ERROR",
       message: error.message,

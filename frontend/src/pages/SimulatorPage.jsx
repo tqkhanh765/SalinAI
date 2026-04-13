@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRealtimeFarmState } from '../hooks/useRealtimeFarmState';
+import { API_BASE_URL } from '../lib/apiClient';
 
 // ─── Helper sub-components ─────────────────────────────────────────────────────
 
@@ -156,6 +157,28 @@ export default function SimulatorPage() {
   const [weatherCondition, setWeatherCondition] = useState('Sunny');
   const [cropStage, setCropStage] = useState('VEGETATIVE');
   const [isPushing, setIsPushing] = useState(false);
+  const [decisionDetails, setDecisionDetails] = useState(null);
+
+  // Fetch decision details for display
+  useEffect(() => {
+    const fetchDecisionDetails = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/decision-details`);
+        if (!res.ok) {
+          throw new Error(`Failed to fetch decision details: ${res.status}`);
+        }
+        const json = await res.json();
+        setDecisionDetails(json.data);
+      } catch (err) {
+        console.error('Failed to fetch decision details:', err);
+      }
+    };
+
+    // Fetch initially and after each change
+    fetchDecisionDetails();
+    const interval = setInterval(fetchDecisionDetails, 3000); // Refetch every 3s
+    return () => clearInterval(interval);
+  }, [actionLogs]);
 
   // Derived state from backend farm-state API
   const isLoading = isPushing || aiStatus.is_processing;
@@ -538,6 +561,126 @@ export default function SimulatorPage() {
             </div>
           </div>
         </div>
+
+        {/* ─── DECISION ANALYSIS SECTION ─── */}
+        {decisionDetails && (
+          <div className="mt-6">
+            <h2 className="text-xl font-bold mb-4" style={{ color: '#1F6F5F' }}>
+              📊 Phân Tích Quyết Định AI
+            </h2>
+
+            {/* Main Grid: Metrics + Analysis */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6">
+              
+              {/* Column 1: Sensor Metrics */}
+              <div className="bg-white rounded-xl p-5 border" style={{ borderColor: '#1F6F5F20' }}>
+                <p className="font-bold text-sm mb-4" style={{ color: '#1F6F5F' }}>🌾 Dữ Liệu Cảm Biến</p>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Độ Mặn</span>
+                    <span className="font-bold">{decisionDetails.sensorMetrics.salinity.value.toFixed(1)} ppt</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Độ Ẩm Đất</span>
+                    <span className="font-bold">{decisionDetails.sensorMetrics.moisture.value.toFixed(1)}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Mực Nước Sông</span>
+                    <span className="font-bold">{decisionDetails.sensorMetrics.water_level.value.toFixed(2)} m</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Giai Đoạn Cây</span>
+                    <span className="font-bold text-xs px-2 py-1 rounded" style={{ background: '#2FA08420', color: '#1F6F5F' }}>
+                      {decisionDetails.sensorMetrics.crop_stage.value}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 2: Weather & Tide */}
+              <div className="bg-white rounded-xl p-5 border" style={{ borderColor: '#1F6F5F20' }}>
+                <p className="font-bold text-sm mb-4" style={{ color: '#1F6F5F' }}>☀️ Thời Tiết & Thủy Triều</p>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Nhiệt Độ</span>
+                    <span className="font-bold">{decisionDetails.weatherMetrics.temperature.value}°C</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Độ Ẩm</span>
+                    <span className="font-bold">{decisionDetails.weatherMetrics.humidity.value}%</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Mưa 24h</span>
+                    <span className="font-bold">{decisionDetails.weatherMetrics.rainfall_24h.value}mm</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-gray-600">Thủy Triều</span>
+                    <span className="font-bold">{decisionDetails.tideInfo.status} ({decisionDetails.tideInfo.confidence})</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 3: Decision Summary */}
+              <div className="bg-white rounded-xl p-5 border" style={{ borderColor: '#1F6F5F20' }}>
+                <p className="font-bold text-sm mb-4" style={{ color: '#1F6F5F' }}>🤖 Quyết Định AI</p>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Trạng Thái Van</p>
+                    <p className="text-lg font-bold px-3 py-2 rounded-lg text-center w-full"
+                      style={{
+                        background: decisionDetails.aiDecision.valve_state === 'OPEN' ? '#6FCF9720' : '#1F6F5F20',
+                        color: decisionDetails.aiDecision.valve_state === 'OPEN' ? '#2FA084' : '#1F6F5F'
+                      }}>
+                      {decisionDetails.aiDecision.valve_state === 'OPEN' ? '✅ MỞ' : '🚫 ĐÓNG'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1">Lý Do</p>
+                    <p className="text-sm font-medium leading-relaxed" style={{ color: '#1F6F5F' }}>
+                      {decisionDetails.aiDecision.reason}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Decision Factors */}
+            {decisionDetails.explanation && (
+              <div className="bg-white rounded-xl p-6 border" style={{ borderColor: '#1F6F5F20' }}>
+                <p className="font-bold text-base mb-4" style={{ color: '#1F6F5F' }}>
+                  📋 Các Yếu Tố Ảnh Hưởng Đến Quyết Định
+                </p>
+                <div className="space-y-4">
+                  {decisionDetails.explanation.factors.map((factor, idx) => (
+                    <div key={idx} className="border-l-4 pl-4 py-2" style={{ borderColor: factor.status.includes('🔴') || factor.status.includes('⚠️') ? '#EB5757' : '#6FCF97' }}>
+                      <div className="flex items-start justify-between mb-1">
+                        <p className="font-semibold text-sm">{factor.name}</p>
+                        <span className="text-xs px-2 py-1 rounded font-bold" style={{
+                          background: factor.status.includes('🔴') || factor.status.includes('⚠️') ? '#EB575720' : '#6FCF9720',
+                          color: factor.status.includes('🔴') || factor.status.includes('⚠️') ? '#EB5757' : '#2FA084'
+                        }}>
+                          {factor.status}
+                        </span>
+                      </div>
+                      <p className="text-xs mb-2 text-gray-600">
+                        Giá trị: <strong>{factor.value}</strong> | 
+                        Ngưỡng: <strong>{factor.threshold}</strong>
+                      </p>
+                      <p className="text-sm leading-relaxed" style={{ color: '#1F6F5F' }}>
+                        {factor.reasoning}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-5 p-4 rounded-lg text-center" style={{ background: '#2FA08415' }}>
+                  <p className="font-bold text-sm" style={{ color: '#1F6F5F' }}>
+                    {decisionDetails.explanation.summary}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="mt-6 bg-[#111827] rounded-2xl overflow-hidden shadow-xl" style={{ border: '1px solid #1F6F5F30' }}>
           <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>

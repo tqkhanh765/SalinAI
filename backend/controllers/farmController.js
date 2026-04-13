@@ -1,4 +1,6 @@
 const db = require("../config/firebase");
+const { fetchWeatherData } = require("../services/weatherService");
+const { getTideData } = require("../services/tideService");
 
 const CROP_STAGES = ["SEEDLING", "VEGETATIVE", "FLOWERING", "FRUITING", "HARVEST"];
 const CONTROL_MODES = ["AUTO", "MANUAL"];
@@ -194,7 +196,20 @@ async function submitSensorData(req, res) {
       return res.status(400).json(normalized.error);
     }
 
-    const payload = normalized.payload;
+    let payload = normalized.payload;
+
+    // Fetch real weather data and tide inference
+    const [weatherData, tideData] = await Promise.all([
+      fetchWeatherData(),
+      getTideData(payload.river_water_level, {})
+    ]);
+    
+    // Merge weather and tide data
+    payload.external_forecast = {
+      ...payload.external_forecast,
+      ...weatherData, // temperature, humidity, rainfall_24h, weather_code
+      ...tideData,    // tide_status, confidence_score, tide_direction
+    };
 
     await db.ref("sensor_data").set(payload);
 

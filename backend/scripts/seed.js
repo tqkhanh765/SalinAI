@@ -50,6 +50,63 @@ const guidelines = [
     risk_tags: ["drainage"],
     source_ref: "agri-bulletin-2026-04",
     revision: "2026.04"
+  },
+  {
+    _id: "guide-rainfall-flooding-001",
+    title: "Rainfall-based flood prevention guideline",
+    content: "HEAVY RAINFALL ALERT: If rainfall in past 24 hours exceeds 40mm, IMMEDIATELY close the intake valve to prevent field flooding. This overrides salinity considerations. High rainfall + open valve = crop damage.",
+    crop_type: "RICE",
+    crop_stage: ["SEEDLING", "VEGETATIVE", "FLOWERING"],
+    region: "MEKONG_DELTA",
+    risk_tags: ["rainfall", "flooding", "critical"],
+    source_ref: "hydrology-2026",
+    revision: "2026.04",
+    priority: "CRITICAL"
+  },
+  {
+    _id: "guide-humidity-mold-001",
+    title: "Humidity and moisture management",
+    content: "IF humidity > 80% AND soil_moisture > 75% simultaneously, CLOSE valve immediately and consider turning pump ON to improve air circulation. High humidity + wet soil = fungal disease risk (mold, rice blast).",
+    crop_type: "RICE",
+    crop_stage: ["VEGETATIVE", "FLOWERING"],
+    region: "MEKONG_DELTA",
+    risk_tags: ["humidity", "disease", "mold"],
+    source_ref: "phytopathology-2026",
+    revision: "2026.04"
+  },
+  {
+    _id: "guide-rising-tide-saltwater-001",
+    title: "Rising tide and saltwater intrusion prevention",
+    content: "TIDE ALERT: When tide is RISING and salinity >= 1.0 ppt, CLOSE the intake valve immediately. Rising tides bring saltwater inland. Early closure prevents salinity spike. Expected salinity can increase 2-3x during high tide.",
+    crop_type: "RICE",
+    crop_stage: ["SEEDLING", "VEGETATIVE"],
+    region: "MEKONG_DELTA",
+    risk_tags: ["tide", "salinity", "proactive"],
+    source_ref: "oceanography-2026",
+    revision: "2026.04",
+    priority: "HIGH"
+  },
+  {
+    _id: "guide-drought-water-conservation-001",
+    title: "Drought response and water management",
+    content: "DROUGHT CONDITIONS: If rainfall in past 24h < 2mm AND water_level < 0.8m AND soil_moisture < 40%, OPEN valve to irrigate. Drought overrides salinity thresholds up to 2.0 ppt. Crop survival takes priority.",
+    crop_type: "RICE",
+    crop_stage: ["VEGETATIVE", "FLOWERING"],
+    region: "MEKONG_DELTA",
+    risk_tags: ["drought", "water_conservation"],
+    source_ref: "water-management-2026",
+    revision: "2026.04"
+  },
+  {
+    _id: "guide-combined-weather-salinity-001",
+    title: "Combined weather and salinity decision matrix",
+    content: "MULTI-FACTOR DECISION: (1) IF rainfall > 30mm: prioritize closing (flood prevention). (2) IF tide RISING: prioritize closing (salt prevention). (3) IF salinity > 2.5 AND (rainfall < 10 OR tide FALLING): open to dilute. (4) IF humidity > 85%: consider pump ON instead of valve open.",
+    crop_type: "RICE",
+    crop_stage: "VEGETATIVE",
+    region: "MEKONG_DELTA",
+    risk_tags: ["multifactor", "complex_decision"],
+    source_ref: "integrated-agriculture-2026",
+    revision: "2026.04"
   }
 ];
 

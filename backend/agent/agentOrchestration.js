@@ -1,6 +1,7 @@
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { researcherTools, orchestratorTools } = require("./tools");
 const fbdb = require("../config/firebase");
+const { logActionWithPrediction } = require("../services/outcomeService");
 
 const llm = new ChatGoogleGenerativeAI({
   model: "gemini-2.5-flash", 
@@ -52,7 +53,8 @@ async function finalizeAction({
     await fbdb.ref("action_logs").push(actionLogPayload);
 
     if (mongoDb) {
-        await mongoDb.collection("action_logs").insertOne(actionLogPayload);
+        // Log with predictions for 24h outcome tracking
+        await logActionWithPrediction(actionLogPayload);
     }
 }
 
