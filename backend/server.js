@@ -26,40 +26,9 @@ app.use(
 app.use(express.json());
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
+const healthRoute = require("./routes/health");
 
-/**
- * GET /api/health
- * Confirms the server is running and Firebase Admin SDK is connected.
- */
-app.get("/api/health", async (req, res) => {
-  try {
-    const snapshot = await db.ref(".info/connected").once("value");
-    const firebaseConnected = snapshot.val();
-
-    let mongodbConnected = false;
-    if (mongoConfig.client) {
-      try {
-        await mongoConfig.client.db().command({ ping: 1 });
-        mongodbConnected = true;
-      } catch (err) {
-        mongodbConnected = false;
-      }
-    }
-
-    res.status(200).json({
-      status: "OK",
-      timestamp: new Date().toISOString(),
-      firebase: firebaseConnected ? "CONNECTED" : "DISCONNECTED",
-      mongodb: mongodbConnected ? "CONNECTED" : "DISCONNECTED"
-    });
-  } catch (error) {
-    console.error("[Health Check] Firebase error:", error.message);
-    res.status(500).json({
-      status: "ERROR",
-      message: error.message,
-    });
-  }
-});
+app.use(healthRoute);
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
