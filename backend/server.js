@@ -8,9 +8,11 @@ const db = require("./config/firebase");
 // ─── MongoDB Atlas ────────────────────────────────────────────────────────────
 const mongoConfig = require("./config/mongodb");
 
-// ─── Firebase Listener (Agent Trigger) ───────────────────────────────────────
-const { startListener } = require("./listeners/firebase-listener");
-startListener();
+// ─── Wokwi Poller (Automatic Agent Trigger every 10s) ────────────────────────
+// Replaces the manual firebase-listener. Reads SalinAI/sensors/ pushed by ESP32,
+// enriches with weather, and runs the AI agent pipeline automatically.
+const { startWokwiPoller } = require("./listeners/wokwi-poller");
+startWokwiPoller();
 
 // ─── Express Setup ────────────────────────────────────────────────────────────
 const app = express();

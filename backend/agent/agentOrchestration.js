@@ -27,6 +27,11 @@ async function finalizeAction({
 
     if (!actionResult.blocked_by_manual && (actionResult.executed_state === "OPEN" || actionResult.executed_state === "CLOSED")) {
         await fbdb.ref("actuator/valve_state").set(actionResult.executed_state);
+
+        // Mirror to SalinAI/control/action — the path the Wokwi ESP32 reads (sketch.ino line 86).
+        // The sketch checks for "OPEN" or "CLOSE" (not "CLOSED"), so translate accordingly.
+        const esp32Action = actionResult.executed_state === "OPEN" ? "OPEN" : "CLOSE";
+        await fbdb.ref("SalinAI/control/action").set(esp32Action);
     }
 
     await fbdb.ref("ai_status").update({

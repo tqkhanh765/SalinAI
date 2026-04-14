@@ -88,6 +88,9 @@ function buildFarmStatePayload(root, limit = 20, sensorHistory = []) {
   const aiStatus = root.ai_status || {};
   const actionLogs = normalizeActionLogs(root.action_logs, limit);
 
+  // Flatten external_forecast for convenience (wokwi-poller writes weather here)
+  const extForecast = sensorData.external_forecast || {};
+
   return {
     sensorData: {
       salinity: toNumber(sensorData.salinity, 0),
@@ -96,23 +99,32 @@ function buildFarmStatePayload(root, limit = 20, sensorHistory = []) {
         sensorData.river_salinity != null ? toNumber(sensorData.river_salinity, 0) : toNumber(sensorData.salinity, 0),
       soil_moisture:
         sensorData.soil_moisture != null ? toNumber(sensorData.soil_moisture, 0) : toNumber(sensorData.moisture, 0),
+      // water_flow is written by wokwi-poller from the ESP32 sensor reading
+      water_flow: sensorData.water_flow != null ? toNumber(sensorData.water_flow, 0) : 0,
       river_water_level: sensorData.river_water_level != null ? toNumber(sensorData.river_water_level, null) : null,
-      temperature: sensorData.temperature != null ? toNumber(sensorData.temperature) : null,
-      humidity: sensorData.humidity != null ? toNumber(sensorData.humidity) : null,
+      // Prefer top-level, fall back to external_forecast (set by wokwi-poller)
+      temperature: sensorData.temperature != null
+        ? toNumber(sensorData.temperature)
+        : (extForecast.temperature != null ? toNumber(extForecast.temperature) : null),
+      humidity: sensorData.humidity != null
+        ? toNumber(sensorData.humidity)
+        : (extForecast.humidity != null ? toNumber(extForecast.humidity) : null),
+      rainfall_24h: sensorData.rainfall_24h != null
+        ? toNumber(sensorData.rainfall_24h)
+        : (extForecast.rainfall_24h != null ? toNumber(extForecast.rainfall_24h) : null),
+      tide_status: sensorData.tide_status || extForecast.tide_status || null,
       ph: sensorData.ph != null ? toNumber(sensorData.ph) : null,
       weather: sensorData.weather || null,
-      crop_stage: sensorData.crop_stage || "VEGETATIVE",
+      crop_stage: sensorData.crop_stage
+        || sensorData.station_metadata?.growth_stage
+        || "VEGETATIVE",
       timestamp: sensorData.timestamp || null,
       station_metadata: sensorData.station_metadata || {
         field_elevation: sensorData.field_elevation != null ? toNumber(sensorData.field_elevation, null) : null,
         crop_type: sensorData.crop_type || null,
         growth_stage: sensorData.crop_stage || "VEGETATIVE",
       },
-      external_forecast: sensorData.external_forecast || {
-        tide_status: sensorData.tide_status || null,
-        rainfall_24h: sensorData.rainfall_24h != null ? toNumber(sensorData.rainfall_24h, null) : null,
-        temperature: sensorData.forecast_temperature != null ? toNumber(sensorData.forecast_temperature, null) : null,
-      },
+      external_forecast: extForecast,
     },
     actuator: {
       valve_state: VALVE_STATES.includes(actuator.valve_state) ? actuator.valve_state : "CLOSED",

@@ -110,21 +110,27 @@ export default function FarmerDashboard() {
   // Derived logical states based on Scope
   const valveOpen = realtimeValveOpen;
   const controlledValveCount = controlScope === 'all' ? INITIAL_VALVES.length : 1;
-  const currentFlowRate = valveOpen ? (controlledValveCount * 12.5).toFixed(1) : '0.0';
+  // Use the real water_flow value from the Wokwi ESP32 sensor (via Firebase → wokwi-poller → SSE)
+  const currentFlowRate = valveOpen
+    ? (Number(sensorData.water_flow ?? 0)).toFixed(1)
+    : '0.0';
 
   const activeValveDisplay = controlScope === 'all' ? 'TẤT CẢ VAN' : activeValveId;
   const controlModeVi = (actuator.control_mode || 'AUTO').toUpperCase() === 'AUTO' ? 'TỰ ĐỘNG' : 'THỦ CÔNG';
 
   const readings = {
-    salinity: Number(decisionDetails?.sensorMetrics?.salinity?.value ?? sensorData.salinity ?? 0),
-    temperature: decisionDetails?.weatherMetrics?.temperature?.value ?? sensorData.temperature,
-    humidity: decisionDetails?.weatherMetrics?.humidity?.value ?? sensorData.humidity,
-    rainfall24h: decisionDetails?.weatherMetrics?.rainfall_24h?.value,
-    tideStatus: decisionDetails?.tideInfo?.status,
-    riverWaterLevel: decisionDetails?.sensorMetrics?.water_level?.value ?? sensorData.river_water_level,
-    cropStage: decisionDetails?.sensorMetrics?.crop_stage?.value,
-    soilMoisture: Number(sensorData.moisture || 0),
-    ph: sensorData.ph,
+    // Salinity & moisture come from wokwi sensor readings (live)
+    salinity: Number(sensorData.salinity ?? 0),
+    soilMoisture: Number(sensorData.soil_moisture ?? sensorData.moisture ?? 0),
+    // Weather: sensorData now has these flattened from external_forecast by the mapper
+    temperature: sensorData.temperature ?? decisionDetails?.weatherMetrics?.temperature?.value ?? null,
+    humidity: sensorData.humidity ?? decisionDetails?.weatherMetrics?.humidity?.value ?? null,
+    rainfall24h: sensorData.rainfall_24h ?? decisionDetails?.weatherMetrics?.rainfall_24h?.value ?? null,
+    tideStatus: sensorData.tide_status ?? decisionDetails?.tideInfo?.status ?? null,
+    // crop_stage is hardcoded VEGETATIVE by wokwi-poller
+    cropStage: sensorData.crop_stage ?? decisionDetails?.sensorMetrics?.crop_stage?.value ?? 'VEGETATIVE',
+    riverWaterLevel: sensorData.river_water_level ?? decisionDetails?.sensorMetrics?.water_level?.value ?? null,
+    ph: sensorData.ph ?? null,
     weather: sensorData.weather || '--',
   };
 

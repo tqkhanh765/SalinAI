@@ -150,23 +150,17 @@ const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading
 // ─── Main SimulatorPage ────────────────────────────────────────────────────────
 
 export default function SimulatorPage() {
-  const { actuator, aiStatus, actionLogs, sensorData, submitSensorData } = useRealtimeFarmState();
-
-  const [salinityLevel, setSalinityLevel] = useState(4.5);
-  const [moistureLevel, setMoistureLevel] = useState(65);
-  const [weatherCondition, setWeatherCondition] = useState('Sunny');
-  const [cropStage, setCropStage] = useState('VEGETATIVE');
-  const [isPushing, setIsPushing] = useState(false);
+  const { actuator, aiStatus, actionLogs, sensorData } = useRealtimeFarmState();
   const [decisionDetails, setDecisionDetails] = useState(null);
+  // Countdown to next poll (10s cycle)
+  const [countdown, setCountdown] = useState(10);
 
   // Fetch decision details for display
   useEffect(() => {
     const fetchDecisionDetails = async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/api/decision-details`);
-        if (!res.ok) {
-          throw new Error(`Failed to fetch decision details: ${res.status}`);
-        }
+        if (!res.ok) return;
         const json = await res.json();
         setDecisionDetails(json.data);
       } catch (err) {
@@ -174,90 +168,78 @@ export default function SimulatorPage() {
       }
     };
 
-    // Fetch initially and after each change
     fetchDecisionDetails();
-    const interval = setInterval(fetchDecisionDetails, 3000); // Refetch every 3s
+    const interval = setInterval(fetchDecisionDetails, 3000);
     return () => clearInterval(interval);
   }, [actionLogs]);
 
-  // Derived state from backend farm-state API
-  const isLoading = isPushing || aiStatus.is_processing;
+  // Countdown timer that syncs to the 10-second polling cycle
+  useEffect(() => {
+    // Reset countdown whenever sensorData updates (poller just fired)
+    setCountdown(10);
+  }, [sensorData.timestamp]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev <= 1 ? 10 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Live sensor readings from Firebase (pushed by Wokwi ESP32 via wokwi-poller)
+  const liveSalinity   = Number(sensorData.salinity ?? sensorData.river_salinity ?? 0);
+  const liveMoisture   = Number(sensorData.soil_moisture ?? sensorData.moisture ?? 0);
+  const liveWaterFlow  = Number(sensorData.water_flow ?? 0);
+  const liveTemp       = sensorData.temperature ?? sensorData.external_forecast?.temperature ?? null;
+  const liveHumidity   = sensorData.humidity ?? sensorData.external_forecast?.humidity ?? null;
+  const liveRain24h    = sensorData.rainfall_24h ?? sensorData.external_forecast?.rainfall_24h ?? null;
+  const liveTide       = sensorData.tide_status ?? sensorData.external_forecast?.tide_status ?? null;
+  const liveCropStage  = sensorData.crop_stage ?? 'VEGETATIVE';
+
   const valveOpen = actuator.valve_state === 'OPEN';
-  
-  // Show notification if we have an action log and we're not loading
+  const isProcessing = aiStatus.is_processing;
+
   const lastLog = actionLogs && actionLogs.length > 0 ? actionLogs[0] : null;
-  const showNotification = !!lastLog && !isLoading;
-  const notificationMsg = lastLog ? lastLog.reason : '';
+  const showNotification = !!lastLog && !isProcessing;
 
-  const weatherOptions = ['Sunny', 'Heavy Rain', 'Drought'];
-  const cropStageOptions = ['SEEDLING', 'VEGETATIVE', 'FLOWERING', 'FRUITING', 'HARVEST'];
+  const salinityColor = liveSalinity <= 3 ? '#6FCF97' : liveSalinity <= 6 ? '#F2C94C' : '#EB5757';
 
-  const salinityColor = salinityLevel <= 3 ? '#6FCF97' : salinityLevel <= 6 ? '#F2C94C' : '#EB5757';
-  const sliderBg = `linear-gradient(to right, ${salinityColor} 0%, ${salinityColor} ${(salinityLevel / 10) * 100}%, #d1d5db ${(salinityLevel / 10) * 100}%, #d1d5db 100%)`;
-
-  const handleTrigger = async () => {
-    if (isLoading) return;
-
-    setIsPushing(true);
-    try {
-      await submitSensorData({
-        sensor_telemetry: {
-          river_salinity: Number(salinityLevel.toFixed(2)),
-          soil_moisture: Number(moistureLevel.toFixed(2)),
-          river_water_level: Number((sensorData.river_water_level ?? 1.2).toFixed(2)),
-        },
-        actuator: {
-          valve_state: actuator.valve_state || 'CLOSED',
-          pump_state: actuator.pump_state || 'OFF',
-          control_mode: actuator.control_mode || 'AUTO',
-        },
-        station_metadata: {
-          field_elevation: Number((sensorData.station_metadata?.field_elevation ?? 1.0).toFixed(2)),
-          crop_type: sensorData.station_metadata?.crop_type || 'Rice',
-          growth_stage: cropStage,
-        },
-        external_forecast: {
-          tide_status: weatherCondition === 'Heavy Rain' ? 'RISING' : 'FALLING',
-          rainfall_24h: weatherCondition === 'Heavy Rain' ? 24.5 : weatherCondition === 'Drought' ? 0 : 15.5,
-          temperature: weatherCondition === 'Drought' ? 34.0 : 32.0,
-        },
-      });
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsPushing(false);
-    }
-  };
-
-  const translateWeather = (w) => {
-    const map = { Sunny: 'Nắng', 'Heavy Rain': 'Mưa To', Drought: 'Hạn Hán' };
-    return map[w] || w;
-  };
+  // Helper: format nullable number
+  const fmt = (v, digits = 1, suffix = '') =>
+    v != null ? `${Number(v).toFixed(digits)}${suffix}` : '--';
 
   return (
     <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8" style={{ background: '#EEEEEE' }}>
       <div className="max-w-5xl mx-auto">
+
         {/* Page Header */}
         <div className="mb-6 md:mb-8">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-widest"
               style={{ background: '#2FA08420', color: '#2FA084' }}>
-              Bảng Điều Khiển Nông Dân
+              Chế Độ Tự Động
+            </span>
+            <span className="text-xs font-semibold px-2.5 py-1 rounded-full uppercase tracking-widest"
+              style={{
+                background: isProcessing ? '#F2C94C20' : '#6FCF9720',
+                color: isProcessing ? '#B45309' : '#1F6F5F',
+              }}>
+              {isProcessing ? '⚙️ AI đang xử lý...' : `⏱ Cập nhật sau ${countdown}s`}
             </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold leading-tight" style={{ color: '#1F6F5F' }}>
             Trình Mô Phỏng Và Hậu Trường
           </h1>
           <p className="text-sm md:text-base text-gray-500 mt-1">
-            Điều chỉnh dữ liệu cảm biến và kích hoạt AI Agentic để kiểm soát van tưới tiêu.
+            Hệ thống tự động đọc cảm biến từ Wokwi ESP32 qua Firebase và chạy AI Agent mỗi 10 giây.
           </p>
         </div>
 
-        {/* Two-column grid (stacks on mobile) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6">
+        {/* ── 2-col: Live Sensors + Valve & Agent Status ── */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 md:gap-6 mb-5">
 
-          {/* ── LEFT CARD: Input Controls ───────────────────────────── */}
-          <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 flex flex-col gap-6"
+          {/* ── LEFT: Live Wokwi Sensor Readings ─────────────────────── */}
+          <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6 flex flex-col gap-4"
             style={{ borderColor: '#1F6F5F20' }}>
 
             <div className="flex items-center gap-3 pb-4" style={{ borderBottom: '1px solid #EEEEEE' }}>
@@ -268,208 +250,81 @@ export default function SimulatorPage() {
                 </svg>
               </div>
               <div>
-                <h2 className="font-bold text-base" style={{ color: '#1F6F5F' }}>Dữ Liệu Cảm Biến</h2>
-                <p className="text-xs text-gray-400">Cấu hình điều kiện đồng ruộng của bạn</p>
+                <h2 className="font-bold text-base" style={{ color: '#1F6F5F' }}>Cảm Biến Wokwi (ESP32)</h2>
+                <p className="text-xs text-gray-400">Firebase SalinAI/sensors/ · cập nhật mỗi 10s</p>
               </div>
             </div>
 
-            {/* Salinity Slider */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold" style={{ color: '#1F6F5F' }}
-                  htmlFor="salinity-slider">
-                  💧 Độ Mặn
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className="text-lg font-extrabold tabular-nums"
-                    style={{ color: salinityColor, transition: 'color 0.3s' }}
-                  >
-                    {salinityLevel.toFixed(1)}
-                  </span>
-                  <span className="text-xs font-semibold text-gray-400">‰</span>
-                </div>
-              </div>
-              <input
-                id="salinity-slider"
-                type="range"
-                min={0}
-                max={10}
-                step={0.1}
-                value={salinityLevel}
-                onChange={(e) => setSalinityLevel(parseFloat(e.target.value))}
-                className="w-full h-2 rounded-full"
-                style={{ background: sliderBg, minHeight: '44px', padding: '18px 0', cursor: 'pointer' }}
-              />
-              <div className="flex justify-between text-xs text-gray-400 font-medium">
-                <span>0 ‰ <span style={{ color: '#6FCF97' }}>● An Toàn</span></span>
-                <span>5 ‰</span>
-                <span style={{ color: '#EB5757' }}>Nguy Hiểm ●</span> <span>10 ‰</span>
-              </div>
-
-              {/* Gauge */}
-              <div className="flex justify-center py-2">
-                <SalinityGauge value={salinityLevel} />
-              </div>
-            </div>
-
-            {/* Weather Dropdown */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold" style={{ color: '#1F6F5F' }}
-                  htmlFor="moisture-slider">
-                  🌱 Độ Ẩm Đất
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-lg font-extrabold tabular-nums" style={{ color: '#2FA084' }}>
-                    {moistureLevel.toFixed(0)}
-                  </span>
-                  <span className="text-xs font-semibold text-gray-400">%</span>
-                </div>
-              </div>
-              <input
-                id="moisture-slider"
-                type="range"
-                min={0}
-                max={100}
-                step={1}
-                value={moistureLevel}
-                onChange={(e) => setMoistureLevel(parseFloat(e.target.value))}
-                className="w-full h-2 rounded-full"
-                style={{
-                  background: `linear-gradient(to right, #2FA084 0%, #2FA084 ${moistureLevel}%, #d1d5db ${moistureLevel}%, #d1d5db 100%)`,
-                  minHeight: '44px',
-                  padding: '18px 0',
-                  cursor: 'pointer',
-                }}
-              />
-              <div className="flex justify-between text-xs text-gray-400 font-medium">
-                <span>0% Khô</span>
-                <span>50%</span>
-                <span>100% Ướt</span>
-              </div>
-            </div>
-
-            {/* Weather Dropdown */}
+            {/* Salinity with gauge */}
             <div className="space-y-2">
-              <label className="text-sm font-semibold" style={{ color: '#1F6F5F' }}
-                htmlFor="weather-select">
-                🌤️ Điều Kiện Thời Tiết
-              </label>
-              <div className="relative">
-                <select
-                  id="weather-select"
-                  value={weatherCondition}
-                  onChange={(e) => setWeatherCondition(e.target.value)}
-                  className="w-full appearance-none rounded-xl px-4 pr-10 font-semibold text-sm transition-all duration-200 outline-none cursor-pointer"
-                  style={{
-                    height: '52px',
-                    background: '#F7F9F9',
-                    border: '1.5px solid #1F6F5F30',
-                    color: '#1F6F5F',
-                    fontSize: '15px',
-                  }}
-                >
-                  {weatherOptions.map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-                <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2"
-                  style={{ color: '#2FA084' }}>
-                  <WeatherIcon condition={weatherCondition} />
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold" style={{ color: '#1F6F5F' }}>💧 Độ Mặn</span>
+                <span className="text-2xl font-extrabold tabular-nums" style={{ color: salinityColor }}>
+                  {fmt(liveSalinity, 1)} <span className="text-sm font-semibold text-gray-400">‰</span>
+                </span>
+              </div>
+              <div className="flex justify-center py-2">
+                <SalinityGauge value={liveSalinity} />
+              </div>
+              <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: '#e5e7eb' }}>
+                <div className="h-2 rounded-full transition-all duration-700"
+                  style={{ width: `${Math.min((liveSalinity / 10) * 100, 100)}%`, background: salinityColor }} />
+              </div>
+              <div className="flex justify-between text-xs text-gray-400 font-medium">
+                <span style={{ color: '#6FCF97' }}>● An Toàn 0–3 ‰</span>
+                <span style={{ color: '#EB5757' }}>Nguy Hiểm &gt;6 ‰ ●</span>
+              </div>
+            </div>
+
+            {/* Moisture & Water Flow */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl p-3" style={{ background: '#F7F9F9' }}>
+                <p className="text-xs text-gray-400 mb-1">🌱 Độ Ẩm Đất</p>
+                <p className="font-extrabold text-xl tabular-nums" style={{ color: '#2FA084' }}>
+                  {fmt(liveMoisture, 0)}<span className="text-sm font-semibold text-gray-400 ml-1">%</span>
+                </p>
+                <div className="w-full h-1.5 rounded-full mt-2 overflow-hidden" style={{ background: '#e5e7eb' }}>
+                  <div className="h-1.5 rounded-full transition-all duration-700"
+                    style={{ width: `${Math.min(liveMoisture, 100)}%`, background: '#2FA084' }} />
                 </div>
               </div>
-
-              {/* Weather info tags */}
-              <div className="flex flex-wrap gap-2 mt-1">
-                {weatherOptions.map((opt) => (
-                  <button
-                    key={opt}
-                    onClick={() => setWeatherCondition(opt)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200"
-                    style={weatherCondition === opt
-                      ? { background: '#2FA084', color: 'white' }
-                      : { background: '#f0f0f0', color: '#666' }
-                    }
-                  >
-                    {opt === 'Sunny' ? '☀️ Nắng' : opt === 'Heavy Rain' ? '🌧️ Mưa To' : '🏜️ Hạn Hán'}
-                  </button>
-                ))}
+              <div className="rounded-xl p-3" style={{ background: '#F7F9F9' }}>
+                <p className="text-xs text-gray-400 mb-1">🚿 Lưu Lượng</p>
+                <p className="font-extrabold text-xl tabular-nums" style={{ color: '#56CCF2' }}>
+                  {fmt(liveWaterFlow, 1)}<span className="text-sm font-semibold text-gray-400 ml-1">L/min</span>
+                </p>
               </div>
             </div>
 
-            {/* Crop Stage Dropdown */}
-            <div className="space-y-2 mt-4">
-              <label className="text-sm font-semibold" style={{ color: '#1F6F5F' }}
-                htmlFor="crop-select">
-                🌾 Giai Đoạn Sinh Trưởng (Crop Stage)
-              </label>
-              <select
-                id="crop-select"
-                value={cropStage}
-                onChange={(e) => setCropStage(e.target.value)}
-                className="w-full appearance-none rounded-xl px-4 font-semibold text-sm transition-all duration-200 outline-none cursor-pointer"
-                style={{
-                  height: '52px',
-                  background: '#F7F9F9',
-                  border: '1.5px solid #1F6F5F30',
-                  color: '#1F6F5F',
-                  fontSize: '15px',
-                }}
-              >
-                {cropStageOptions.map((opt) => (
-                  <option key={opt} value={opt}>{opt === 'SEEDLING' ? 'Gieo Sạ (SEEDLING)' : opt === 'VEGETATIVE' ? 'Sinh Trưởng (VEGETATIVE)' : opt === 'FLOWERING' ? 'Ra Hoa (FLOWERING)' : opt === 'FRUITING' ? 'Kết Trái (FRUITING)' : 'Thu Hoạch (HARVEST)'}</option>
-                ))}
-              </select>
+            {/* Weather from Open-Meteo */}
+            <div className="rounded-xl p-3" style={{ background: '#F7F9F9' }}>
+              <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#9ca3af' }}>
+                🌤 Thời Tiết Thực (Open-Meteo)
+              </p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                <span className="text-gray-500">Nhiệt Độ</span>
+                <span className="font-bold text-right" style={{ color: '#F2994A' }}>{fmt(liveTemp, 1, ' °C')}</span>
+                <span className="text-gray-500">Độ Ẩm KK</span>
+                <span className="font-bold text-right" style={{ color: '#2D9CDB' }}>{fmt(liveHumidity, 0, ' %')}</span>
+                <span className="text-gray-500">Mưa 24h</span>
+                <span className="font-bold text-right" style={{ color: '#2D9CDB' }}>{fmt(liveRain24h, 1, ' mm')}</span>
+                <span className="text-gray-500">Thủy Triều</span>
+                <span className="font-bold text-right" style={{ color: '#1F6F5F' }}>{liveTide ?? '--'}</span>
+                <span className="text-gray-500">Giai Đoạn Cây</span>
+                <span className="font-bold text-right">
+                  <span className="text-xs px-2 py-0.5 rounded" style={{ background: '#2FA08420', color: '#1F6F5F' }}>
+                    {liveCropStage}
+                  </span>
+                </span>
+              </div>
             </div>
-
-            {/* Trigger Button */}
-            <button
-              id="trigger-agent-btn"
-              onClick={handleTrigger}
-              disabled={isLoading}
-              className="w-full rounded-xl font-bold text-white text-base transition-all duration-300 flex items-center justify-center gap-3 active:scale-95"
-              style={{
-                minHeight: '54px',
-                background: isLoading
-                  ? 'linear-gradient(135deg, #94a3b8, #64748b)'
-                  : 'linear-gradient(135deg, #2FA084 0%, #1F6F5F 100%)',
-                boxShadow: isLoading ? 'none' : '0 6px 20px rgba(47,160,132,0.4)',
-                cursor: isLoading ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {isLoading ? (
-                <>
-                  <svg className="animate-spin w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-                  </svg>
-                  <span>SalinAI đang phân tích...</span>
-                </>
-              ) : isPushing ? (
-                <>
-                  <svg className="animate-spin w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                    <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-                  </svg>
-                  <span>Đang gửi dữ liệu...</span>
-                </>
-              ) : (
-                <>
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="10"/>
-                    <path d="M12 8l4 4-4 4M8 12h8"/>
-                  </svg>
-                  <span>Kích Hoạt SalinAI Agentic</span>
-                </>
-              )}
-            </button>
           </div>
 
-          {/* ── RIGHT CARD: Output / Valve Status ───────────────────── */}
+          {/* ── RIGHT: Valve Status + Agent Controls ──────────────────── */}
           <div className="flex flex-col gap-5">
 
-            {/* Valve Status Card */}
-            <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6"
-              style={{ borderColor: '#1F6F5F20' }}>
+            {/* Valve Status */}
+            <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
               <div className="flex items-center gap-3 mb-5 pb-4" style={{ borderBottom: '1px solid #EEEEEE' }}>
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
                   style={{ background: '#6FCF9715' }}>
@@ -480,46 +335,30 @@ export default function SimulatorPage() {
                 </div>
                 <div>
                   <h2 className="font-bold text-base" style={{ color: '#1F6F5F' }}>Trạng Thái Van</h2>
-                  <p className="text-xs text-gray-400">Đầu ra vật lý theo thời gian thực</p>
+                  <p className="text-xs text-gray-400">Quyết định bởi AI Agent · hoàn toàn tự động</p>
                 </div>
               </div>
-
-              {!lastLog && !isLoading ? (
-                <div className="flex flex-col items-center justify-center py-10 gap-3">
-                  <div className="w-16 h-16 rounded-full flex items-center justify-center"
-                    style={{ background: '#EEEEEE' }}>
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10"/>
-                      <line x1="12" y1="8" x2="12" y2="12"/>
-                      <line x1="12" y1="16" x2="12.01" y2="16"/>
-                    </svg>
-                  </div>
-                  <p className="text-gray-400 text-sm text-center font-medium">
-                    Chờ kích hoạt agent.<br />
-                    <span className="text-xs opacity-70">Cấu hình đầu vào và nhấn nút bên dưới.</span>
-                  </p>
-                </div>
-              ) : (
-                <ValveStatusCard
-                  valveOpen={valveOpen}
-                  salinityLevel={salinityLevel}
-                  weatherCondition={weatherCondition}
-                  isLoading={isLoading}
-                />
-              )}
+              <ValveStatusCard
+                valveOpen={valveOpen}
+                salinityLevel={liveSalinity}
+                weatherCondition={liveTide ?? 'FALLING'}
+                isLoading={isProcessing}
+              />
             </div>
 
-            {/* Notification Card */}
-            {showNotification && (
+            {/* Latest agent decision */}
+            {showNotification && lastLog && (
               <div
                 className="log-entry bg-white rounded-2xl shadow-sm border p-5"
-                style={{ borderColor: valveOpen ? '#6FCF9740' : '#1F6F5F40', borderLeftWidth: '4px', borderLeftColor: valveOpen ? '#6FCF97' : '#1F6F5F' }}
+                style={{
+                  borderColor: valveOpen ? '#6FCF9740' : '#1F6F5F40',
+                  borderLeftWidth: '4px',
+                  borderLeftColor: valveOpen ? '#6FCF97' : '#1F6F5F',
+                }}
               >
                 <div className="flex items-start gap-3">
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
-                    style={{ background: valveOpen ? '#6FCF9715' : '#1F6F5F15' }}
-                  >
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+                    style={{ background: valveOpen ? '#6FCF9715' : '#1F6F5F15' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={valveOpen ? '#6FCF97' : '#1F6F5F'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                       <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
@@ -527,36 +366,40 @@ export default function SimulatorPage() {
                   </div>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#9ca3af' }}>
-                      Quyết Định Của Agent
+                      Quyết Định Mới Nhất Của Agent
                     </p>
                     <p className="text-sm font-medium leading-relaxed" style={{ color: '#1F6F5F' }}>
-                      {notificationMsg || 'Không có lý do'}
+                      {lastLog.reason || 'Không có lý do'}
                     </p>
+                    {lastLog.timestamp && (
+                      <p className="text-xs text-gray-400 mt-1">
+                        {new Date(lastLog.timestamp).toLocaleTimeString('vi-VN')}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Current readings summary */}
-            <div className="bg-white rounded-2xl shadow-sm border p-5" style={{ borderColor: '#1F6F5F20' }}>
-              <p className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#9ca3af' }}>
-                Số Liệu Hiện Tại
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="rounded-xl p-3" style={{ background: '#F7F9F9' }}>
-                  <p className="text-xs text-gray-400 mb-1">Độ Mặn</p>
-                  <p className="font-extrabold text-lg tabular-nums" style={{ color: salinityColor }}>
-                    {salinityLevel.toFixed(1)} <span className="text-xs font-semibold text-gray-400">‰</span>
-                  </p>
-                </div>
-                <div className="rounded-xl p-3" style={{ background: '#F7F9F9' }}>
-                  <p className="text-xs text-gray-400 mb-1">Độ Ẩm Đất</p>
-                  <p className="font-bold text-sm" style={{ color: '#1F6F5F' }}>{moistureLevel.toFixed(0)}%</p>
-                </div>
-                <div className="rounded-xl p-3 col-span-2" style={{ background: '#F7F9F9' }}>
-                  <p className="text-xs text-gray-400 mb-1">Thời Tiết</p>
-                  <p className="font-bold text-sm" style={{ color: '#1F6F5F' }}>{translateWeather(weatherCondition)}</p>
-                </div>
+            {/* Auto-poll countdown banner */}
+            <div className="rounded-2xl p-4 flex items-center gap-3" style={{
+              background: isProcessing ? '#F2C94C10' : '#2FA08410',
+              border: `1.5px solid ${isProcessing ? '#F2C94C40' : '#2FA08430'}`,
+            }}>
+              {isProcessing ? (
+                <svg className="animate-spin w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                </svg>
+              ) : (
+                <span className="text-xl">🤖</span>
+              )}
+              <div>
+                <p className="text-sm font-bold" style={{ color: isProcessing ? '#B45309' : '#1F6F5F' }}>
+                  {isProcessing ? 'SalinAI đang suy luận...' : `Chu kỳ tiếp theo sau ${countdown}s`}
+                </p>
+                <p className="text-xs text-gray-500">
+                  Wokwi → Firebase → AI Agent → Van · Mỗi 10 giây
+                </p>
               </div>
             </div>
           </div>
@@ -564,34 +407,32 @@ export default function SimulatorPage() {
 
         {/* ─── DECISION ANALYSIS SECTION ─── */}
         {decisionDetails && (
-          <div className="mt-6">
+          <div className="mt-2 mb-5">
             <h2 className="text-xl font-bold mb-4" style={{ color: '#1F6F5F' }}>
               📊 Phân Tích Quyết Định AI
             </h2>
 
-            {/* Main Grid: Metrics + Analysis */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6">
-              
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
               {/* Column 1: Sensor Metrics */}
               <div className="bg-white rounded-xl p-5 border" style={{ borderColor: '#1F6F5F20' }}>
                 <p className="font-bold text-sm mb-4" style={{ color: '#1F6F5F' }}>🌾 Dữ Liệu Cảm Biến</p>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">Độ Mặn</span>
-                    <span className="font-bold">{decisionDetails.sensorMetrics.salinity.value.toFixed(1)} ppt</span>
+                    <span className="font-bold">{Number(decisionDetails.sensorMetrics?.salinity?.value ?? 0).toFixed(1)} ppt</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">Độ Ẩm Đất</span>
-                    <span className="font-bold">{decisionDetails.sensorMetrics.moisture.value.toFixed(1)}%</span>
+                    <span className="font-bold">{Number(decisionDetails.sensorMetrics?.moisture?.value ?? 0).toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">Mực Nước Sông</span>
-                    <span className="font-bold">{decisionDetails.sensorMetrics.water_level.value.toFixed(2)} m</span>
+                    <span className="font-bold">{Number(decisionDetails.sensorMetrics?.water_level?.value ?? 0).toFixed(2)} m</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">Giai Đoạn Cây</span>
                     <span className="font-bold text-xs px-2 py-1 rounded" style={{ background: '#2FA08420', color: '#1F6F5F' }}>
-                      {decisionDetails.sensorMetrics.crop_stage.value}
+                      {decisionDetails.sensorMetrics?.crop_stage?.value ?? '--'}
                     </span>
                   </div>
                 </div>
@@ -603,41 +444,40 @@ export default function SimulatorPage() {
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">Nhiệt Độ</span>
-                    <span className="font-bold">{decisionDetails.weatherMetrics.temperature.value}°C</span>
+                    <span className="font-bold">{decisionDetails.weatherMetrics?.temperature?.value}°C</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">Độ Ẩm</span>
-                    <span className="font-bold">{decisionDetails.weatherMetrics.humidity.value}%</span>
+                    <span className="font-bold">{decisionDetails.weatherMetrics?.humidity?.value}%</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">Mưa 24h</span>
-                    <span className="font-bold">{decisionDetails.weatherMetrics.rainfall_24h.value}mm</span>
+                    <span className="font-bold">{decisionDetails.weatherMetrics?.rainfall_24h?.value}mm</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-600">Thủy Triều</span>
-                    <span className="font-bold">{decisionDetails.tideInfo.status} ({decisionDetails.tideInfo.confidence})</span>
+                    <span className="font-bold">{decisionDetails.tideInfo?.status} ({decisionDetails.tideInfo?.confidence})</span>
                   </div>
                 </div>
               </div>
 
-              {/* Column 3: Decision Summary */}
+              {/* Column 3: AI Decision */}
               <div className="bg-white rounded-xl p-5 border" style={{ borderColor: '#1F6F5F20' }}>
                 <p className="font-bold text-sm mb-4" style={{ color: '#1F6F5F' }}>🤖 Quyết Định AI</p>
                 <div className="space-y-3">
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Trạng Thái Van</p>
-                    <p className="text-lg font-bold px-3 py-2 rounded-lg text-center w-full"
-                      style={{
-                        background: decisionDetails.aiDecision.valve_state === 'OPEN' ? '#6FCF9720' : '#1F6F5F20',
-                        color: decisionDetails.aiDecision.valve_state === 'OPEN' ? '#2FA084' : '#1F6F5F'
-                      }}>
-                      {decisionDetails.aiDecision.valve_state === 'OPEN' ? '✅ MỞ' : '🚫 ĐÓNG'}
+                    <p className="text-lg font-bold px-3 py-2 rounded-lg text-center w-full" style={{
+                      background: decisionDetails.aiDecision?.valve_state === 'OPEN' ? '#6FCF9720' : '#1F6F5F20',
+                      color: decisionDetails.aiDecision?.valve_state === 'OPEN' ? '#2FA084' : '#1F6F5F',
+                    }}>
+                      {decisionDetails.aiDecision?.valve_state === 'OPEN' ? '✅ MỞ' : '🚫 ĐÓNG'}
                     </p>
                   </div>
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Lý Do</p>
                     <p className="text-sm font-medium leading-relaxed" style={{ color: '#1F6F5F' }}>
-                      {decisionDetails.aiDecision.reason}
+                      {decisionDetails.aiDecision?.reason}
                     </p>
                   </div>
                 </div>
@@ -652,19 +492,19 @@ export default function SimulatorPage() {
                 </p>
                 <div className="space-y-4">
                   {decisionDetails.explanation.factors.map((factor, idx) => (
-                    <div key={idx} className="border-l-4 pl-4 py-2" style={{ borderColor: factor.status.includes('🔴') || factor.status.includes('⚠️') ? '#EB5757' : '#6FCF97' }}>
+                    <div key={idx} className="border-l-4 pl-4 py-2"
+                      style={{ borderColor: factor.status.includes('🔴') || factor.status.includes('⚠️') ? '#EB5757' : '#6FCF97' }}>
                       <div className="flex items-start justify-between mb-1">
                         <p className="font-semibold text-sm">{factor.name}</p>
                         <span className="text-xs px-2 py-1 rounded font-bold" style={{
                           background: factor.status.includes('🔴') || factor.status.includes('⚠️') ? '#EB575720' : '#6FCF9720',
-                          color: factor.status.includes('🔴') || factor.status.includes('⚠️') ? '#EB5757' : '#2FA084'
+                          color: factor.status.includes('🔴') || factor.status.includes('⚠️') ? '#EB5757' : '#2FA084',
                         }}>
                           {factor.status}
                         </span>
                       </div>
                       <p className="text-xs mb-2 text-gray-600">
-                        Giá trị: <strong>{factor.value}</strong> | 
-                        Ngưỡng: <strong>{factor.threshold}</strong>
+                        Giá trị: <strong>{factor.value}</strong> | Ngưỡng: <strong>{factor.threshold}</strong>
                       </p>
                       <p className="text-sm leading-relaxed" style={{ color: '#1F6F5F' }}>
                         {factor.reasoning}
@@ -682,14 +522,15 @@ export default function SimulatorPage() {
           </div>
         )}
 
-        <div className="mt-6 bg-[#111827] rounded-2xl overflow-hidden shadow-xl" style={{ border: '1px solid #1F6F5F30' }}>
+        {/* ─── Agent Action Log ─── */}
+        <div className="mt-2 bg-[#111827] rounded-2xl overflow-hidden shadow-xl" style={{ border: '1px solid #1F6F5F30' }}>
           <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             <div>
               <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: '#60a5fa' }}>
                 Hậu Trường Agent
               </p>
               <p className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                Nhật ký quyết định và hành động mới nhất
+                Nhật ký quyết định và hành động mới nhất — tự động mỗi 10 giây
               </p>
             </div>
             <span className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>
@@ -701,13 +542,14 @@ export default function SimulatorPage() {
             {!actionLogs.length && (
               <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)' }}>
                 <p className="text-sm" style={{ color: 'rgba(255,255,255,0.65)' }}>
-                  Chưa có lịch sử hành động. Hãy chạy mô phỏng để xem quá trình suy luận.
+                  Chưa có lịch sử hành động. Hệ thống đang chờ dữ liệu từ Wokwi ESP32...
                 </p>
               </div>
             )}
 
             {actionLogs.slice(0, 8).map((log) => (
-              <div key={log.id} className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <div key={log.id} className="rounded-xl p-4"
+                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
                 <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="text-xs font-bold" style={{ color: '#6FCF97' }}>
                     {log.action || 'NO_ACTION'} · {log.actor || 'AI_AGENT'}
@@ -723,6 +565,7 @@ export default function SimulatorPage() {
             ))}
           </div>
         </div>
+
       </div>
     </div>
   );
