@@ -9,8 +9,8 @@
  * 5. Inform next agent decisions
  */
 
-const { getDb } = require("../config/mongodb");
-const fbdb = require("../config/firebase");
+const { getDb } = require("../../config/mongodb");
+const fbdb = require("../../config/firebase");
 
 /**
  * Log action with predictions for later evaluation

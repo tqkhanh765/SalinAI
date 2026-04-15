@@ -1,4 +1,4 @@
-const db = require("../config/firebase");
+const db = require("../../config/firebase");
 const { CONTROL_MODES, VALVE_STATES } = require("./farmPayloadMapper");
 
 function createValidationError(error, allowed) {

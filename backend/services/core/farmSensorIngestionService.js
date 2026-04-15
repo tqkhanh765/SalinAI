@@ -1,6 +1,6 @@
-const db = require("../config/firebase");
-const { fetchWeatherData } = require("./weatherService");
-const { getTideData } = require("./tideService");
+const db = require("../../config/firebase");
+const { fetchWeatherData } = require("../external/weatherService");
+const { getTideData } = require("../external/tideService");
 const { persistSensorHistoryPoint } = require("./farmHistoryService");
 
 async function ingestSensorPayload(payload) {
@@ -21,13 +21,7 @@ async function ingestSensorPayload(payload) {
   await db.ref("sensor_data").set(enrichedPayload);
   await persistSensorHistoryPoint(enrichedPayload);
 
-  await db.ref("action_logs").push({
-    timestamp: new Date().toISOString(),
-    actor: "USER",
-    action: "NO_ACTION",
-    reason: `Sensor trigger submitted from IoT hardware. Salinity=${enrichedPayload.salinity}, Moisture=${enrichedPayload.moisture}, Stage=${enrichedPayload.crop_stage}`,
-    sensor_snapshot: enrichedPayload,
-  });
+
 
   return enrichedPayload;
 }

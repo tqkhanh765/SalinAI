@@ -1,7 +1,7 @@
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { researcherTools, orchestratorTools } = require("./tools");
 const fbdb = require("../config/firebase");
-const { logActionWithPrediction } = require("../services/outcomeService");
+const { logActionWithPrediction } = require("../services/ai/outcomeService");
 
 const llm = new ChatGoogleGenerativeAI({
   model: "gemini-2.5-flash", 

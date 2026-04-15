@@ -1,4 +1,4 @@
-const { getDb } = require("../config/mongodb");
+const { getDb } = require("../../config/mongodb");
 const { toNumber } = require("./farmPayloadMapper");
 
 const SENSOR_HISTORY_COLLECTION = "sensor_history";
@@ -10,7 +10,7 @@ async function getLatestSensorHistory(limit = 30) {
 
     const docs = await mongo
       .collection(SENSOR_HISTORY_COLLECTION)
-      .find({}, { projection: { _id: 0, timestamp: 1, salinity: 1, moisture: 1 } })
+      .find({}, { projection: { _id: 0, timestamp: 1, salinity: 1, moisture: 1, river_water_level: 1 } })
       .sort({ timestamp: -1 })
       .limit(limit)
       .toArray();

@@ -42,25 +42,25 @@ const WeatherIcon = ({ condition }) => {
   const icons = {
     Sunny: (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/>
-        <line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/>
-        <line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        <circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" />
+        <line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" />
+        <line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
       </svg>
     ),
     'Heavy Rain': (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="16" y1="13" x2="16" y2="21"/><line x1="8" y1="13" x2="8" y2="21"/>
-        <line x1="12" y1="15" x2="12" y2="23"/>
-        <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/>
+        <line x1="16" y1="13" x2="16" y2="21" /><line x1="8" y1="13" x2="8" y2="21" />
+        <line x1="12" y1="15" x2="12" y2="23" />
+        <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25" />
       </svg>
     ),
     Drought: (
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 2v1M12 21v1M4.22 4.22l.707.707M18.362 18.362l.707.707M2 12h1M21 12h1M4.22 19.78l.707-.707M18.362 5.638l.707-.707"/>
-        <path d="M12 6 C12 6 7 12 7 15 C7 17.76 9.24 20 12 20 C14.76 20 17 17.76 17 15 C17 12 12 6 12 6Z" fill="currentColor" opacity="0.15" stroke="currentColor"/>
-        <line x1="3" y1="3" x2="21" y2="21" stroke="#EB5757" strokeWidth="2"/>
+        <path d="M12 2v1M12 21v1M4.22 4.22l.707.707M18.362 18.362l.707.707M2 12h1M21 12h1M4.22 19.78l.707-.707M18.362 5.638l.707-.707" />
+        <path d="M12 6 C12 6 7 12 7 15 C7 17.76 9.24 20 12 20 C14.76 20 17 17.76 17 15 C17 12 12 6 12 6Z" fill="currentColor" opacity="0.15" stroke="currentColor" />
+        <line x1="3" y1="3" x2="21" y2="21" stroke="#EB5757" strokeWidth="2" />
       </svg>
     ),
   };
@@ -90,27 +90,26 @@ const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading
 
       {/* Valve icon */}
       <div
-        className={`relative w-20 h-20 md:w-24 md:h-24 rounded-full flex items-center justify-center mb-4 transition-all duration-700 ${
-          isLoading ? '' : valveOpen ? 'pulse-safe' : 'pulse-danger'
-        }`}
+        className={`relative w-20 h-20 md:w-24 md:h-24 rounded-full flex items-center justify-center mb-4 transition-all duration-700 ${isLoading ? '' : valveOpen ? 'pulse-safe' : 'pulse-danger'
+          }`}
         style={{ background: 'rgba(255,255,255,0.2)', border: '3px solid rgba(255,255,255,0.4)' }}
       >
         {isLoading ? (
           <svg className="animate-spin w-10 h-10 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
           </svg>
         ) : (
           <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             {valveOpen ? (
               <>
-                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-                <path d="M12 8v4l3 3" stroke="white" strokeWidth="2.5"/>
-                <circle cx="12" cy="12" r="3" fill="white" opacity="0.3"/>
+                <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                <path d="M12 8v4l3 3" stroke="white" strokeWidth="2.5" />
+                <circle cx="12" cy="12" r="3" fill="white" opacity="0.3" />
               </>
             ) : (
               <>
-                <circle cx="12" cy="12" r="10"/>
-                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>
+                <circle cx="12" cy="12" r="10" />
+                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
               </>
             )}
           </svg>
@@ -172,14 +171,14 @@ export default function SimulatorPage() {
   }, [actionLogs]);
 
   // Live sensor readings from Firebase (pushed by ESP32)
-  const liveSalinity   = Number(sensorData.salinity ?? sensorData.river_salinity ?? 0);
-  const liveMoisture   = Number(sensorData.soil_moisture ?? sensorData.moisture ?? 0);
-  const liveWaterFlow  = Number(sensorData.water_flow ?? 0);
-  const liveTemp       = sensorData.temperature ?? sensorData.external_forecast?.temperature ?? null;
-  const liveHumidity   = sensorData.humidity ?? sensorData.external_forecast?.humidity ?? null;
-  const liveRain24h    = sensorData.rainfall_24h ?? sensorData.external_forecast?.rainfall_24h ?? null;
-  const liveTide       = sensorData.tide_status ?? sensorData.external_forecast?.tide_status ?? null;
-  const liveCropStage  = sensorData.crop_stage ?? 'VEGETATIVE';
+  const liveSalinity = Number(sensorData.salinity ?? sensorData.river_salinity ?? 0);
+  const liveMoisture = Number(sensorData.soil_moisture ?? sensorData.moisture ?? 0);
+  const liveWaterFlow = Number(sensorData.water_flow ?? 0);
+  const liveTemp = sensorData.temperature ?? sensorData.external_forecast?.temperature ?? null;
+  const liveHumidity = sensorData.humidity ?? sensorData.external_forecast?.humidity ?? null;
+  const liveRain24h = sensorData.rainfall_24h ?? sensorData.external_forecast?.rainfall_24h ?? null;
+  const liveTide = sensorData.tide_status ?? sensorData.external_forecast?.tide_status ?? null;
+  const liveCropStage = sensorData.crop_stage ?? 'VEGETATIVE';
 
   const valveOpen = actuator.valve_state === 'OPEN';
   const isProcessing = aiStatus.is_processing;
@@ -231,7 +230,7 @@ export default function SimulatorPage() {
               <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
                 style={{ background: '#2FA08415' }}>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2FA084" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+                  <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
                 </svg>
               </div>
               <div>
@@ -314,8 +313,8 @@ export default function SimulatorPage() {
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
                   style={{ background: '#6FCF9715' }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#6FCF97" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
-                    <path d="M9 12l2 2 4-4"/>
+                    <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z" />
+                    <path d="M9 12l2 2 4-4" />
                   </svg>
                 </div>
                 <div>
@@ -345,8 +344,8 @@ export default function SimulatorPage() {
                   <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
                     style={{ background: valveOpen ? '#6FCF9715' : '#1F6F5F15' }}>
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={valveOpen ? '#6FCF97' : '#1F6F5F'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-                      <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                     </svg>
                   </div>
                   <div>
@@ -373,7 +372,7 @@ export default function SimulatorPage() {
             }}>
               {isProcessing ? (
                 <svg className="animate-spin w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="#B45309" strokeWidth="2">
-                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
                 </svg>
               ) : (
                 <span className="text-xl">🤖</span>

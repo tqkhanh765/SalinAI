@@ -8,7 +8,7 @@
  */
 
 const NodeCache = require('node-cache');
-const fbdb = require("../config/firebase");
+const { getLatestSensorHistory } = require("../core/farmHistoryService");
 
 const cache = new NodeCache({ stdTTL: 600 }); // 10 min cache
 const CACHE_KEY = 'tide_data';
@@ -22,9 +22,7 @@ const CACHE_KEY = 'tide_data';
 async function inferTideStatus(currentWaterLevel, weather = {}) {
     try {
         // Get historical water level data (last few readings)
-        const historicalRef = fbdb.ref("sensor_data_history").limitToLast(5);
-        const snapshot = await historicalRef.once("value");
-        const history = snapshot.val() || [];
+        const history = await getLatestSensorHistory(5);
 
         // Calculate water level trend
         const levels = history

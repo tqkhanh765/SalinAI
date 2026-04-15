@@ -13,7 +13,7 @@ function buildDetailedExplanation(sensorData, weatherData, tideData, guidelines,
     // ─── Factor 1: Salinity ──────────────────────────────────────────────
     const salinity = sensorData?.salinity || 0;
     const salinityThreshold = getSalinityThreshold(sensorData?.crop_stage);
-    
+
     if (salinity > salinityThreshold) {
         factors.push({
             name: "🧂 Salinity (Mặn)",
@@ -36,7 +36,7 @@ function buildDetailedExplanation(sensorData, weatherData, tideData, guidelines,
     const moisture = sensorData?.moisture || 0;
     let moistureStatus = "✅ GOOD";
     let moistureReasoning = "Độ ẩm đất bình thường";
-    
+
     if (moisture < 40) {
         moistureStatus = "🔴 DRY";
         moistureReasoning = "Đất quá khô, cây cần nước!";

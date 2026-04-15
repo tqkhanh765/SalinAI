@@ -4,7 +4,7 @@ const router = express.Router();
 // ─── Dependencies ─────────────────────────────────────────────────────────────
 const db = require("../config/firebase");
 const mongoConfig = require("../config/mongodb");
-const { fetchWeatherData } = require("../services/weatherService");
+const { fetchWeatherData } = require("../services/external/weatherService");
 
 /**
  * GET /api/health
