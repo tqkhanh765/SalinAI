@@ -7,10 +7,13 @@
 #define WIFI_SSID "Wokwi-GUEST"
 #define WIFI_PASSWORD ""
 
-// ─── Firebase RTDB Base URL ──────────────────────────────────────────────────
-// ESP32 (Wokwi) writes directly to Firebase RTDB.
-// The backend SSE stream reads from the same paths and forwards to the Frontend.
-String rtdbBase = "https://salin-ai-hackathon-default-rtdb.asia-southeast1.firebasedatabase.app";
+// ─── Backend URL (Deployed on Render) ────────────────────────────────────────
+// Wokwi sends data to the backend, which enriches it with Weather/Tide APIs,
+// stores to Firebase, triggers AI Agent, and streams to Frontend.
+String backendURL = "https://salinai.onrender.com/api/ingest";
+
+// Firebase RTDB (for low-latency actuator state reads only)
+String rtdbURL = "https://salin-ai-hackathon-default-rtdb.asia-southeast1.firebasedatabase.app";
 
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 DHTesp dht;
@@ -51,7 +54,7 @@ void setup() {
   }
   Serial.println("\nWiFi Connected!");
 
-  // Bypass SSL cert verification (required for Wokwi + Firebase HTTPS)
+  // Bypass SSL cert verification (required for Wokwi HTTPS)
   client.setInsecure();
 
   lcd.clear();
@@ -59,31 +62,30 @@ void setup() {
   delay(1000);
 }
 
-// ─── Push sensor data to Firebase /sensor_data ───────────────────────────────
-// This path is the same one the backend reads + streams to the Frontend SSE.
-void pushSensorData(float sal, float mois, float flow, String triggerType) {
+// ─── POST sensor data to Backend /api/ingest ─────────────────────────────────
+// Backend will: enrich with Weather API, save to Firebase, trigger AI if needed
+void sendToBackend(float sal, float mois, String triggerType) {
   client.setInsecure();
   HTTPClient http;
-
-  // Flat JSON matching backend schema
-  String json = "{";
-  json += "\"salinity\":"        + String(sal,  2) + ",";
-  json += "\"moisture\":"        + String(mois, 1) + ",";
-  json += "\"water_flow\":"      + String(flow, 1) + ",";
-  json += "\"crop_stage\":\"VEGETATIVE\",";
-  json += "\"timestamp\":\"" + String(millis()) + "\"";
-  json += "}";
-
-  // PUT replaces the full sensor_data node with fresh values
-  http.begin(client, rtdbBase + "/sensor_data.json");
+  http.begin(client, backendURL);
   http.addHeader("Content-Type", "application/json");
 
-  int code = http.PUT(json);
+  // Flat JSON - matches backend /api/ingest schema
+  String json = "{";
+  json += "\"salinity\":" + String(sal, 2) + ",";
+  json += "\"moisture\":" + String(mois, 1) + ",";
+  json += "\"crop_stage\":\"VEGETATIVE\"";
+  json += "}";
+
+  Serial.println("[HTTP] POST -> " + json);
+  int code = http.POST(json);
+
   if (code > 0) {
-    Serial.printf("[Firebase] Push OK (%s): %d | Sal:%.1f Soil:%.0f\n",
-                  triggerType.c_str(), code, sal, mois);
+    Serial.printf("[HTTP] Backend OK: %d\n", code);
+    String response = http.getString();
+    Serial.println("[HTTP] Response: " + response.substring(0, 100));
   } else {
-    Serial.printf("[Firebase] Push Error: %s\n", http.errorToString(code).c_str());
+    Serial.printf("[HTTP] Backend Error: %s\n", http.errorToString(code).c_str());
   }
   http.end();
 }
@@ -92,7 +94,7 @@ void pushSensorData(float sal, float mois, float flow, String triggerType) {
 void fetchActuatorState() {
   client.setInsecure();
   HTTPClient http;
-  http.begin(client, rtdbBase + "/actuator/valve_state.json");
+  http.begin(client, rtdbURL + "/actuator/valve_state.json");
   int code = http.GET();
   if (code > 0) {
     String payload = http.getString();
@@ -113,7 +115,6 @@ void loop() {
 
     float salinity     = (analogRead(SALINITY_PIN)      / 4095.0) * 5.0;
     float soilMoisture = (analogRead(SOIL_MOISTURE_PIN) / 4095.0) * 100.0;
-    float waterFlow    = (analogRead(WATER_FLOW_PIN)    / 4095.0) * 50.0;
 
     bool isAnomaly = false;
     String triggerType = "";
@@ -134,7 +135,8 @@ void loop() {
     }
 
     if (isAnomaly) {
-      pushSensorData(salinity, soilMoisture, waterFlow, triggerType);
+      Serial.printf("[Ingest] Triggering push (%s)...\n", triggerType.c_str());
+      sendToBackend(salinity, soilMoisture, triggerType);
       lastSalinity = salinity;
       lastMoisture = soilMoisture;
     }
@@ -151,10 +153,10 @@ void loop() {
 
     // Update LCD
     char lcdBuf[21];
-    snprintf(lcdBuf, sizeof(lcdBuf), "Sal:%.1fg Flw:%.1f", salinity, waterFlow);
+    snprintf(lcdBuf, sizeof(lcdBuf), "Sal:%.1fg M:%.0f%%", salinity, soilMoisture);
     lcd.setCursor(0, 0); lcd.print(lcdBuf);
 
-    snprintf(lcdBuf, sizeof(lcdBuf), "Soil:%.0f%% V:%-5s", soilMoisture, currentAction.c_str());
+    snprintf(lcdBuf, sizeof(lcdBuf), "Valve:%-6s[%-4s]", currentAction.c_str(), triggerType == "" ? "IDLE" : "PUSH");
     lcd.setCursor(0, 1); lcd.print(lcdBuf);
 
     lcd.setCursor(0, 2);
