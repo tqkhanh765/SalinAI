@@ -202,6 +202,67 @@ Response 500:
 }
 ```
 
+### POST /api/ingest (Unified Ingestion)
+Unified endpoint for IoT hardware. Handles real-time data sync and selective AI Agent triggering.
+
+**Strict Validation Rules:**
+- **Numerical Integrity:** Rejects `NaN`, `undefined`, or `null` for numeric sensors.
+- **Fail-Fast Values:** Rejects `0` for temperature, salinity, or moisture (treated as hardware default/error).
+- **Error Codes:** Rejects negative values (e.g., `-1`, `-127`) often used by sensors to indicate disconnect.
+- **Logical Bounds:** Rejects `moisture > 100`.
+
+Request body:
+
+```json
+{
+  "sensor_telemetry": {
+    "river_salinity": 1.5,
+    "soil_moisture": 70.0,
+    "river_water_level": 1.2
+  },
+  "station_metadata": {
+    "growth_stage": "VEGETATIVE"
+  }
+}
+```
+
+**AI Trigger Filter (Delta Rules):**
+The AI Agent is only invoked if:
+1. `abs(current_salinity - last_salinity) > 0.5` ppt.
+2. `abs(current_moisture - last_moisture) > 10.0` %.
+3. External weather changes to a "risky" condition (e.g., Storm).
+
+**Response 200 (Success - AI Triggered):**
+
+```json
+{
+  "status": "OK",
+  "message": "Data synced. AI reasoning triggered.",
+  "trigger": "Salinity spike detected (Delta: 0.65 ppt).",
+  "updated": { ... }
+}
+```
+
+**Response 200 (Success - UI Sync Only):**
+
+```json
+{
+  "status": "OK",
+  "message": "Data synced to UI. AI execution skipped (no significant delta).",
+  "updated": { ... }
+}
+```
+
+**Response 400 (Validation Error):**
+
+```json
+{
+  "error": "Sensor Error",
+  "details": "Payload contains default hardware values or error codes.",
+  "invalidFields": ["salinity (must be > 0)"]
+}
+```
+
 ### POST /api/override
 Manual valve and mode override endpoint.
 

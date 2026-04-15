@@ -25,7 +25,7 @@ async function ingestSensorPayload(payload) {
     timestamp: new Date().toISOString(),
     actor: "USER",
     action: "NO_ACTION",
-    reason: `Sensor trigger submitted from simulator. Salinity=${enrichedPayload.salinity}, Moisture=${enrichedPayload.moisture}, Stage=${enrichedPayload.crop_stage}`,
+    reason: `Sensor trigger submitted from IoT hardware. Salinity=${enrichedPayload.salinity}, Moisture=${enrichedPayload.moisture}, Stage=${enrichedPayload.crop_stage}`,
     sensor_snapshot: enrichedPayload,
   });
 

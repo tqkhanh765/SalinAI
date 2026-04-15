@@ -1,18 +1,18 @@
 const express = require("express");
 const router = express.Router();
 const farmController = require("../controllers/farmController");
-const { formatSimulatorDisplay } = require("../services/explanationService");
+const { formatDecisionDisplay } = require("../services/explanationService");
 const db = require("../config/firebase");
 
 router.get("/api/farm-state", farmController.getFarmState);
 router.get("/api/farm-stream", farmController.streamFarmState);
-router.post("/api/sensor-data", farmController.submitSensorData);
+router.post("/api/ingest", farmController.ingestData);
 router.patch("/api/control-mode", farmController.updateControlMode);
 router.post("/api/override", farmController.overrideActuator);
 
 /**
  * GET /api/decision-details
- * Return formatted decision data for Simulator page
+ * Return formatted decision data for Dashboard
  * Includes: all metrics, weather, tide, AI reasoning, guidelines
  */
 router.get("/api/decision-details", async (req, res) => {
@@ -42,7 +42,7 @@ router.get("/api/decision-details", async (req, res) => {
         const guidelines = latestAction.retrieval?.source_ids || [];
 
         // Format for frontend
-        const formatted = formatSimulatorDisplay(
+        const formatted = formatDecisionDisplay(
             sensorData,
             externalForecast,
             tideData,

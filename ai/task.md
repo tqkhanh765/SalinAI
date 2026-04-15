@@ -90,6 +90,13 @@ Target: Apr 18-19 | Owner: All
 - [ ] Task 7.2 🟡 [A] Demo script with 3 scenarios: salinity spike, weather risk, manual override.
 - [ ] Task 7.3 🟡 [B] Demo visual walkthrough with Langflow canvas and source attribution from retrieval.
 
+## Phase 8: Architectural Shift (v5.0)
+Target: Apr 15 | Owner: All
+
+- [x] Task 8.1 🔴 [C] Shift to Event-Driven Push: Delete `wokwi-poller.js` and remove legacy listeners.
+- [x] Task 8.2 🔴 [C] Implement `POST /api/ingest` with strict validation (fail-fast on 0, -ve, NaN) and AI Trigger Filter (delta-based).
+- [x] Task 8.3 🔴 [B] Update Arduino `sketch.ino` for 5-min heartbeat and hardware-level anomaly trigger.
+
 ## Acceptance Criteria (Hard Gates)
 
 - [ ] AC-1: RAG uses only MongoDB Atlas Vector Search.
@@ -98,6 +105,9 @@ Target: Apr 18-19 | Owner: All
 - [ ] AC-4: AI Agentic naming is used across docs and user-facing labels.
 - [ ] AC-5: MANUAL mode prevents actuator writes from AI Agentic tools.
 - [ ] AC-6: E2E anomaly handling remains under 3 seconds in MVP environment.
+- [x] AC-7: No polling services active in backend.
+- [x] AC-8: `POST /api/ingest` rejects `0` and negative values with 400.
+- [x] AC-9: AI Agent only triggered on significant sensor delta or extreme weather.
 
 ## Sprint Timeline
 
@@ -108,5 +118,6 @@ Apr 12-14 -> Phase 3 AI Agentic runtime chain
 Apr 13-14 -> Phase 4 Langflow visual parity
 Apr 14-15 -> Phase 5 API and chat contracts
 Apr 15-18 -> Phase 6 validation and performance
+Apr 15    -> Phase 8 Architectural Shift (v5.0)
 Apr 18-19 -> Phase 7 deployment and demo readiness
 ```

@@ -1,30 +1,29 @@
-# System Architecture (v4.0 - Agentic RAG + Weather + Self-Learning)
+# System Architecture (v5.0 - Event-Driven Push + AI Trigger Filter)
 
 ## 1. High-Level Architecture
 SalinAI is a 3-layer event-driven irrigation intelligence system.
 
 1. **Realtime state bus:** Firebase Realtime DB (sensor, actuator, ai_status, action_logs).
 2. **Decision intelligence:** Node.js backend + Gemini + MongoDB Atlas Vector Search.
-3. **User interfaces:** React dashboard/simulator + hardware endpoint behavior.
+3. **User interfaces:** React dashboard.
 
 ## 2. Runtime Layers
 
-### Layer A: Data Ingestion
+### Layer A: Data Ingestion (Push Architecture)
 
 | Component | Technology | Responsibility |
 |---|---|---|
-| Simulator / Device payload | React + ESP32-style schema | Sends nested payload (`sensor_telemetry`, `actuator`, `station_metadata`, `external_forecast`) |
-| Input normalization & validation | `farmPayloadMapper` | Normalizes salinity/moisture/stage/water-level; validates against CROP_STAGES, CONTROL_MODES, VALVE_STATES |
-| Sensor ingestion pipeline | `farmSensorIngestionService` | Orchestrates weather/tide enrichment, MongoDB persistence, Firebase write |
-| Weather enrichment | Open-Meteo + cache (via `weatherService`) | Adds `temperature`, `humidity`, `rainfall_24h`, weather code |
-| Tide enrichment | Tide inference (`tideService`) | Adds inferred `tide_status`, confidence, direction |
-| History persistence | `farmHistoryService` + MongoDB | Stores sensor points in `sensor_history` collection for chart continuity |
+| IoT Hardware (ESP32) | C++ (Arduino) | Pushes data to `POST /api/ingest` every 5m or on anomaly. |
+| Ingestion Endpoint | Express (`ingestData`) | Unified endpoint for Hardware; applies strict validation. |
+| Strict Validator | Node.js | Rejects `0`, `-ve`, `NaN`, `null`, `moisture > 100` (Fail-Fast). |
+| AI Trigger Filter | Logic Layer | Compares deltas (Sal > 0.5 ppt, Mois > 10%) to decide if Agent should run. |
+| Sensor ingestion pipeline | `farmSensorIngestionService` | Enriches with weather/tide; persists to Firebase/MongoDB. |
 
 ### Layer B: Agentic Decision Core
 
 | Component | File(s) | Responsibility |
 |---|---|---|
-| Firebase listener trigger | `backend/listeners/firebase-listener.js` | Detects sensor updates and triggers agentic flow |
+| Agent Trigger | `farmController.js` | Invoked directly by Ingestion Endpoint only when delta filters pass. |
 | Agent orchestration | `backend/agent/agentOrchestration.js` | Coordinates retrieval + reasoning + safe output |
 | Retrieval module | `backend/agent/agentRetrieval.js` | Vector search against `guideline_documents` |
 | Agent utilities/fallback | `backend/agent/agentUtils.js` | Timeout guard, fallback decision, resilience |
@@ -36,7 +35,7 @@ SalinAI is a 3-layer event-driven irrigation intelligence system.
 |---|---|---|
 | Control write path | Firebase actuator node | Writes `valve_state` only when policy allows |
 | Manual safety lock | Backend tool guard | In `MANUAL`, AI may reason but write is blocked |
-| Dashboard + Simulator | React (Vite) | Realtime monitoring, manual controls, decision explanation |
+| Dashboard | React (Vite) | Realtime monitoring, manual controls, decision explanation |
 | Decision explanation API | `/api/decision-details` | Returns fully formatted human-readable analysis |
 
 ## 3. Core Data Stores
@@ -52,27 +51,23 @@ SalinAI is a 3-layer event-driven irrigation intelligence system.
 - `action_logs`: long-term decision audit and retrieval trace metadata.
 - `sensor_history`: persisted chart history for dashboard reload/cross-device continuity.
 
-## 4. Decision Flow (Current)
+## 4. Decision Flow (New Push Mechanism)
 
-1. Sensor payload is submitted to `POST /api/sensor-data` (handled by thin `farmController`).
-2. `farmPayloadMapper` normalizes nested schema (sensor_telemetry, actuator, station_metadata).
-3. `farmSensorIngestionService` enriches with weather (Open-Meteo) + tide context in parallel.
-4. Enriched snapshot is committed: Firebase `sensor_data` + MongoDB `sensor_history`.
-5. Firebase listener in `firebase-listener.js` detects change and triggers agent processing.
-6. `agentRetrieval` gets top relevant guidelines from MongoDB Vector Search.
-7. `agentOrchestration` + Gemini 2.5 Flash reason over sensor + weather + tide + guidelines.
-8. `tools.js` enforces safety policy via control-mode gate (via `farmActuatorService`):
-   - `AUTO`: AI may execute actuator writes to Firebase.
-   - `MANUAL`: AI reasoning logged but write blocked.
-9. Action result + rationale + retrieval metadata logged to Firebase `action_logs` and MongoDB audit trail.
-10. Frontend consumes `/api/farm-state` (includes `sensorHistory` from MongoDB) and `/api/farm-stream` (SSE realtime) and `/api/decision-details` (rich explanation).
+1. **Hardware Push:** ESP32 reads sensors every 5s; pushes to `POST /api/ingest` on a 5-min heartbeat OR immediate anomaly.
+2. **Strict Validation:** Backend rejects payload if default/error values (e.g. `0`, `-1`) are detected.
+3. **Data Sync:** Valid data is enriched with Weather/Tide and synced to Firebase `sensor_data` (UI update).
+4. **AI Trigger Filter:**
+   - Compare current values with the last history point in MongoDB.
+   - **Trigger Agent ONLY if:** Salinity delta > 0.5 ppt OR Moisture delta > 10% OR Weather becomes extreme.
+5. **Agentic Loop:** If triggered, `agentRetrieval` gets guidelines -> Gemini reasons -> Tools execute.
+6. **Execution:** Result written to Firebase; ESP32 reads updated `valve_state` via direct RTDB fetch.
 
 ## 5. API Surface (Implemented)
 
 ### Farm state/control APIs
 - `GET /api/farm-state`
 - `GET /api/farm-stream` (SSE realtime stream)
-- `POST /api/sensor-data`
+- `POST /api/ingest` (Unified Ingestion)
 - `PATCH /api/control-mode`
 - `POST /api/override`
 

@@ -152,8 +152,6 @@ const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading
 export default function SimulatorPage() {
   const { actuator, aiStatus, actionLogs, sensorData } = useRealtimeFarmState();
   const [decisionDetails, setDecisionDetails] = useState(null);
-  // Countdown to next poll (10s cycle)
-  const [countdown, setCountdown] = useState(10);
 
   // Fetch decision details for display
   useEffect(() => {
@@ -169,24 +167,11 @@ export default function SimulatorPage() {
     };
 
     fetchDecisionDetails();
-    const interval = setInterval(fetchDecisionDetails, 3000);
+    const interval = setInterval(fetchDecisionDetails, 5000); // Poll decision details every 5s for dashboard
     return () => clearInterval(interval);
   }, [actionLogs]);
 
-  // Countdown timer that syncs to the 10-second polling cycle
-  useEffect(() => {
-    // Reset countdown whenever sensorData updates (poller just fired)
-    setCountdown(10);
-  }, [sensorData.timestamp]);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown((prev) => (prev <= 1 ? 10 : prev - 1));
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // Live sensor readings from Firebase (pushed by Wokwi ESP32 via wokwi-poller)
+  // Live sensor readings from Firebase (pushed by ESP32)
   const liveSalinity   = Number(sensorData.salinity ?? sensorData.river_salinity ?? 0);
   const liveMoisture   = Number(sensorData.soil_moisture ?? sensorData.moisture ?? 0);
   const liveWaterFlow  = Number(sensorData.water_flow ?? 0);
@@ -224,14 +209,14 @@ export default function SimulatorPage() {
                 background: isProcessing ? '#F2C94C20' : '#6FCF9720',
                 color: isProcessing ? '#B45309' : '#1F6F5F',
               }}>
-              {isProcessing ? '⚙️ AI đang xử lý...' : `⏱ Cập nhật sau ${countdown}s`}
+              {isProcessing ? '⚙️ AI đang phân tích...' : `📡 Đang chờ tín hiệu Push`}
             </span>
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold leading-tight" style={{ color: '#1F6F5F' }}>
-            Trình Mô Phỏng Và Hậu Trường
+            Hậu Trường Hệ Thống AI
           </h1>
           <p className="text-sm md:text-base text-gray-500 mt-1">
-            Hệ thống tự động đọc cảm biến từ Wokwi ESP32 qua Firebase và chạy AI Agent mỗi 10 giây.
+            Hệ thống nhận trực tiếp dữ liệu từ thiết bị IoT (Event-Driven) và tự động kích hoạt AI khi có biến động.
           </p>
         </div>
 
@@ -250,8 +235,8 @@ export default function SimulatorPage() {
                 </svg>
               </div>
               <div>
-                <h2 className="font-bold text-base" style={{ color: '#1F6F5F' }}>Cảm Biến Wokwi (ESP32)</h2>
-                <p className="text-xs text-gray-400">Firebase SalinAI/sensors/ · cập nhật mỗi 10s</p>
+                <h2 className="font-bold text-base" style={{ color: '#1F6F5F' }}>Cảm Biến IoT (Thực Tế)</h2>
+                <p className="text-xs text-gray-400">Firebase SalinAI/sensor_data/ · Nhận Push Event</p>
               </div>
             </div>
 
@@ -395,10 +380,10 @@ export default function SimulatorPage() {
               )}
               <div>
                 <p className="text-sm font-bold" style={{ color: isProcessing ? '#B45309' : '#1F6F5F' }}>
-                  {isProcessing ? 'SalinAI đang suy luận...' : `Chu kỳ tiếp theo sau ${countdown}s`}
+                  {isProcessing ? 'SalinAI đang suy luận...' : `Hệ thống đang hoạt động và giám sát`}
                 </p>
                 <p className="text-xs text-gray-500">
-                  Wokwi → Firebase → AI Agent → Van · Mỗi 10 giây
+                  Phần Cứng → API Ingest → AI Agent Filter → Van (Event-Driven)
                 </p>
               </div>
             </div>
@@ -530,7 +515,7 @@ export default function SimulatorPage() {
                 Hậu Trường Agent
               </p>
               <p className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                Nhật ký quyết định và hành động mới nhất — tự động mỗi 10 giây
+                Nhật ký quyết định và hành động mới nhất — theo kiến trúc Push
               </p>
             </div>
             <span className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>
@@ -542,7 +527,7 @@ export default function SimulatorPage() {
             {!actionLogs.length && (
               <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)' }}>
                 <p className="text-sm" style={{ color: 'rgba(255,255,255,0.65)' }}>
-                  Chưa có lịch sử hành động. Hệ thống đang chờ dữ liệu từ Wokwi ESP32...
+                  Chưa có lịch sử hành động. Hệ thống đang chờ tín hiệu anomly từ phần cứng...
                 </p>
               </div>
             )}

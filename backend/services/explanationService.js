@@ -176,9 +176,9 @@ function buildSummary(factors, decision) {
 }
 
 /**
- * Format for Simulator Page display
+ * Format for Dashboard display
  */
-function formatSimulatorDisplay(sensorData, weatherData, tideData, guidelines, decision, aiStatus) {
+function formatDecisionDisplay(sensorData, weatherData, tideData, guidelines, decision, aiStatus) {
     return {
         // ─── Sensor Metrics ──────────────────────────────
         sensorMetrics: {
@@ -264,7 +264,7 @@ function getMoistureStatus(moisture) {
 
 module.exports = {
     buildDetailedExplanation,
-    formatSimulatorDisplay,
+    formatDecisionDisplay,
     getSalinityThreshold,
     getStageSafetyAdvice
 };
