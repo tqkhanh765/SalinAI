@@ -24,7 +24,6 @@ async function connectMongoDB() {
     try {
       await database.collection("sensor_history").createIndex({ timestamp: -1 });
       await database.collection("action_logs").createIndex({ "prediction.evaluated_at": -1 });
-      console.log('[MongoDB] Ensured background indexes exist for collections');
     } catch (idxError) {
       console.error('[MongoDB] Warning: Failed to ensure indexes:', idxError.message);
     }
