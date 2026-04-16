@@ -7,9 +7,11 @@
 #define WIFI_SSID "Wokwi-GUEST"
 #define WIFI_PASSWORD ""
 
+// ─── Timeouts ────────────────────────────────────────────────────────────────
+const unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000;  // 15 sec for Wi-Fi
+const unsigned long HTTP_TIMEOUT_MS = 20000;          // 20 sec for HTTP requests (Chống lỗi Cold Start trên Render)
+
 // ─── Backend URL (Deployed on Render) ────────────────────────────────────────
-// Wokwi sends data to the backend, which enriches it with Weather/Tide APIs,
-// stores to Firebase, triggers AI Agent, and streams to Frontend.
 String backendURL = "https://salinai.onrender.com/api/ingest";
 
 // Firebase RTDB (for low-latency actuator state reads only)
@@ -35,6 +37,27 @@ const float MOIS_THRESHOLD = 10.0;
 float lastSalinity  = -1.0;
 float lastMoisture  = -1.0;
 String currentAction = "OPEN";
+unsigned long lastFetchActuator = 0;
+const unsigned long FETCH_ACTUATOR_INTERVAL = 30000;  // Fetch every 30 sec
+
+bool connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_CONNECT_TIMEOUT_MS) {
+    delay(500);
+    Serial.print(".");
+  }
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi Connected!");
+    return true;
+  }
+  
+  Serial.println("\nWiFi timeout or failed.");
+  return false;
+}
 
 void setup() {
   Serial.begin(115200);
@@ -47,67 +70,114 @@ void setup() {
   lcd.setCursor(0, 0);
   lcd.print("Connecting Wi-Fi...");
 
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("\nWiFi Connected!");
+  bool wifi_ok = connectWiFi();
 
   // Bypass SSL cert verification (required for Wokwi HTTPS)
   client.setInsecure();
+  client.setTimeout(HTTP_TIMEOUT_MS);
 
   lcd.clear();
-  lcd.print("SalinAI Online!");
+  if (wifi_ok) {
+    lcd.print("SalinAI Online!");
+  } else {
+    lcd.print("Offline Mode");
+  }
   delay(1000);
 }
 
 // ─── POST sensor data to Backend /api/ingest ─────────────────────────────────
-// Backend will: enrich with Weather API, save to Firebase, trigger AI if needed
 void sendToBackend(float sal, float mois, String triggerType) {
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Ingest] Wi-Fi disconnected, skipping POST.");
+    return;
+  }
+  
+  // Gọi Insecure ngay trước khi request
   client.setInsecure();
-  HTTPClient http;
-  http.begin(client, backendURL);
-  http.addHeader("Content-Type", "application/json");
 
-  // Flat JSON - matches backend /api/ingest schema
+  HTTPClient http;
+  // Chỉ sử dụng setTimeout, đã gỡ bỏ setReadTimeout và setConnectTimeout để không bị lỗi build
+  http.setTimeout(HTTP_TIMEOUT_MS); 
+  
+  if (!http.begin(client, backendURL)) {
+    Serial.println("[Ingest] Failed to begin HTTP connection.");
+    http.end();
+    return;
+  }
+  
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("User-Agent", "ESP32-SalinAI"); 
+
+  // Đã sửa lại key json về "salinity" và "moisture" để tránh lỗi 400 từ backend
   String json = "{";
   json += "\"salinity\":" + String(sal, 2) + ",";
   json += "\"moisture\":" + String(mois, 1) + ",";
   json += "\"crop_stage\":\"VEGETATIVE\"";
   json += "}";
 
-  Serial.println("[HTTP] POST -> " + json);
+  Serial.println("[Ingest] POST -> " + json);
   int code = http.POST(json);
 
   if (code > 0) {
-    Serial.printf("[HTTP] Backend OK: %d\n", code);
+    Serial.printf("[Ingest] Backend OK: %d\n", code);
     String response = http.getString();
-    Serial.println("[HTTP] Response: " + response.substring(0, 100));
+    if (response.length() > 0) {
+      Serial.println("[Ingest] Response: " + response.substring(0, 100));
+    }
   } else {
-    Serial.printf("[HTTP] Backend Error: %s\n", http.errorToString(code).c_str());
+    Serial.printf("[Ingest] Backend Error: %s\n", http.errorToString(code).c_str());
   }
+  
   http.end();
 }
 
 // ─── Read actuator valve state from Firebase /actuator ───────────────────────
 void fetchActuatorState() {
-  client.setInsecure();
-  HTTPClient http;
-  http.begin(client, rtdbURL + "/actuator/valve_state.json");
-  int code = http.GET();
-  if (code > 0) {
-    String payload = http.getString();
-    payload.replace("\"", "");
-    if (payload == "CLOSE" || payload == "OPEN") {
-      currentAction = payload;
-    }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("[Actuator] Wi-Fi disconnected, skipping fetch.");
+    return;
   }
+  
+  client.setInsecure();
+
+  HTTPClient http;
+  http.setTimeout(HTTP_TIMEOUT_MS); 
+  
+  if (!http.begin(client, rtdbURL + "/actuator/valve_state.json")) {
+    Serial.println("[Actuator] Failed to begin HTTP connection.");
+    http.end();
+    return;
+  }
+  
+  int code = http.GET();
+  if (code == 200) {
+    String payload = http.getString();
+    payload.trim();
+    payload.replace("\"", "");
+    
+    // Đã sửa "CLOSE" thành "CLOSED"
+    if (payload == "CLOSED" || payload == "OPEN") {
+      currentAction = payload;
+      Serial.printf("[Actuator] Updated to: %s\n", currentAction.c_str());
+    } else {
+      Serial.printf("[Actuator] Invalid payload: %s\n", payload.c_str());
+    }
+  } else if (code > 0) {
+    Serial.printf("[Actuator] HTTP %d\n", code);
+  } else {
+    Serial.printf("[Actuator] Error: %s\n", http.errorToString(code).c_str());
+  }
+  
   http.end();
 }
 
 void loop() {
   static unsigned long lastRead = 0;
+
+  // Reconnect Wi-Fi if disconnected
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+  }
 
   // Read sensors every 5 seconds
   if (millis() - lastRead > 5000) {
@@ -141,11 +211,15 @@ void loop() {
       lastMoisture = soilMoisture;
     }
 
-    // Always fetch latest actuator command from Firebase
-    fetchActuatorState();
+    // Fetch actuator state every 30 seconds to reduce network load
+    if (millis() - lastFetchActuator > FETCH_ACTUATOR_INTERVAL) {
+      lastFetchActuator = millis();
+      fetchActuatorState();
+    }
 
     // Actuator Control
-    if (currentAction == "CLOSE") {
+    // Đã sửa "CLOSE" thành "CLOSED"
+    if (currentAction == "CLOSED") {
       digitalWrite(VALVE_LED_PIN, HIGH);
     } else {
       digitalWrite(VALVE_LED_PIN, LOW);
@@ -160,7 +234,7 @@ void loop() {
     lcd.setCursor(0, 1); lcd.print(lcdBuf);
 
     lcd.setCursor(0, 2);
-    lcd.print("Status: Cloud Sync  ");
+    lcd.print(WiFi.status() == WL_CONNECTED ? "Status: Cloud Sync  " : "Status: Offline     ");
 
     lcd.setCursor(0, 3);
     lcd.print(triggerType == "" ? "Mode: IDLE          " : "Mode: " + triggerType + "   ");
