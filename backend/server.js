@@ -41,11 +41,9 @@ app.use(express.json());
 // ─── Routes ───────────────────────────────────────────────────────────────────
 const healthRoute = require("./routes/health");
 const farmRoute = require("./routes/farm");
-const performanceRoute = require("./routes/performance");
 
 app.use(healthRoute);
 app.use(farmRoute);
-app.use(performanceRoute);
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
