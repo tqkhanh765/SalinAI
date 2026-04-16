@@ -389,162 +389,78 @@ export default function SimulatorPage() {
           </div>
         </div>
 
-        {/* ─── DECISION ANALYSIS SECTION ─── */}
-        {decisionDetails && (
-          <div className="mt-2 mb-5">
-            <h2 className="text-xl font-bold mb-4" style={{ color: '#1F6F5F' }}>
-              📊 Phân Tích Quyết Định AI
-            </h2>
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-5">
-              {/* Column 1: Sensor Metrics */}
-              <div className="bg-white rounded-xl p-5 border" style={{ borderColor: '#1F6F5F20' }}>
-                <p className="font-bold text-sm mb-4" style={{ color: '#1F6F5F' }}>🌾 Dữ Liệu Cảm Biến</p>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Độ Mặn</span>
-                    <span className="font-bold">{Number(decisionDetails.sensorMetrics?.salinity?.value ?? 0).toFixed(1)} ppt</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Độ Ẩm Đất</span>
-                    <span className="font-bold">{Number(decisionDetails.sensorMetrics?.moisture?.value ?? 0).toFixed(1)}%</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Mực Nước Sông</span>
-                    <span className="font-bold">{Number(decisionDetails.sensorMetrics?.water_level?.value ?? 0).toFixed(2)} m</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Giai Đoạn Cây</span>
-                    <span className="font-bold text-xs px-2 py-1 rounded" style={{ background: '#2FA08420', color: '#1F6F5F' }}>
-                      {decisionDetails.sensorMetrics?.crop_stage?.value ?? '--'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Column 2: Weather & Tide */}
-              <div className="bg-white rounded-xl p-5 border" style={{ borderColor: '#1F6F5F20' }}>
-                <p className="font-bold text-sm mb-4" style={{ color: '#1F6F5F' }}>☀️ Thời Tiết & Thủy Triều</p>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Nhiệt Độ</span>
-                    <span className="font-bold">{decisionDetails.weatherMetrics?.temperature?.value}°C</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Độ Ẩm</span>
-                    <span className="font-bold">{decisionDetails.weatherMetrics?.humidity?.value}%</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Mưa 24h</span>
-                    <span className="font-bold">{decisionDetails.weatherMetrics?.rainfall_24h?.value}mm</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-600">Thủy Triều</span>
-                    <span className="font-bold">{decisionDetails.tideInfo?.status} ({decisionDetails.tideInfo?.confidence})</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Column 3: AI Decision */}
-              <div className="bg-white rounded-xl p-5 border" style={{ borderColor: '#1F6F5F20' }}>
-                <p className="font-bold text-sm mb-4" style={{ color: '#1F6F5F' }}>🤖 Quyết Định AI</p>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">Trạng Thái Van</p>
-                    <p className="text-lg font-bold px-3 py-2 rounded-lg text-center w-full" style={{
-                      background: decisionDetails.aiDecision?.valve_state === 'OPEN' ? '#6FCF9720' : '#1F6F5F20',
-                      color: decisionDetails.aiDecision?.valve_state === 'OPEN' ? '#2FA084' : '#1F6F5F',
-                    }}>
-                      {decisionDetails.aiDecision?.valve_state === 'OPEN' ? '✅ MỞ' : '🚫 ĐÓNG'}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs text-gray-500 mb-1">Lý Do</p>
-                    <p className="text-sm font-medium leading-relaxed" style={{ color: '#1F6F5F' }}>
-                      {decisionDetails.aiDecision?.reason}
-                    </p>
-                  </div>
-                </div>
-              </div>
+        {/* ─── TERMINAL LOGS SECTION ─── */}
+        <div className="mt-8 bg-[#0d1117] rounded-xl overflow-hidden shadow-2xl border" style={{ borderColor: '#30363d' }}>
+          <div className="flex items-center justify-between px-4 py-3 bg-[#161b22]" style={{ borderBottom: '1px solid #30363d' }}>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-full bg-[#ff5f56]"></div>
+              <div className="w-3 h-3 rounded-full bg-[#ffbd2e]"></div>
+              <div className="w-3 h-3 rounded-full bg-[#27c93f]"></div>
+              <span className="ml-2 pl-2 border-l border-gray-600 text-xs font-mono text-gray-400">
+                SalinAI Orchestrator Terminal
+              </span>
             </div>
-
-            {/* Decision Factors */}
-            {decisionDetails.explanation && (
-              <div className="bg-white rounded-xl p-6 border" style={{ borderColor: '#1F6F5F20' }}>
-                <p className="font-bold text-base mb-4" style={{ color: '#1F6F5F' }}>
-                  📋 Các Yếu Tố Ảnh Hưởng Đến Quyết Định
-                </p>
-                <div className="space-y-4">
-                  {decisionDetails.explanation.factors.map((factor, idx) => (
-                    <div key={idx} className="border-l-4 pl-4 py-2"
-                      style={{ borderColor: factor.status.includes('🔴') || factor.status.includes('⚠️') ? '#EB5757' : '#6FCF97' }}>
-                      <div className="flex items-start justify-between mb-1">
-                        <p className="font-semibold text-sm">{factor.name}</p>
-                        <span className="text-xs px-2 py-1 rounded font-bold" style={{
-                          background: factor.status.includes('🔴') || factor.status.includes('⚠️') ? '#EB575720' : '#6FCF9720',
-                          color: factor.status.includes('🔴') || factor.status.includes('⚠️') ? '#EB5757' : '#2FA084',
-                        }}>
-                          {factor.status}
-                        </span>
-                      </div>
-                      <p className="text-xs mb-2 text-gray-600">
-                        Giá trị: <strong>{factor.value}</strong> | Ngưỡng: <strong>{factor.threshold}</strong>
-                      </p>
-                      <p className="text-sm leading-relaxed" style={{ color: '#1F6F5F' }}>
-                        {factor.reasoning}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-5 p-4 rounded-lg text-center" style={{ background: '#2FA08415' }}>
-                  <p className="font-bold text-sm" style={{ color: '#1F6F5F' }}>
-                    {decisionDetails.explanation.summary}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ─── Agent Action Log ─── */}
-        <div className="mt-2 bg-[#111827] rounded-2xl overflow-hidden shadow-xl" style={{ border: '1px solid #1F6F5F30' }}>
-          <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-            <div>
-              <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: '#60a5fa' }}>
-                Hậu Trường Agent
-              </p>
-              <p className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                Nhật ký quyết định và hành động mới nhất — theo kiến trúc Push
-              </p>
-            </div>
-            <span className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>
-              {actionLogs.length > 0 ? `${actionLogs.length} logs` : 'chờ dữ liệu'}
+            <span className="text-xs font-mono" style={{ color: '#8b949e' }}>
+              {actionLogs.length > 0 ? `${actionLogs.length} logs recorded` : 'awaiting telemetry...'}
             </span>
           </div>
 
-          <div className="p-4 space-y-3 max-h-96 overflow-auto">
+          <div className="p-5 space-y-6 max-h-[800px] overflow-auto font-mono text-sm leading-relaxed" style={{ color: '#c9d1d9' }}>
             {!actionLogs.length && (
-              <div className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                <p className="text-sm" style={{ color: 'rgba(255,255,255,0.65)' }}>
-                  Chưa có lịch sử hành động. Hệ thống đang chờ tín hiệu anomly từ phần cứng...
-                </p>
+              <div className="text-gray-500 italic">
+                System initialized. Listening for hardware telemetry...
               </div>
             )}
 
-            {actionLogs.slice(0, 8).map((log) => (
-              <div key={log.id} className="rounded-xl p-4"
-                style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)' }}>
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="text-xs font-bold" style={{ color: '#6FCF97' }}>
-                    {log.action || 'NO_ACTION'} · {log.actor || 'AI_AGENT'}
-                  </span>
-                  <span className="text-xs font-mono" style={{ color: 'rgba(255,255,255,0.45)' }}>
-                    {log.timestamp ? new Date(log.timestamp).toLocaleTimeString('vi-VN') : '--:--:--'}
+            {actionLogs.map((log) => (
+              <div key={log.id} className="pb-6 border-b border-[#21262d] last:border-0 relative">
+                {/* Header: Action + Actor + Timestamp */}
+                <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <span style={{ color: '#58a6ff' }}>[{log.actor || 'SYSTEM_DAEMON'}]</span>
+                    {log.action === 'OPEN' ? (
+                      <span className="bg-[#238636] text-white px-2 py-0.5 rounded-md text-xs font-bold">EXECUTED: OPEN VALVE</span>
+                    ) : log.action === 'CLOSED' || log.action === 'CLOSE' ? (
+                      <span className="bg-[#da3633] text-white px-2 py-0.5 rounded-md text-xs font-bold">EXECUTED: {log.action} VALVE</span>
+                    ) : (
+                      <span className="bg-[#8b949e] text-white px-2 py-0.5 rounded-md text-xs font-bold">EXECUTED: {log.action || 'NO_ACTION'}</span>
+                    )}
+                  </div>
+                  <span style={{ color: '#8b949e' }}>
+                    {log.timestamp ? new Date(log.timestamp).toLocaleString('vi-VN') : '--:--:--'}
                   </span>
                 </div>
-                <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.82)' }}>
-                  {log.reason || 'Không có giải thích'}
-                </p>
+
+                {/* Sensor Context */}
+                {log.sensor_snapshot && (
+                  <div className="bg-[#161b22] p-3 rounded-lg mb-3 border border-[#30363d]">
+                    <span style={{ color: '#8b949e', display: 'block', marginBottom: '8px' }}>&gt; ENVIRONMENT_SNAPSHOT:</span>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-xs">
+                      <div><span style={{ color: '#79c0ff' }}>salinity:</span> {Number(log.sensor_snapshot.salinity ?? log.sensor_snapshot.river_salinity ?? 0).toFixed(2)} ppt</div>
+                      <div><span style={{ color: '#79c0ff' }}>moisture:</span> {Number(log.sensor_snapshot.soil_moisture ?? log.sensor_snapshot.moisture ?? 0).toFixed(1)} %</div>
+                      <div><span style={{ color: '#79c0ff' }}>water_level:</span> {Number(log.sensor_snapshot.river_water_level ?? log.sensor_snapshot.water_level ?? 0).toFixed(2)} m</div>
+                      <div><span style={{ color: '#79c0ff' }}>temp:</span> {log.sensor_snapshot.temperature || log.sensor_snapshot.external_forecast?.temperature || '--'} °C</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Subagent findings (RAG + Summary) */}
+                {log.subagent_summary && (
+                  <div className="mb-3">
+                    <span style={{ color: '#d2a8ff', display: 'block', marginBottom: '4px' }}>&gt; RESEARCH_SUBAGENT_REPORT (--rag-hits={log.retrieval?.hit_count || 0}):</span>
+                    <div className="pl-4 border-l-2 border-[#d2a8ff] text-[#8b949e] text-xs whitespace-pre-wrap">
+                      {log.subagent_summary}
+                    </div>
+                  </div>
+                )}
+
+                {/* Final Reason */}
+                <div>
+                  <span style={{ color: '#3fb950', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_REASONING:</span>
+                  <div className="pl-4 border-l-2 border-[#3fb950] text-[#e6edf3] whitespace-pre-wrap">
+                    {log.reason || 'No specific reasoning provided.'}
+                  </div>
+                </div>
               </div>
             ))}
           </div>
