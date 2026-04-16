@@ -19,8 +19,8 @@ const {
     finalizeAction,
 } = require("./agentOrchestration");
 
-const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS || "1", 10));
-const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "1", 10));
+const MAX_RESEARCH_LOOPS = Math.max(3, parseInt(process.env.MAX_RESEARCH_LOOPS || "3", 10));
+const MAX_ORCHESTRATION_LOOPS = Math.max(3, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "3", 10));
 const AGENT_PHASE_TIMEOUT_MS = Math.max(3000, parseInt(process.env.AGENT_PHASE_TIMEOUT_MS || "12000", 10));
 
 // ─── Pipeline Execution ──────────────────────────────────────────────────────
