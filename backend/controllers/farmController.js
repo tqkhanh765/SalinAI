@@ -1,9 +1,11 @@
 const db = require("../config/firebase");
-const { buildFarmStatePayload, normalizeNestedSensorPayload, toNumber } = require("../services/core/farmPayloadMapper");
+const { buildFarmStatePayload, normalizeNestedSensorPayload } = require("../services/core/farmPayloadMapper");
 const { getLatestSensorHistory } = require("../services/core/farmHistoryService");
 const { streamFarmState: streamFarmStateService } = require("../services/core/farmRealtimeStreamService");
 const { ingestSensorPayload } = require("../services/core/farmSensorIngestionService");
 const { setControlMode, overrideActuatorFields } = require("../services/core/farmActuatorService");
+const { validateIngestPayload } = require("../services/core/farmIngestValidationService");
+const { decideAiTrigger } = require("../services/core/farmAiTriggerService");
 const { runAgent } = require("../agent/langchain");
 
 async function buildStatePayload(root, limit) {
@@ -48,25 +50,13 @@ async function ingestData(req, res) {
     const payload = normalized.payload;
 
     // 2. Strict Data Integrity Checks (Reject default/error values)
-    const invalidFields = [];
-    
-    // Check Salinity & Moisture (Primary Sensors)
-    if (payload.salinity <= 0 || !Number.isFinite(payload.salinity)) invalidFields.push("salinity (must be > 0)");
-    if (payload.moisture <= 0 || payload.moisture > 100 || !Number.isFinite(payload.moisture)) invalidFields.push("moisture (must be 1-100)");
-    
-    // Check for negative error codes in any numeric field
-    for (const [key, val] of Object.entries(payload)) {
-      if (typeof val === "number" && val < 0 && key !== "river_water_level") { // water level might be -ve if below benchmark? but user said reject negatives
-        invalidFields.push(`${key} (negative error code detected)`);
-      }
-    }
-
-    if (invalidFields.length > 0) {
-      console.warn(`[Ingest API] ❌ Sensor Error Rejected: ${invalidFields.join(", ")}`);
+    const validation = validateIngestPayload(payload);
+    if (!validation.ok) {
+      console.warn(`[Ingest API] ❌ Sensor Error Rejected: ${validation.invalidFields.join(", ")}`);
       return res.status(400).json({
         error: "Sensor Error",
         details: "Payload contains default hardware values or error codes.",
-        invalidFields
+        invalidFields: validation.invalidFields,
       });
     }
 
@@ -78,31 +68,7 @@ async function ingestData(req, res) {
     const enrichedPayload = await ingestSensorPayload(payload);
 
     // 4. AI Trigger Filter (Delta-based Invocation)
-    let shouldTriggerAI = false;
-    let triggerReason = "";
-
-    if (!previousPoint) {
-      shouldTriggerAI = true;
-      triggerReason = "Initial data point received.";
-    } else {
-      const salDelta = Math.abs(enrichedPayload.salinity - previousPoint.salinity);
-      const moisDelta = Math.abs(enrichedPayload.moisture - previousPoint.moisture);
-      
-      // Check Weather Anomaly (Storm or heavy rain)
-      const isExtremeWeather = (enrichedPayload.external_forecast?.weather_code >= 95 || (enrichedPayload.external_forecast?.rainfall_24h || 0) > 10);
-      const weatherChanged = enrichedPayload.external_forecast?.weather_code !== previousPoint.external_forecast?.weather_code;
-
-      if (salDelta > 0.5) {
-        shouldTriggerAI = true;
-        triggerReason = `Salinity spike detected (Delta: ${salDelta.toFixed(2)} ppt).`;
-      } else if (moisDelta > 10) {
-        shouldTriggerAI = true;
-        triggerReason = `Moisture delta exceeded threshold (Delta: ${moisDelta.toFixed(1)}%).`;
-      } else if (isExtremeWeather && weatherChanged) {
-        shouldTriggerAI = true;
-        triggerReason = "Extreme weather condition detected.";
-      }
-    }
+    const { shouldTriggerAI, triggerReason } = decideAiTrigger(enrichedPayload, previousPoint);
 
     if (shouldTriggerAI) {
       console.log(`[Ingest API] 🤖 AI Triggered: ${triggerReason}`);
@@ -192,4 +158,4 @@ module.exports = {
   ingestData,
   updateControlMode,
   overrideActuator,
-};
+};
