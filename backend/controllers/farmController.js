@@ -105,6 +105,9 @@ async function ingestData(req, res) {
 
   } catch (error) {
     console.error("[Ingest API] ❌ Internal Error:", error.message);
+    if (error.status) {
+      return res.status(error.status).json(error.payload || { error: error.message });
+    }
     res.status(500).json({ error: "Internal Server Error", details: error.message });
   }
 }

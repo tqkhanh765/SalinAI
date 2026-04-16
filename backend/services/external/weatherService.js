@@ -47,7 +47,14 @@ async function fetchWeatherData() {
 
     } catch (err) {
         console.error('[Weather] Fetch error:', err.message);
-        return getDefaultWeather();
+        const error = new Error(`Open-Meteo unavailable: ${err.message}`);
+        error.status = 503;
+        error.payload = {
+            error: 'External Data Unavailable',
+            details: 'Live weather data is unavailable from Open-Meteo.',
+            provider: 'OPEN_METEO',
+        };
+        throw error;
     }
 }
 
@@ -98,6 +105,7 @@ function processWeatherResponse(data) {
         const temperature = Math.round(current.temperature_2m || 32);
         const humidity = Math.round(current.relative_humidity_2m || 60);
         const weatherCode = current.weather_code || 0;
+        const weather = mapWeatherCodeToText(weatherCode);
 
         // Next 24h rainfall (sum of hourly precipitation for next 24 values)
         let rainfall_24h = 0;
@@ -114,6 +122,7 @@ function processWeatherResponse(data) {
             temperature,
             humidity,
             rainfall_24h,
+            weather,
             tide_status: tideStatus,
             weather_code: weatherCode,
             source: 'OPEN_METEO',
@@ -124,6 +133,15 @@ function processWeatherResponse(data) {
         console.error('[Weather] Processing error:', err.message);
         throw err;
     }
+}
+
+function mapWeatherCodeToText(weatherCode) {
+    if (weatherCode === 0) return 'Clear';
+    if ([1, 2, 3].includes(weatherCode)) return 'Cloudy';
+    if ([45, 48].includes(weatherCode)) return 'Fog';
+    if ((weatherCode >= 51 && weatherCode <= 67) || (weatherCode >= 80 && weatherCode <= 82)) return 'Rain';
+    if (weatherCode >= 95) return 'Thunderstorm';
+    return 'Unknown';
 }
 
 /**

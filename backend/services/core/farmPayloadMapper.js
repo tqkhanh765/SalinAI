@@ -26,6 +26,7 @@ function normalizeNestedSensorPayload(body = {}) {
   const payload = {
     salinity: toNumber(body.salinity, 0),
     moisture: toNumber(body.moisture, 0),
+    ph: body.ph != null ? toNumber(body.ph, null) : null,
     river_water_level: body.river_water_level != null ? toNumber(body.river_water_level, null) : null,
     crop_stage: cropStage,
     timestamp: new Date().toISOString(),
@@ -55,10 +56,13 @@ function buildFarmStatePayload(root, limit = 20, sensorHistory = []) {
     sensorData: {
       salinity: toNumber(sensorData.salinity, 0),
       moisture: toNumber(sensorData.moisture, 0),
+      ph: sensorData.ph != null ? toNumber(sensorData.ph, null) : null,
       river_water_level: sensorData.river_water_level != null ? toNumber(sensorData.river_water_level, null) : null,
       temperature: sensorData.external_forecast?.temperature != null ? toNumber(sensorData.external_forecast.temperature) : null,
       humidity: sensorData.external_forecast?.humidity != null ? toNumber(sensorData.external_forecast.humidity) : null,
       rainfall_24h: sensorData.external_forecast?.rainfall_24h != null ? toNumber(sensorData.external_forecast.rainfall_24h) : null,
+      weather_code: sensorData.external_forecast?.weather_code != null ? toNumber(sensorData.external_forecast.weather_code, null) : null,
+      weather: sensorData.external_forecast?.weather || null,
       tide_status: sensorData.external_forecast?.tide_status || null,
       crop_stage: sensorData.crop_stage || "VEGETATIVE",
       timestamp: sensorData.timestamp || null,

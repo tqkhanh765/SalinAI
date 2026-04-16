@@ -21,6 +21,18 @@ const CACHE_KEY = 'tide_data';
  */
 async function inferTideStatus(currentWaterLevel, weather = {}) {
     try {
+        if (!Number.isFinite(Number(currentWaterLevel))) {
+            const error = new Error('Missing river water level for tide inference');
+            error.status = 503;
+            error.payload = {
+                error: 'External Data Unavailable',
+                details: 'river_water_level is required to infer tide from live data.',
+            };
+            throw error;
+        }
+
+        const numericWaterLevel = Number(currentWaterLevel);
+
         // Get historical water level data (last few readings)
         const history = await getLatestSensorHistory(5);
 
@@ -62,7 +74,7 @@ async function inferTideStatus(currentWaterLevel, weather = {}) {
         const tideData = {
             tide_status: trendDirection === "RISING" ? "RISING" : "FALLING",
             tide_direction: trendDirection,
-            current_level: currentWaterLevel,
+            current_level: numericWaterLevel,
             confidence_score: Math.round(confidence * 100) / 100,
             near_peak_tide: nearPeak,
             source: "INFERRED_FROM_TREND_AND_WEATHER",
@@ -74,7 +86,17 @@ async function inferTideStatus(currentWaterLevel, weather = {}) {
 
     } catch (err) {
         console.error('[Tide] Inference error:', err.message);
-        return getDefaultTide();
+        if (err.status) {
+            throw err;
+        }
+
+        const error = new Error(`Tide inference failed: ${err.message}`);
+        error.status = 503;
+        error.payload = {
+            error: 'External Data Unavailable',
+            details: 'Unable to infer tide from current live inputs.',
+        };
+        throw error;
     }
 }
 
