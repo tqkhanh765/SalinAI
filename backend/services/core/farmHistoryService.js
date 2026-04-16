@@ -1,3 +1,7 @@
+/**
+ * Sensor history service.
+ * Reads and writes compact historical sensor points used for trend analysis and AI decision context.
+ */
 const { getDb } = require("../../config/mongodb");
 const { toNumber } = require("./farmPayloadMapper");
 

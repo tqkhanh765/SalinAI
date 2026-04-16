@@ -1,3 +1,7 @@
+/**
+ * Backend application entrypoint.
+ * Bootstraps Express, connects shared services, and mounts routes that power the farm APIs and AI pipeline.
+ */
 require("dotenv").config({ path: '../.env' });
 const express = require("express");
 const cors = require("cors");
@@ -41,6 +45,7 @@ app.use(express.json());
 // ─── Routes ───────────────────────────────────────────────────────────────────
 const healthRoute = require("./routes/health");
 const farmRoute = require("./routes/farm");
+const { startAutoLearningScheduler } = require("./services/ai/autoLearningScheduler");
 
 app.use(healthRoute);
 app.use(farmRoute);
@@ -51,4 +56,6 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`✅ SalinAI Backend running on http://localhost:${PORT}`);
   console.log(`   → Health check: http://localhost:${PORT}/api/health`);
+
+  startAutoLearningScheduler();
 });

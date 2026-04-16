@@ -1,3 +1,7 @@
+/**
+ * Sensor payload mapper.
+ * Normalizes raw ingest data into the shared farm-state shape used by Firebase, the dashboard, and the AI pipeline.
+ */
 const CROP_STAGES = ["SEEDLING", "VEGETATIVE", "FLOWERING", "FRUITING", "HARVEST"];
 const CONTROL_MODES = ["AUTO", "MANUAL"];
 const VALVE_STATES = ["OPEN", "CLOSED"];

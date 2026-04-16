@@ -93,6 +93,7 @@ export default function FarmerDashboard() {
     sensorHistory,
     setControlMode: setRemoteControlMode,
     setValveState: setRemoteValveState,
+    setCropStage: setRemoteCropStage,
   } = useRealtimeFarmState();
   const [controlScope, setControlScope] = useState('all'); // 'all' | 'single'
   const [activeValveId, setActiveValveId] = useState(INITIAL_VALVES[0].id);
@@ -104,6 +105,26 @@ export default function FarmerDashboard() {
   const [isModeUpdating, setIsModeUpdating] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [decisionDetails, setDecisionDetails] = useState(null);
+  const [cropStageDraft, setCropStageDraft] = useState('VEGETATIVE');
+  const [isCropStageUpdating, setIsCropStageUpdating] = useState(false);
+
+  const CROP_STAGE_OPTIONS = [
+    { value: 'SEEDLING', label: 'Mạ non (Seedling)' },
+    { value: 'VEGETATIVE', label: 'Sinh trưởng dinh dưỡng (Vegetative)' },
+    { value: 'FLOWERING', label: 'Ra hoa (Flowering)' },
+    { value: 'FRUITING', label: 'Tạo hạt / kết trái (Fruiting)' },
+    { value: 'HARVEST', label: 'Thu hoạch (Harvest)' },
+  ];
+
+  const cropStageLabelMap = CROP_STAGE_OPTIONS.reduce((acc, item) => {
+    acc[item.value] = item.label;
+    return acc;
+  }, {});
+
+  const getCropStageLabel = (stageValue) => {
+    const normalized = String(stageValue || '').toUpperCase();
+    return cropStageLabelMap[normalized] || normalized || '--';
+  };
 
   const realtimeValveOpen = (actuator.valve_state || 'CLOSED') === 'OPEN';
 
@@ -143,6 +164,11 @@ export default function FarmerDashboard() {
     if (!sensorData.timestamp) return;
     setLastUpdated(new Date(sensorData.timestamp));
   }, [sensorData.timestamp]);
+
+  useEffect(() => {
+    const nextStage = String(sensorData.crop_stage || readings.cropStage || 'VEGETATIVE').toUpperCase();
+    setCropStageDraft(nextStage);
+  }, [sensorData.crop_stage, readings.cropStage]);
 
   useEffect(() => {
     let mounted = true;
@@ -220,6 +246,30 @@ export default function FarmerDashboard() {
     }
   };
 
+  const handleCropStageUpdate = async () => {
+    if (!cropStageDraft || cropStageDraft === String(readings.cropStage || '').toUpperCase()) {
+      return;
+    }
+
+    setIsCropStageUpdating(true);
+    try {
+      await setRemoteCropStage(cropStageDraft);
+      setNotification({
+        type: 'success',
+        text: `🌾 Đã cập nhật giai đoạn cây sang ${getCropStageLabel(cropStageDraft)}.`,
+      });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error) {
+      setNotification({
+        type: 'warning',
+        text: `❌ Không thể cập nhật giai đoạn cây: ${error.message}`,
+      });
+      setTimeout(() => setNotification(null), 3500);
+    } finally {
+      setIsCropStageUpdating(false);
+    }
+  };
+
   const salinityColor = readings.salinity <= 4 ? '#6FCF97' : readings.salinity <= 6 ? '#F2C94C' : '#EB5757';
   const trendData = sensorHistory.map((item) => ({
     time: item.timestamp ? new Date(item.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
@@ -292,6 +342,24 @@ export default function FarmerDashboard() {
     };
   };
 
+  const formatTideStatusVi = (status) => {
+    const normalized = String(status || '').trim().toUpperCase();
+    if (!normalized) return '--';
+
+    const tideMap = {
+      HIGH: 'Triều cao',
+      LOW: 'Triều thấp',
+      RISING: 'Triều đang lên',
+      FALLING: 'Triều đang xuống',
+      FLOOD: 'Triều dâng',
+      EBB: 'Triều rút',
+      SLACK: 'Nước đứng',
+      NORMAL: 'Bình thường',
+    };
+
+    return tideMap[normalized] || String(status);
+  };
+
   return (
     <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8" style={{ background: '#EEEEEE' }}>
       <div className="max-w-5xl mx-auto space-y-5">
@@ -337,10 +405,42 @@ export default function FarmerDashboard() {
             <StatCard icon="🌱" label="Độ Ẩm Đất" value={Number(readings.soilMoisture || 0).toFixed(0)} unit="%" color="#6FCF97" bg="#6FCF9720" />
             <StatCard icon="⚗️" label="Độ pH" value={readings.ph != null ? Number(readings.ph).toFixed(1) : '--'} unit="pH" color="#9B59B6" bg="#9B59B620" />
             <StatCard icon="🌧️" label="Mưa 24h" value={readings.rainfall24h != null ? Number(readings.rainfall24h).toFixed(1) : '--'} unit="mm" color="#2D9CDB" bg="#2D9CDB20" />
-            <StatCard icon="🌊" label="Thủy Triều" value={readings.tideStatus || '--'} unit="" color="#1F6F5F" bg="#1F6F5F20" />
-            <StatCard icon="🌾" label="Giai Đoạn Cây" value={readings.cropStage || '--'} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+            <StatCard icon="🌊" label="Thủy Triều" value={formatTideStatusVi(readings.tideStatus)} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+            <StatCard icon="🌾" label="Giai Đoạn Cây" value={getCropStageLabel(readings.cropStage)} unit="" color="#1F6F5F" bg="#1F6F5F20" />
             <StatCard icon="📏" label="Mực Nước Sông" value={readings.riverWaterLevel != null ? Number(readings.riverWaterLevel).toFixed(2) : '--'} unit="m" color="#56CCF2" bg="#56CCF220" />
             <StatCard icon="🌤️" label="Điều Kiện Trời" value={readings.weather} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+          </div>
+
+          <div className="mt-4 bg-white rounded-2xl p-4 shadow-sm border" style={{ borderColor: '#1F6F5F20' }}>
+            <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+              <div className="md:flex-1">
+                <p className="text-sm font-bold" style={{ color: '#1F6F5F' }}>Thiết Lập Giai Đoạn Cây</p>
+                <p className="text-xs text-gray-500 mt-1">Chỉnh giai đoạn sinh trưởng để AI đánh giá ngưỡng mục tiêu phù hợp hơn.</p>
+              </div>
+
+              <div className="flex items-center gap-2 w-full md:w-auto">
+                <select
+                  value={cropStageDraft}
+                  onChange={(e) => setCropStageDraft(String(e.target.value || 'VEGETATIVE').toUpperCase())}
+                  disabled={isCropStageUpdating}
+                  className="h-10 rounded-xl border px-3 text-sm font-semibold text-[#1F6F5F] bg-white min-w-45"
+                  style={{ borderColor: '#1F6F5F33', fontFamily: 'var(--font-vn)' }}
+                >
+                  {CROP_STAGE_OPTIONS.map((stage) => (
+                    <option key={stage.value} value={stage.value}>{stage.label}</option>
+                  ))}
+                </select>
+
+                <button
+                  onClick={handleCropStageUpdate}
+                  disabled={isCropStageUpdating || cropStageDraft === String(readings.cropStage || '').toUpperCase()}
+                  className="h-10 px-4 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                  style={{ background: '#1F6F5F', fontFamily: 'var(--font-vn)' }}
+                >
+                  {isCropStageUpdating ? 'Đang lưu...' : 'Lưu Giai Đoạn'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 

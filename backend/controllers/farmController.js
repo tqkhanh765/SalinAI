@@ -1,3 +1,7 @@
+/**
+ * Farm API controller.
+ * Validates incoming sensor updates, serves realtime snapshots, and exposes feedback/policy endpoints for the AI workflow.
+ */
 const db = require("../config/firebase");
 const { buildFarmStatePayload, normalizeNestedSensorPayload } = require("../services/core/farmPayloadMapper");
 const { getLatestSensorHistory } = require("../services/core/farmHistoryService");
@@ -6,6 +10,7 @@ const { ingestSensorPayload } = require("../services/core/farmSensorIngestionSer
 const { setControlMode, overrideActuatorFields } = require("../services/core/farmActuatorService");
 const { validateIngestPayload } = require("../services/core/farmIngestValidationService");
 const { decideAiTrigger } = require("../services/core/farmAiTriggerService");
+const { CROP_STAGES } = require("../services/core/farmPayloadMapper");
 const { runAgent } = require("../agent/langchain");
 const { saveDecisionFeedback, getPolicySummary } = require("../services/ai/policyLearningService");
 
@@ -212,6 +217,35 @@ async function getAgentPolicySummary(req, res) {
   }
 }
 
+async function updateCropStage(req, res) {
+  try {
+    const nextStage = String(req.body?.crop_stage || "").trim().toUpperCase();
+
+    if (!CROP_STAGES.includes(nextStage)) {
+      return res.status(400).json({
+        error: "Invalid crop_stage",
+        allowed: CROP_STAGES,
+      });
+    }
+
+    const sensorRef = db.ref("sensor_data");
+    await sensorRef.update({
+      crop_stage: nextStage,
+      timestamp: new Date().toISOString(),
+    });
+
+    const updatedSnapshot = await sensorRef.once("value");
+
+    return res.status(200).json({
+      status: "OK",
+      updated: updatedSnapshot.val() || { crop_stage: nextStage },
+    });
+  } catch (error) {
+    console.error("[Farm API] Failed to update crop stage:", error.message);
+    return res.status(500).json({ error: "Failed to update crop stage", details: error.message });
+  }
+}
+
 module.exports = {
   getFarmState,
   streamFarmState,
@@ -221,4 +255,5 @@ module.exports = {
   overrideActuator,
   submitDecisionFeedback,
   getAgentPolicySummary,
+  updateCropStage,
 };

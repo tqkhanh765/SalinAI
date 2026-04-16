@@ -1,3 +1,7 @@
+/**
+ * Feedback policy memory service.
+ * Stores human feedback, builds a compact policy summary, and injects learned lessons into the AI prompts.
+ */
 const { getDb } = require("../../config/mongodb");
 
 const POLICY_DOC_ID = "active";
@@ -16,12 +20,32 @@ function compactText(text, maxLen = 180) {
   return normalized.length > maxLen ? `${normalized.slice(0, maxLen)}...` : normalized;
 }
 
+function formatFeedbackCase(feedback) {
+  const verdict = String(feedback?.verdict || "unknown").toUpperCase();
+  const salinity = Number(feedback?.sensor_snapshot?.salinity || 0).toFixed(1);
+  const moisture = Number(feedback?.sensor_snapshot?.moisture || 0).toFixed(1);
+  const action = String(feedback?.action || "NO_ACTION").toUpperCase();
+  const expected = feedback?.corrected_action ? String(feedback.corrected_action).toUpperCase() : "N/A";
+  const notes = compactText(feedback?.notes || "", 120);
+  const reason = compactText(feedback?.reason || "", 120);
+
+  return {
+    verdict,
+    observed_action: action,
+    expected_action: expected,
+    sensor: { salinity_ppt: salinity, moisture_pct: moisture },
+    reason,
+    notes,
+  };
+}
+
 async function getPolicySummary() {
   const mongoDb = getDb();
   if (!mongoDb) {
     return {
       summary: "No feedback-based policy memory yet (MongoDB offline).",
       stats: null,
+      recent_feedback_cases: [],
       updatedAt: null,
     };
   }
@@ -31,6 +55,7 @@ async function getPolicySummary() {
     return {
       summary: "No operational feedback available yet.",
       stats: null,
+      recent_feedback_cases: [],
       updatedAt: null,
     };
   }
@@ -38,6 +63,7 @@ async function getPolicySummary() {
   return {
     summary: doc.summary || "No operational feedback available yet.",
     stats: doc.stats || null,
+    recent_feedback_cases: Array.isArray(doc.recent_feedback_cases) ? doc.recent_feedback_cases : [],
     updatedAt: doc.updated_at || null,
   };
 }
@@ -80,6 +106,7 @@ async function refreshPolicySummary() {
     return {
       summary: emptyDoc.summary,
       stats: emptyDoc.stats,
+      recent_feedback_cases: [],
       updatedAt: emptyDoc.updated_at,
     };
   }
@@ -88,6 +115,7 @@ async function refreshPolicySummary() {
   const correct = feedbacks.filter((f) => f.verdict === "correct").length;
   const incorrect = feedbacks.filter((f) => f.verdict === "incorrect").length;
   const accuracy = reviewed > 0 ? Number(((correct / reviewed) * 100).toFixed(1)) : null;
+  const recentCases = feedbacks.slice(0, 8).map((f) => formatFeedbackCase(f)); // New recent cases formatted
 
   const negativeLessons = feedbacks
     .filter((f) => f.verdict === "incorrect")
@@ -124,6 +152,7 @@ async function refreshPolicySummary() {
       accuracy,
     },
     lessons: negativeLessons,
+    recent_feedback_cases: recentCases,
     updated_at: new Date(),
   };
 
@@ -134,6 +163,7 @@ async function refreshPolicySummary() {
   return {
     summary,
     stats: policyDoc.stats,
+    recent_feedback_cases: recentCases,
     updatedAt: policyDoc.updated_at,
   };
 }
@@ -176,7 +206,25 @@ async function saveDecisionFeedback(payload = {}) {
 
 async function buildPolicyPromptBlock() {
   const policy = await getPolicySummary();
-  return `\n\n[POLICY_MEMORY]\n${policy.summary}`;
+  const stats = policy?.stats || {};
+  const cases = Array.isArray(policy?.recent_feedback_cases) ? policy.recent_feedback_cases : [];
+
+  const caseLines = cases
+    .map((item, idx) => {
+      const notePart = item.notes ? ` | notes=${item.notes}` : "";
+      const reasonPart = item.reason ? ` | reason=${item.reason}` : "";
+      return `${idx + 1}. verdict=${item.verdict}; observed=${item.observed_action}; expected=${item.expected_action}; salinity=${item.sensor?.salinity_ppt}; moisture=${item.sensor?.moisture_pct}${reasonPart}${notePart}`;
+    })
+    .join("\n");
+
+  return [
+    "\n\n[POLICY_MEMORY]",
+    `SUMMARY: ${policy.summary}`,
+    `STATS: reviewed=${stats.reviewed ?? 0}, correct=${stats.correct ?? 0}, incorrect=${stats.incorrect ?? 0}, accuracy=${stats.accuracy ?? "N/A"}%`,
+    "LEARNING RULE: Treat verdict=CORRECT as positive pattern; treat verdict=INCORRECT as pattern to avoid unless stronger safety evidence exists.",
+    "RECENT_FEEDBACK_CASES:",
+    caseLines || "none",
+  ].join("\n");
 }
 
 module.exports = {

@@ -10,6 +10,7 @@ router.post("/api/ingest", farmController.ingestData);
 router.post("/api/decision-feedback", farmController.submitDecisionFeedback);
 router.get("/api/policy-summary", farmController.getAgentPolicySummary);
 router.patch("/api/control-mode", farmController.updateControlMode);
+router.patch("/api/crop-stage", farmController.updateCropStage);
 router.post("/api/override", farmController.overrideActuator);
 
 /**

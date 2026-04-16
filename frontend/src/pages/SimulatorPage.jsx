@@ -223,6 +223,33 @@ export default function SimulatorPage() {
 
   const isStepActive = (trace = [], phase) => Array.isArray(trace) && trace.some((t) => t?.phase === phase);
 
+  const formatTracePhase = (phase) => {
+    const map = {
+      pipeline: 'Pipeline',
+      researcher: 'Researcher',
+      retrieval: 'Retrieval',
+      orchestrator: 'Orchestrator',
+    };
+    return map[phase] || 'Agent';
+  };
+
+  const formatTraceEvent = (event) => {
+    const map = {
+      start: 'Bắt đầu pipeline',
+      policy_memory: 'Nạp policy memory',
+      iteration: 'Bước suy luận',
+      tool_calls: 'Gọi tool',
+      rag_result: 'Kết quả truy xuất',
+      history_lookup: 'Đọc lịch sử hành động',
+      summary: 'Tạo tóm tắt',
+      parsed_text_decision: 'Đọc quyết định từ text',
+      no_tool_call: 'Không có tool_call',
+      decision: 'Thực thi quyết định',
+      error: 'Lỗi',
+    };
+    return map[event] || event || 'event';
+  };
+
   return (
     <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8" style={{ background: '#EEEEEE' }}>
       <div className="max-w-5xl mx-auto">
@@ -436,7 +463,7 @@ export default function SimulatorPage() {
             </span>
           </div>
 
-          <div className="p-5 space-y-6 max-h-[800px] overflow-auto font-mono text-sm leading-relaxed" style={{ color: '#c9d1d9' }}>
+          <div className="p-5 space-y-6 max-h-200 overflow-auto font-mono text-sm leading-relaxed" style={{ color: '#c9d1d9' }}>
             {!actionLogs.length && (
               <div className="text-gray-500 italic">
                 Hệ thống đã khởi tạo. Đang chờ dữ liệu từ phần cứng...
@@ -488,16 +515,73 @@ export default function SimulatorPage() {
                 {log.sensor_snapshot && (
                   <div className="bg-[#161b22] p-3 rounded-lg mb-3 border border-[#30363d]">
                     <span style={{ color: '#8b949e', display: 'block', marginBottom: '8px' }}>&gt; ENVIRONMENT_SNAPSHOT:</span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-3 text-xs">
-                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>salinity:</span> {Number(log.sensor_snapshot.salinity ?? log.sensor_snapshot.river_salinity ?? 0).toFixed(2)} ppt ({salinityLabel(Number(log.sensor_snapshot?.salinity ?? log.sensor_snapshot?.river_salinity ?? 0))})</div>
-                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>moisture:</span> {Number(log.sensor_snapshot.soil_moisture ?? log.sensor_snapshot.moisture ?? 0).toFixed(1)} % ({moistureLabel(Number(log.sensor_snapshot?.soil_moisture ?? log.sensor_snapshot?.moisture ?? 0))})</div>
-                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>water_level:</span> {Number(log.sensor_snapshot.river_water_level ?? log.sensor_snapshot.water_level ?? 0).toFixed(2)} m</div>
-                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>temp:</span> {log.sensor_snapshot.temperature || log.sensor_snapshot.external_forecast?.temperature || '--'} °C</div>
-                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>tide:</span> {log.sensor_snapshot?.external_forecast?.tide_status || '--'}</div>
-                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>weather:</span> {log.sensor_snapshot?.external_forecast?.weather || '--'}</div>
+                    <div className="overflow-x-auto">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-14 gap-y-3 text-xs min-w-190">
+                        <div className="pr-3 whitespace-nowrap">
+                          <span style={{ color: '#79c0ff' }}>salinity:</span>
+                          <span className="ml-2 text-[#c9d1d9]">{Number(log.sensor_snapshot.salinity ?? log.sensor_snapshot.river_salinity ?? 0).toFixed(2)} ppt ({salinityLabel(Number(log.sensor_snapshot?.salinity ?? log.sensor_snapshot?.river_salinity ?? 0))})</span>
+                        </div>
+                        <div className="pr-3 whitespace-nowrap">
+                          <span style={{ color: '#79c0ff' }}>moisture:</span>
+                          <span className="ml-2 text-[#c9d1d9]">{Number(log.sensor_snapshot.soil_moisture ?? log.sensor_snapshot.moisture ?? 0).toFixed(1)} % ({moistureLabel(Number(log.sensor_snapshot?.soil_moisture ?? log.sensor_snapshot?.moisture ?? 0))})</span>
+                        </div>
+                        <div className="pr-3 whitespace-nowrap">
+                          <span style={{ color: '#79c0ff' }}>water_level:</span>
+                          <span className="ml-2 text-[#c9d1d9]">{Number(log.sensor_snapshot.river_water_level ?? log.sensor_snapshot.water_level ?? 0).toFixed(2)} m</span>
+                        </div>
+                        <div className="pr-3 whitespace-nowrap">
+                          <span style={{ color: '#79c0ff' }}>temp:</span>
+                          <span className="ml-2 text-[#c9d1d9]">{log.sensor_snapshot.temperature || log.sensor_snapshot.external_forecast?.temperature || '--'} °C</span>
+                        </div>
+                        <div className="pr-3 whitespace-nowrap">
+                          <span style={{ color: '#79c0ff' }}>tide:</span>
+                          <span className="ml-2 text-[#c9d1d9]">{log.sensor_snapshot?.external_forecast?.tide_status || '--'}</span>
+                        </div>
+                        <div className="pr-3 whitespace-nowrap">
+                          <span style={{ color: '#79c0ff' }}>weather:</span>
+                          <span className="ml-2 text-[#c9d1d9]">{log.sensor_snapshot?.external_forecast?.weather || '--'}</span>
+                        </div>
+                        <div className="pr-3 whitespace-nowrap">
+                          <span style={{ color: '#79c0ff' }}>pH:</span>
+                          <span className="ml-2 text-[#c9d1d9]">{log.sensor_snapshot.ph != null ? Number(log.sensor_snapshot.ph).toFixed(1) : '--'}</span>
+                        </div>
+                        <div className="pr-3 whitespace-nowrap">
+                          <span style={{ color: '#79c0ff' }}>crop_stage:</span>
+                          <span className="ml-2 text-[#c9d1d9]">{log.sensor_snapshot.crop_stage || '--'}</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
+
+                  {/* Agent timeline trace for demo visibility */}
+                  {Array.isArray(log.agent_trace) && log.agent_trace.length > 0 && (
+                    <div className="mb-3">
+                      <span style={{ color: '#58a6ff', display: 'block', marginBottom: '6px' }}>&gt; AGENT_TRACE_TIMELINE:</span>
+                      <div className="pl-4 border-l-2 border-[#58a6ff] text-xs space-y-1.5">
+                        <div className="text-[#8b949e] mb-2">
+                          Mỗi dòng là một bước trong pipeline: phase, hành động, và kết quả ngắn.
+                        </div>
+                        {log.agent_trace.slice(0, 8).map((step, idx) => (
+                          <div key={`${log.id}-trace-${idx}`} className="text-[#8b949e] leading-relaxed">
+                            <span className="inline-flex items-center gap-2 mr-2 px-2 py-0.5 rounded-full" style={{ background: '#30363d', color: '#c9d1d9' }}>
+                              <span style={{ color: '#79c0ff' }}>#{idx + 1}</span>
+                              <span>{formatTracePhase(step.phase)}</span>
+                            </span>
+                            <span style={{ color: '#79c0ff' }}>{formatTraceEvent(step.event)}</span>
+                            {' '}
+                            {shortText(step.message || 'No message', 110)}
+                            {step.meta?.state ? (
+                              <span style={{ color: '#3fb950' }}> → {step.meta.state}</span>
+                            ) : null}
+                            {step.meta?.tools?.length ? (
+                              <span style={{ color: '#d2a8ff' }}> | tools: {step.meta.tools.join(', ')}</span>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                 <div className="mb-3">
                   <span style={{ color: '#58a6ff', display: 'block', marginBottom: '4px' }}>&gt; RETRIEVAL_OUTPUT (trích từ papers):</span>
@@ -519,24 +603,6 @@ export default function SimulatorPage() {
                     {log.model_insights?.orchestrator_output_preview || log.reason || 'Không có phản hồi Orchestrator.'}
                   </div>
                 </div>
-
-                {/* Agent timeline trace for demo visibility */}
-                {Array.isArray(log.agent_trace) && log.agent_trace.length > 0 && (
-                  <div className="mb-3">
-                    <span style={{ color: '#58a6ff', display: 'block', marginBottom: '6px' }}>&gt; AGENT_TRACE_TIMELINE:</span>
-                    <div className="pl-4 border-l-2 border-[#58a6ff] text-xs space-y-1.5">
-                      {log.agent_trace.slice(0, 8).map((step, idx) => (
-                        <div key={`${log.id}-trace-${idx}`} className="text-[#8b949e]">
-                          <span style={{ color: '#79c0ff' }}>[{step.phase || 'agent'}:{step.event || 'event'}]</span>{' '}
-                          {shortText(step.message || 'No message', 90)}
-                          {step.meta?.state ? (
-                            <span style={{ color: '#3fb950' }}> → {step.meta.state}</span>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
 
                 {/* Final Reason */}
                 <div>

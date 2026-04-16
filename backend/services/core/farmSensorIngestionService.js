@@ -1,3 +1,7 @@
+/**
+ * Sensor ingestion service.
+ * Enriches incoming sensor data with weather and tide context, then persists the merged snapshot to Firebase and history.
+ */
 const db = require("../../config/firebase");
 const { fetchWeatherData } = require("../external/weatherService");
 const { getTideData } = require("../external/tideService");

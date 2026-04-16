@@ -1,3 +1,7 @@
+/**
+ * Actuator control service.
+ * Validates manual/control-mode updates and writes the current valve state to Firebase.
+ */
 const db = require("../../config/firebase");
 const { CONTROL_MODES, VALVE_STATES } = require("./farmPayloadMapper");
 

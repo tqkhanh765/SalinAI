@@ -1,3 +1,7 @@
+/**
+ * Multi-agent AI runner.
+ * Orchestrates the Researcher and Orchestrator phases, injects policy memory, and stores the final action trace.
+ */
 const { researcherPromptTemplate, orchestratorPromptTemplate } = require("./prompt");
 const { getDb } = require("../config/mongodb");
 const fbdb = require("../config/firebase");
@@ -10,8 +14,8 @@ const {
     withTimeout,
 } = require("../services/core/agentSafetyService");
 
-const { executeRAGTool } = require("./agentRetrieval");
-const { researcherAgent } = require("./researcherAgent");
+const { executeRAGTool } = require("../services/ai/retrievalService");
+const { researcherAgent } = require("./agentResearch");
 
 const {
     orchestratorAgent,
