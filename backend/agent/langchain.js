@@ -9,12 +9,12 @@ const {
     parseRetrySeconds,
     withTimeout,
     buildFallbackAction,
-} = require("./agentUtils");
+} = require("../services/core/agentSafetyService");
 
 const { executeRAGTool } = require("./agentRetrieval");
+const { researcherAgent } = require("./researcherAgent");
 
 const {
-    researcherAgent,
     orchestratorAgent,
     finalizeAction,
 } = require("./agentOrchestration");

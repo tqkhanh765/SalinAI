@@ -24,9 +24,9 @@ SalinAI is a 3-layer event-driven irrigation intelligence system.
 | Component | File(s) | Responsibility |
 |---|---|---|
 | Agent Trigger | `farmController.js` | Invoked directly by Ingestion Endpoint only when delta filters pass. |
-| Agent orchestration | `backend/agent/agentOrchestration.js` | Coordinates retrieval + reasoning + safe output |
+| Agent orchestration | `backend/agent/researcherAgent.js`, `backend/agent/agentOrchestration.js` | Researcher gathers evidence; orchestrator makes final valve decision |
 | Retrieval module | `backend/agent/agentRetrieval.js` | Vector search against `guideline_documents` |
-| Agent utilities/fallback | `backend/agent/agentUtils.js` | Timeout guard, fallback decision, resilience |
+| Agent safety service | `backend/services/core/agentSafetyService.js` | Timeout guard, fallback decision, resilience |
 | Prompt and tools | `backend/agent/prompt.js`, `backend/agent/tools.js` | Human-readable reasoning + safe actuator tool contract |
 
 ### Layer C: Execution and UX
