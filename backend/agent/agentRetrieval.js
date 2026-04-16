@@ -5,6 +5,19 @@ const embeddings = new GoogleGenerativeAIEmbeddings({
   apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
 });
 
+function sanitizeRetrievalText(text) {
+    if (!text) return "";
+
+    return String(text)
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
+        .replace(/[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/g, " ")
+        .replace(/[\uFFFD]/g, " ")
+  .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g, " ")
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
 async function executeRAGTool(salinity, moisture, mongoDb) {
     const queryText = `Salinity is ${salinity} ppt, moisture is ${moisture}%.`;
     try {
@@ -33,7 +46,9 @@ async function executeRAGTool(salinity, moisture, mongoDb) {
         let contextDocs = [];
         validResults.forEach(doc => {
             sourceIds.push(doc._id);
-            contextDocs.push(`[${doc._id}] ${doc.title}: ${doc.content}`);
+          const cleanTitle = sanitizeRetrievalText(doc.title);
+          const cleanContent = sanitizeRetrievalText(doc.content);
+          contextDocs.push(`[${doc._id}] ${cleanTitle}: ${cleanContent}`);
         });
         
         return { hitCount: validResults.length, sourceIds, context: contextDocs.join("\n\n") };

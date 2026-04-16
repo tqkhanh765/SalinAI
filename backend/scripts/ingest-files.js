@@ -9,6 +9,19 @@ const pdfParse = require('pdf-parse');
 const URI = process.env.MONGODB_URI;
 const DATA_DIR = path.join(__dirname, '../data/knowledge_base');
 
+function sanitizeIngestText(text) {
+  if (!text) return "";
+
+  return String(text)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+    .replace(/[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/g, ' ')
+    .replace(/[\uFFFD]/g, ' ')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 async function ingestFiles() {
   const client = new MongoClient(URI);
   
@@ -49,10 +62,10 @@ async function ingestFiles() {
             console.log(`📄 Extracting text from PDF: ${file}`);
             const dataBuffer = fs.readFileSync(path.join(DATA_DIR, file));
             const pdfData = await pdfParse(dataBuffer);
-            rawContent = pdfData.text;
+          rawContent = sanitizeIngestText(pdfData.text);
         } else {
             console.log(`📝 Extracting text from document: ${file}`);
-            rawContent = fs.readFileSync(path.join(DATA_DIR, file), 'utf8');
+          rawContent = sanitizeIngestText(fs.readFileSync(path.join(DATA_DIR, file), 'utf8'));
         }
         
         if (!rawContent || rawContent.trim().length === 0) {

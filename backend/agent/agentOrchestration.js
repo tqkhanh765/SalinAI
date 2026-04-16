@@ -46,6 +46,8 @@ async function finalizeAction({
     researcherSummary,
     actor,
     mongoDb,
+    agentTrace = [],
+    modelInsights = {},
 }) {
     if (!actionResult) {
         return;
@@ -79,6 +81,8 @@ async function finalizeAction({
         },
         sensor_snapshot: sensorData,
         subagent_summary: researcherSummary,
+        agent_trace: agentTrace,
+        model_insights: modelInsights,
     };
 
     await fbdb.ref("action_logs").push(actionLogPayload);

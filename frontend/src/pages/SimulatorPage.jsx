@@ -188,9 +188,40 @@ export default function SimulatorPage() {
 
   const salinityColor = liveSalinity <= 3 ? '#6FCF97' : liveSalinity <= 6 ? '#F2C94C' : '#EB5757';
 
+  const retrievalOutput =
+    lastLog?.model_insights?.retrieval_output_preview ||
+    ((lastLog?.retrieval?.source_ids?.length || 0) > 0
+      ? `Không có bản trích văn bản đầy đủ trong log cũ. Nguồn đã dùng: ${lastLog.retrieval.source_ids.join(', ')}`
+      : 'Không có dữ liệu retrieval từ papers.');
+
+  const researcherAgentName = 'Gemini';
+  const orchestratorAgentName = 'SaoLa';
+
   // Helper: format nullable number
   const fmt = (v, digits = 1, suffix = '') =>
     v != null ? `${Number(v).toFixed(digits)}${suffix}` : '--';
+
+  const shortText = (text, max = 180) => {
+    const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!normalized) return '--';
+    return normalized.length > max ? `${normalized.slice(0, max)}...` : normalized;
+  };
+
+  const salinityLabel = (value) => {
+    if (!Number.isFinite(value)) return 'Chưa có dữ liệu';
+    if (value > 2.0) return 'Mặn - Nguy hiểm';
+    if (value > 1.0) return 'Mặn nhẹ - Cần theo dõi';
+    return 'An toàn';
+  };
+
+  const moistureLabel = (value) => {
+    if (!Number.isFinite(value)) return 'Chưa có dữ liệu';
+    if (value < 40) return 'Hơi khô';
+    if (value > 75) return 'Quá ẩm';
+    return 'Ổn định';
+  };
+
+  const isStepActive = (trace = [], phase) => Array.isArray(trace) && trace.some((t) => t?.phase === phase);
 
   return (
     <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8" style={{ background: '#EEEEEE' }}>
@@ -408,7 +439,7 @@ export default function SimulatorPage() {
           <div className="p-5 space-y-6 max-h-[800px] overflow-auto font-mono text-sm leading-relaxed" style={{ color: '#c9d1d9' }}>
             {!actionLogs.length && (
               <div className="text-gray-500 italic">
-                System initialized. Listening for hardware telemetry...
+                Hệ thống đã khởi tạo. Đang chờ dữ liệu từ phần cứng...
               </div>
             )}
 
@@ -431,34 +462,99 @@ export default function SimulatorPage() {
                   </span>
                 </div>
 
+                {/* Mini pipeline map (non-tech friendly) */}
+                <div className="mb-3">
+                  <span style={{ color: '#8b949e', display: 'block', marginBottom: '6px' }}>&gt; SƠ ĐỒ PIPELINE:</span>
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <span className="px-2 py-1 rounded-md" style={{ background: '#79c0ff22', color: '#79c0ff' }}>📡 Cảm biến</span>
+                    <span style={{ color: '#8b949e' }}>→</span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: isStepActive(log.agent_trace, 'researcher') ? '#d2a8ff33' : '#30363d', color: isStepActive(log.agent_trace, 'researcher') ? '#d2a8ff' : '#8b949e' }}>
+                      🔎 Researcher ({researcherAgentName})
+                    </span>
+                    <span style={{ color: '#8b949e' }}>→</span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: isStepActive(log.agent_trace, 'retrieval') ? '#58a6ff33' : '#30363d', color: isStepActive(log.agent_trace, 'retrieval') ? '#58a6ff' : '#8b949e' }}>
+                      📚 Retrieval ({log.retrieval?.hit_count ?? 0} hits)
+                    </span>
+                    <span style={{ color: '#8b949e' }}>→</span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: isStepActive(log.agent_trace, 'orchestrator') ? '#ffa65733' : '#30363d', color: isStepActive(log.agent_trace, 'orchestrator') ? '#ffa657' : '#8b949e' }}>
+                      🧠 Orchestrator ({orchestratorAgentName})
+                    </span>
+                    <span style={{ color: '#8b949e' }}>→</span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: '#3fb95033', color: '#3fb950' }}>🤖 Van {log.action || 'NO_ACTION'}</span>
+                  </div>
+                </div>
+
                 {/* Sensor Context */}
                 {log.sensor_snapshot && (
                   <div className="bg-[#161b22] p-3 rounded-lg mb-3 border border-[#30363d]">
                     <span style={{ color: '#8b949e', display: 'block', marginBottom: '8px' }}>&gt; ENVIRONMENT_SNAPSHOT:</span>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-xs">
-                      <div><span style={{ color: '#79c0ff' }}>salinity:</span> {Number(log.sensor_snapshot.salinity ?? log.sensor_snapshot.river_salinity ?? 0).toFixed(2)} ppt</div>
-                      <div><span style={{ color: '#79c0ff' }}>moisture:</span> {Number(log.sensor_snapshot.soil_moisture ?? log.sensor_snapshot.moisture ?? 0).toFixed(1)} %</div>
-                      <div><span style={{ color: '#79c0ff' }}>water_level:</span> {Number(log.sensor_snapshot.river_water_level ?? log.sensor_snapshot.water_level ?? 0).toFixed(2)} m</div>
-                      <div><span style={{ color: '#79c0ff' }}>temp:</span> {log.sensor_snapshot.temperature || log.sensor_snapshot.external_forecast?.temperature || '--'} °C</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-3 text-xs">
+                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>salinity:</span> {Number(log.sensor_snapshot.salinity ?? log.sensor_snapshot.river_salinity ?? 0).toFixed(2)} ppt ({salinityLabel(Number(log.sensor_snapshot?.salinity ?? log.sensor_snapshot?.river_salinity ?? 0))})</div>
+                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>moisture:</span> {Number(log.sensor_snapshot.soil_moisture ?? log.sensor_snapshot.moisture ?? 0).toFixed(1)} % ({moistureLabel(Number(log.sensor_snapshot?.soil_moisture ?? log.sensor_snapshot?.moisture ?? 0))})</div>
+                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>water_level:</span> {Number(log.sensor_snapshot.river_water_level ?? log.sensor_snapshot.water_level ?? 0).toFixed(2)} m</div>
+                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>temp:</span> {log.sensor_snapshot.temperature || log.sensor_snapshot.external_forecast?.temperature || '--'} °C</div>
+                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>tide:</span> {log.sensor_snapshot?.external_forecast?.tide_status || '--'}</div>
+                      <div className="pr-2"><span style={{ color: '#79c0ff' }}>weather:</span> {log.sensor_snapshot?.external_forecast?.weather || '--'}</div>
                     </div>
                   </div>
                 )}
 
-                {/* Subagent findings (RAG + Summary) */}
-                {log.subagent_summary && (
+                <div className="mb-3">
+                  <span style={{ color: '#58a6ff', display: 'block', marginBottom: '4px' }}>&gt; RETRIEVAL_OUTPUT (trích từ papers):</span>
+                  <div className="pl-4 border-l-2 border-[#58a6ff] text-xs text-[#8b949e] whitespace-pre-wrap max-h-56 overflow-auto">
+                    {retrievalOutput}
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <span style={{ color: '#79c0ff', display: 'block', marginBottom: '4px' }}>&gt; RESEARCHER_OUTPUT:</span>
+                  <div className="pl-4 border-l-2 border-[#79c0ff] text-xs text-[#8b949e] whitespace-pre-wrap max-h-56 overflow-auto">
+                    {log.model_insights?.researcher_output_preview || log.subagent_summary || 'Không có phản hồi Researcher.'}
+                  </div>
+                </div>
+
+                <div className="mb-3">
+                  <span style={{ color: '#ffa657', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_OUTPUT (phân tích thô từ model):</span>
+                  <div className="pl-4 border-l-2 border-[#ffa657] text-xs text-[#8b949e] whitespace-pre-wrap max-h-56 overflow-auto">
+                    {log.model_insights?.orchestrator_output_preview || log.reason || 'Không có phản hồi Orchestrator.'}
+                  </div>
+                </div>
+
+                {/* Agent timeline trace for demo visibility */}
+                {Array.isArray(log.agent_trace) && log.agent_trace.length > 0 && (
                   <div className="mb-3">
-                    <span style={{ color: '#d2a8ff', display: 'block', marginBottom: '4px' }}>&gt; RESEARCH_SUBAGENT_REPORT (--rag-hits={log.retrieval?.hit_count || 0}):</span>
-                    <div className="pl-4 border-l-2 border-[#d2a8ff] text-[#8b949e] text-xs whitespace-pre-wrap">
-                      {log.subagent_summary}
+                    <span style={{ color: '#58a6ff', display: 'block', marginBottom: '6px' }}>&gt; AGENT_TRACE_TIMELINE:</span>
+                    <div className="pl-4 border-l-2 border-[#58a6ff] text-xs space-y-1.5">
+                      {log.agent_trace.slice(0, 8).map((step, idx) => (
+                        <div key={`${log.id}-trace-${idx}`} className="text-[#8b949e]">
+                          <span style={{ color: '#79c0ff' }}>[{step.phase || 'agent'}:{step.event || 'event'}]</span>{' '}
+                          {shortText(step.message || 'No message', 90)}
+                          {step.meta?.state ? (
+                            <span style={{ color: '#3fb950' }}> → {step.meta.state}</span>
+                          ) : null}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
 
                 {/* Final Reason */}
                 <div>
-                  <span style={{ color: '#3fb950', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_REASONING:</span>
+                  <span style={{ color: '#3fb950', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_REASONING (lý do cuối cùng đã thực thi):</span>
                   <div className="pl-4 border-l-2 border-[#3fb950] text-[#e6edf3] whitespace-pre-wrap">
                     {log.reason || 'No specific reasoning provided.'}
+                  </div>
+                </div>
+
+                {/* Final Verdict for non-tech judges */}
+                <div className="mt-3">
+                  <span style={{ color: '#f2cc60', display: 'block', marginBottom: '4px' }}>&gt; KẾT LUẬN CUỐI:</span>
+                  <div className="pl-4 border-l-2 border-[#f2cc60] text-[#f0f6fc] text-sm">
+                    {log.action === 'OPEN'
+                      ? `Hệ thống đánh giá điều kiện hiện tại có thể tưới, nên đã mở van.`
+                      : log.action === 'CLOSED' || log.action === 'CLOSE'
+                        ? `Hệ thống phát hiện rủi ro cho cây trồng, nên đã đóng van để bảo vệ.`
+                        : `Hệ thống đang giữ trạng thái hiện tại và tiếp tục theo dõi.`}
                   </div>
                 </div>
               </div>
