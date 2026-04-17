@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # System Architecture (v5.0 - Event-Driven Push + AI Trigger Filter)
 
 ## 1. High-Level Architecture
@@ -8,11 +9,20 @@ SalinAI is a 3-layer event-driven irrigation intelligence system.
 3. **User interfaces:** React dashboard.
 
 ## 2. Runtime Layers
+=======
+# System Architecture (v3.0 - AI Agentic + RAG Pipeline)
+
+## 1. High-Level Architecture
+SalinAI is built as a three-layer, event-driven AI Agentic system. Firebase remains the real-time command bus, while RAG is mandatory and uses only MongoDB Atlas Vector Search.
+
+### Layer 1: Perception (Data Ingestion)
+>>>>>>> b50344a2725be0ef3a7d9a93faea49a6fd1924dd
 
 ### Layer A: Data Ingestion (Push Architecture)
 
 | Component | Technology | Responsibility |
 |---|---|---|
+<<<<<<< HEAD
 | IoT Hardware (ESP32) | C++ (Arduino) | Pushes data to `POST /api/ingest` every 5m or on anomaly. |
 | Ingestion Endpoint | Express (`ingestData`) | Unified endpoint for Hardware; applies strict validation. |
 | Strict Validator | Node.js | Rejects `0`, `-ve`, `NaN`, `null`, `moisture > 100` (Fail-Fast). |
@@ -160,3 +170,85 @@ MANUAL: AI reasoning/logging still runs, actuator write is blocked.
 | Realtime bus | Firebase Realtime DB | Event and command synchronization |
 | Vector DB + history | MongoDB Atlas | RAG retrieval + persistent history |
 | Weather source | Open-Meteo API | External weather context |
+=======
+| IoT Sensor Mockup | ESP32 / React Simulator | Writes salinity, moisture, and crop_stage into Firebase sensor_data |
+| Weather Feed | OpenWeatherMap API | Provides macro weather risk context |
+
+### Layer 2: AI Agentic Core (Backend on Render)
+
+| Submodel | Role | Notes |
+|---|---|---|
+| Event Filter + Throttle | Firebase listener middleware | Prevents spam invocation and enforces minimum trigger interval |
+| Orchestrator | LangChain.js | Coordinates retrieval, prompt assembly, and tool execution |
+| Embedding Generator | Gemini embedding model (via LangChain integration) | Converts multi-factor query state into vector representation |
+| Vector Database | MongoDB Atlas Vector Search | Retrieves agricultural guideline chunks filtered by crop_stage and context |
+| Reasoning Model | Gemini 2.5 Flash | Produces decision and tool arguments based on retrieved context |
+
+### Layer 3: Execution + Interfaces
+
+| Component | Technology | Description |
+|---|---|---|
+| Command Bus | Firebase Realtime DB | Stores valve_state, control_mode, AI status, and action logs |
+| Actuator | Valve Relay | Executes OPEN or CLOSED state |
+| Frontend | React (Vite) | Dashboard, simulator, and AI Agentic visual pages |
+| Notifications | Telegram Bot / SMTP | Delivers anomaly or action alerts |
+
+## 2. Mandatory RAG Decision Flow
+The production decision chain must always follow this sequence:
+
+1. Listener receives new sensor payload from Firebase.
+2. Backend composes multi-factor retrieval query with salinity, moisture, crop_stage, weather_risk, and recent action summary.
+3. Embedding generator creates the query vector.
+4. LangChain retriever executes MongoDB Atlas Vector Search on agricultural guideline corpus.
+5. Retriever returns top-k guideline chunks with scores and metadata.
+6. System prompt for Gemini 2.5 Flash is assembled with:
+    - Hard safety rules.
+    - Real-time factors (salinity, moisture, crop_stage, weather, control_mode).
+    - Retrieved guideline context from MongoDB.
+7. Gemini reasons and decides tool call or NO_ACTION.
+8. Tool executor rechecks control_mode before writing actuator updates.
+9. Result is logged to Firebase and MongoDB action logs.
+
+Fallback rule: if retrieval returns no document above threshold, the chain continues with hard safety rules only and logs retrieval_miss=true.
+
+## 3. Langflow Visual Specification (Canonical)
+Langflow is the required visual representation for the AI Agentic pipeline. The visual canvas must mirror backend runtime behavior.
+
+### 3.1 Langflow Nodes
+
+| Node ID | Node Type | Input | Output |
+|---|---|---|---|
+| N1 | Firebase Trigger Node | sensor_data update | sensor_event |
+| N2 | Event Filter Node | sensor_event | filtered_event |
+| N3 | Weather Context Node | filtered_event | enriched_event |
+| N4 | Query Builder Node | enriched_event | retrieval_query_text |
+| N5 | Embedding Node | retrieval_query_text | query_vector |
+| N6 | MongoDB Atlas Vector Search Node | query_vector + crop_stage filter | retrieved_guidelines |
+| N7 | Prompt Builder Node | enriched_event + retrieved_guidelines | system_prompt |
+| N8 | Gemini 2.5 Flash Node | system_prompt + tool schemas | model_decision |
+| N9 | Tool Router Node | model_decision | tool_execution_result |
+| N10 | Log Sink Node | tool_execution_result | firebase_log + mongo_log |
+
+### 3.2 Langflow Edges
+
+| Edge | From | To | Purpose |
+|---|---|---|---|
+| E1 | N1 | N2 | Initial trigger handoff |
+| E2 | N2 | N3 | Pass valid events only |
+| E3 | N3 | N4 | Build retrieval query from multi-factor state |
+| E4 | N4 | N5 | Generate embedding |
+| E5 | N5 | N6 | Execute vector retrieval |
+| E6 | N3 + N6 | N7 | Merge live context and retrieved context |
+| E7 | N7 | N8 | Run Gemini reasoning |
+| E8 | N8 | N9 | Execute tool decision safely |
+| E9 | N9 | N10 | Persist outcome and observability metadata |
+
+## 4. Control Mode State Machine
+
+```text
+AUTO   -- user sets MANUAL --> MANUAL
+MANUAL -- user sets AUTO   --> AUTO
+
+AUTO:   AI Agentic pipeline may execute valve writes.
+MANUAL: AI Agentic pipeline may reason, but actuator write tools are blocked.
+>>>>>>> b50344a2725be0ef3a7d9a93faea49a6fd1924dd

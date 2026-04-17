@@ -5,6 +5,7 @@ All services must write and read this structure exactly.
 
 ```json
 {
+<<<<<<< HEAD
   "sensor_telemetry": {
     "river_salinity": 1.5,
     "soil_moisture": 70.0,
@@ -24,6 +25,19 @@ All services must write and read this structure exactly.
     "tide_status": "RISING",
     "rainfall_24h": 15.5,
     "temperature": 32.0
+=======
+  "sensor_data": {
+    "salinity": 1.5,
+    "moisture": 70.0,
+    "crop_stage": "VEGETATIVE",
+    "timestamp": "2026-04-12T09:00:00Z"
+  },
+  "actuator": {
+    "valve_state": "OPEN",
+    "control_mode": "AUTO"
+    "valve_state": "OPEN",
+    "control_mode": "AUTO"
+>>>>>>> b50344a2725be0ef3a7d9a93faea49a6fd1924dd
   },
   "ai_status": {
     "is_processing": false,
@@ -45,6 +59,7 @@ All services must write and read this structure exactly.
       }
     }
   }
+<<<<<<< HEAD
 }
 ```
 
@@ -339,3 +354,6 @@ Input schema:
 | chat:message | Client -> Server | {"message":"string","crop_stage":"enum"} |
 | chat:reply | Server -> Client | {"reply":"string","retrieval":{"source_ids":[]}} |
 | agentic:status | Server -> Client | {"is_processing":true,"phase":"retrieval|reasoning|tool"} |
+=======
+}
+>>>>>>> b50344a2725be0ef3a7d9a93faea49a6fd1924dd

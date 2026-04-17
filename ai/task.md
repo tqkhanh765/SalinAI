@@ -17,24 +17,40 @@
 Target: Apr 10-11 | Owner: B + C
 
 - [x] Task 1.1 🔴 [C] Initialize Express backend, Firebase Admin SDK, CORS, and GET /api/health.
+<<<<<<< HEAD
 - [x] Task 1.2 🔴 [C] Add MongoDB Atlas config module at backend/config/mongodb.js and validate startup connectivity.
 - [x] Task 1.3 🔴 [C] Update .env.example with MONGODB_URI, GEMINI_API_KEY, EMBEDDING_MODEL, VECTOR_TOP_K, VECTOR_MIN_SCORE.
 - [x] Task 1.4 🔴 [B] Ensure simulator writes salinity, moisture, crop_stage, timestamp to Firebase sensor_data.
+=======
+- [ ] Task 1.2 🔴 [C] Add MongoDB Atlas config module at backend/config/mongodb.js and validate startup connectivity.
+- [ ] Task 1.3 🔴 [C] Update .env.example with MONGODB_URI, GEMINI_API_KEY, EMBEDDING_MODEL, VECTOR_TOP_K, VECTOR_MIN_SCORE.
+- [ ] Task 1.4 🔴 [B] Ensure simulator writes salinity, moisture, crop_stage, timestamp to Firebase sensor_data.
+>>>>>>> b50344a2725be0ef3a7d9a93faea49a6fd1924dd
 - [ ] Task 1.5 🟡 [B] Add crop_stage selector in simulator and dashboard filter panels.
 
 ## Phase 2: MongoDB Vector Search Setup (MVP)
 Target: Apr 12 | Owner: C (primary) + A
 
+<<<<<<< HEAD
 - [x] Task 2.1 🔴 [C] Create guideline_documents collection schema and seed initial agricultural guideline corpus.
 - [x] Task 2.2 🔴 [C] Generate and persist embeddings for seeded guideline documents.
 - [x] Task 2.3 🔴 [C] Create Atlas Vector Search index on guideline_documents.embedding.
 - [x] Task 2.4 🔴 [A] Implement retrieval utility in backend/agent/langchain.js with top_k and min_score policy.
 - [x] Task 2.5 🔴 [A] Add metadata filter support for crop_stage and region in retrieval query.
 - [x] Task 2.6 🔴 [A + C] Verify retrieval returns relevant guideline chunks for at least 5 crop_stage scenarios.
+=======
+- [ ] Task 2.1 🔴 [C] Create guideline_documents collection schema and seed initial agricultural guideline corpus.
+- [ ] Task 2.2 🔴 [C] Generate and persist embeddings for seeded guideline documents.
+- [ ] Task 2.3 🔴 [C] Create Atlas Vector Search index on guideline_documents.embedding.
+- [ ] Task 2.4 🔴 [A] Implement retrieval utility in backend/agent/langchain.js with top_k and min_score policy.
+- [ ] Task 2.5 🔴 [A] Add metadata filter support for crop_stage and region in retrieval query.
+- [ ] Task 2.6 🔴 [A + C] Verify retrieval returns relevant guideline chunks for at least 5 crop_stage scenarios.
+>>>>>>> b50344a2725be0ef3a7d9a93faea49a6fd1924dd
 
 ## Phase 3: AI Agentic Runtime Chain (LangChain + Gemini)
 Target: Apr 12-14 | Owner: A (primary) + C
 
+<<<<<<< HEAD
 - [x] Task 3.1 🔴 [A] Implement backend/listeners/firebase-listener.js:
   - Subscribe to sensor_data updates.
   - Abort actuator writes when control_mode is MANUAL.
@@ -57,11 +73,35 @@ Target: Apr 12-14 | Owner: A (primary) + C
 - [x] Task 3.8 🔴 [A] Refactor single-shot chain into a Multi-Agent Supervisor workflow (Researcher Subagent + Orchestrator).
 - [x] Task 3.9 🔴 [C] Implement Enterprise Pre-Filter anomaly firewall in listener for API cost savings.
 - [x] Task 3.10 🔴 [A] Implement persistent memory via query_action_history tool so the Agent studies past consequences.
+=======
+- [ ] Task 3.1 🔴 [A] Implement backend/listeners/firebase-listener.js:
+  - Subscribe to sensor_data updates.
+  - Abort actuator writes when control_mode is MANUAL.
+  - Apply minimum 10 second debounce between AI Agentic invocations.
+- [ ] Task 3.2 🔴 [A] Implement backend/agent/prompt.js:
+  - Include hard safety rules and multi-factor context (salinity, moisture, crop_stage, weather, control_mode).
+  - Inject retrieved guideline snippets and source ids into Gemini system prompt.
+- [ ] Task 3.3 🔴 [A] Implement backend/agent/tools.js:
+  - execute_valve_control(state, reason, source_ids) with strict MANUAL lock guard.
+  - check_weather() returning condition, is_risky, description.
+  - send_alert(channel, message).
+- [ ] Task 3.4 🔴 [A] Implement backend/agent/langchain.js end-to-end chain:
+  - Build retrieval query from environmental factors plus crop_stage.
+  - Generate embedding and query Atlas Vector Search.
+  - Inject retrieved context into Gemini 2.5 Flash prompt.
+  - Execute tools and persist logs.
+- [ ] Task 3.5 🔴 [C] Register listener and chain bootstrap in backend/server.js.
+- [ ] Task 3.6 🔴 [A + C] Enforce dual logging for every decision to Firebase action_logs and MongoDB action_logs.
+>>>>>>> b50344a2725be0ef3a7d9a93faea49a6fd1924dd
 
 ## Phase 4: Langflow Visual Pipeline (MVP)
 Target: Apr 13-14 | Owner: A + B
 
+<<<<<<< HEAD
 - [x] Task 4.1 🔴 [A] Build Langflow canvas mirroring production nodes: trigger, filter, subagent query, embedding, vector retrieval, prompt builder, orchestrator, tool router, log sink.
+=======
+- [ ] Task 4.1 🔴 [A] Build Langflow canvas mirroring production nodes: trigger, filter, weather, query builder, embedding, vector retrieval, prompt builder, Gemini, tool router, log sink.
+>>>>>>> b50344a2725be0ef3a7d9a93faea49a6fd1924dd
 - [ ] Task 4.2 🔴 [A] Validate node IO parity between Langflow visual and backend chain interfaces.
 - [ ] Task 4.3 🟡 [B] Add visual export artifact (PNG or JSON) to ai/ references for demo walkthrough.
 - [ ] Task 4.4 🟡 [B] Update dashboard behind-the-scenes page labels to AI Agentic wording.
@@ -90,6 +130,7 @@ Target: Apr 18-19 | Owner: All
 - [ ] Task 7.2 🟡 [A] Demo script with 3 scenarios: salinity spike, weather risk, manual override.
 - [ ] Task 7.3 🟡 [B] Demo visual walkthrough with Langflow canvas and source attribution from retrieval.
 
+<<<<<<< HEAD
 ## Phase 8: Architectural Shift (v5.0)
 Target: Apr 15 | Owner: All
 
@@ -99,15 +140,22 @@ Target: Apr 15 | Owner: All
 
 ## Acceptance Criteria (Hard Gates)
 
+=======
+## Acceptance Criteria (Hard Gates)
+
+>>>>>>> b50344a2725be0ef3a7d9a93faea49a6fd1924dd
 - [ ] AC-1: RAG uses only MongoDB Atlas Vector Search.
 - [ ] AC-2: Every inference path includes crop_stage-aware retrieval before Gemini reasoning.
 - [ ] AC-3: Retrieved context is injected into system prompt and source ids are logged.
 - [ ] AC-4: AI Agentic naming is used across docs and user-facing labels.
 - [ ] AC-5: MANUAL mode prevents actuator writes from AI Agentic tools.
 - [ ] AC-6: E2E anomaly handling remains under 3 seconds in MVP environment.
+<<<<<<< HEAD
 - [x] AC-7: No polling services active in backend.
 - [x] AC-8: `POST /api/ingest` rejects `0` and negative values with 400.
 - [x] AC-9: AI Agent only triggered on significant sensor delta or extreme weather.
+=======
+>>>>>>> b50344a2725be0ef3a7d9a93faea49a6fd1924dd
 
 ## Sprint Timeline
 
@@ -118,6 +166,10 @@ Apr 12-14 -> Phase 3 AI Agentic runtime chain
 Apr 13-14 -> Phase 4 Langflow visual parity
 Apr 14-15 -> Phase 5 API and chat contracts
 Apr 15-18 -> Phase 6 validation and performance
+<<<<<<< HEAD
 Apr 15    -> Phase 8 Architectural Shift (v5.0)
 Apr 18-19 -> Phase 7 deployment and demo readiness
 ```
+=======
+Apr 18-19 -> Phase 7 deployment and demo readiness
+>>>>>>> b50344a2725be0ef3a7d9a93faea49a6fd1924dd
