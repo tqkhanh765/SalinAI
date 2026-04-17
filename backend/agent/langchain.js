@@ -105,6 +105,7 @@ async function runAgent(sensorData) {
     let retrievalOutputPreview = "";
     let policyMemoryPreview = "";
     let policyContextForModel = "";
+    let researcherTimedOut = false;
     const agentTrace = [];
 
     const addTrace = (phase, event, message, meta = {}) => {
@@ -193,13 +194,27 @@ ${mandatoryRetrieval.context}`,
         while (researchLoop < MAX_RESEARCH_LOOPS) {
             researchLoop++;
             addTrace("researcher", "iteration", `Vòng Researcher ${researchLoop} bắt đầu`);
-            const response = await invokeWithPhaseTimeoutRetry({
-                phaseKey: "researcher",
-                label: "Researcher phase",
-                timeoutMs: RESEARCHER_PHASE_TIMEOUT_MS,
-                invokeFn: () => researcherAgent.invoke(researcherMessages),
-                iteration: researchLoop,
-            });
+            let response;
+            try {
+                response = await invokeWithPhaseTimeoutRetry({
+                    phaseKey: "researcher",
+                    label: "Researcher phase",
+                    timeoutMs: RESEARCHER_PHASE_TIMEOUT_MS,
+                    invokeFn: () => researcherAgent.invoke(researcherMessages),
+                    iteration: researchLoop,
+                });
+            } catch (err) {
+                if (err?.code === "AGENT_TIMEOUT") {
+                    researcherTimedOut = true;
+                    researcherRawOutput = `Researcher timeout sau ${RESEARCHER_PHASE_TIMEOUT_MS}ms. Dùng summary dự phòng từ retrieval để tiếp tục Orchestrator.`;
+                    addTrace("researcher", "timeout_degraded", "Researcher timeout; chuyển sang chế độ degrade và tiếp tục pipeline", {
+                        iteration: researchLoop,
+                        timeout_ms: RESEARCHER_PHASE_TIMEOUT_MS,
+                    });
+                    break;
+                }
+                throw err;
+            }
             researcherMessages.push(response);
             const researcherContent = stripThinkTags(toText(response?.content));
             researcherRawOutput = truncateText(researcherContent);
@@ -259,9 +274,12 @@ ${mandatoryRetrieval.context}`,
                 : "Không có source ID khả dụng từ retrieval.";
             const contextFallback = compactText(mandatoryRetrieval.context, 420);
             researcherSummary = `${retrievalFallback} Tóm tắt nhanh theo evidence retrieval: ${contextFallback || "Chưa có context retrieval chi tiết."}`;
-            researcherRawOutput = truncateText(researcherSummary);
+            if (!researcherRawOutput) {
+                researcherRawOutput = truncateText(researcherSummary);
+            }
             addTrace("researcher", "fallback_summary", "Researcher không trả summary cuối; dùng summary dự phòng từ retrieval", {
                 source_ids: finalSourceIds,
+                timeout_degraded: researcherTimedOut,
             });
         }
 
