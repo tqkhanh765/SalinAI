@@ -277,6 +277,22 @@ export default function SimulatorPage() {
     return map[event] || event || 'event';
   };
 
+  const buildReasoningSummary = (log = {}) => {
+    const action = String(log?.action || 'NO_ACTION').toUpperCase();
+    const reason = shortText(log?.reason || 'Không có lý do cụ thể', 120);
+    return `Tóm tắt: ${reason} | Kết quả: ${action}`;
+  };
+
+  const formatVnTime = (value) => {
+    if (!value) return '--:--';
+    return new Date(value).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+  };
+
+  const formatVnDateTime = (value) => {
+    if (!value) return '--:--:--';
+    return new Date(value).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+  };
+
   return (
     <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8" style={{ background: '#EEEEEE' }}>
       <div className="max-w-5xl mx-auto">
@@ -442,7 +458,7 @@ export default function SimulatorPage() {
                     </p>
                     {lastLog.timestamp && (
                       <p className="text-xs text-gray-400 mt-1">
-                        {new Date(lastLog.timestamp).toLocaleTimeString('vi-VN')}
+                        {formatVnTime(lastLog.timestamp)}
                       </p>
                     )}
                   </div>
@@ -534,7 +550,7 @@ export default function SimulatorPage() {
                     )}
                   </div>
                   <span style={{ color: '#8b949e' }}>
-                    {log.timestamp ? new Date(log.timestamp).toLocaleString('vi-VN') : '--:--:--'}
+                    {formatVnDateTime(log.timestamp)}
                   </span>
                 </div>
 
@@ -649,7 +665,25 @@ export default function SimulatorPage() {
                 <div className="mb-3">
                   <span style={{ color: '#ffa657', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_OUTPUT (phân tích thô từ model):</span>
                   <div className="pl-4 border-l-2 border-[#ffa657] text-xs text-[#8b949e] whitespace-pre-wrap max-h-56 overflow-auto">
-                    {log.model_insights?.orchestrator_output_preview || log.reason || 'Không có phản hồi Orchestrator.'}
+                    {(() => {
+                      const rawOutput = String(log.model_insights?.orchestrator_output_preview || '').trim();
+                      const toolReason = String(log.model_insights?.orchestrator_tool_reason || '').trim();
+                      const finalReason = String(log.reason || '').trim();
+                      const resolved = rawOutput || toolReason;
+
+                      if (!resolved) {
+                        if (log.model_insights?.fallback) {
+                          return 'Pipeline gặp lỗi nên đã dùng fallback action; không có phân tích thô đầy đủ từ Orchestrator.';
+                        }
+                        return 'Log cũ chưa lưu trường ORCHESTRATOR_OUTPUT. Hãy xem log mới để thấy phần lập luận đầy đủ.';
+                      }
+
+                      if (resolved === finalReason) {
+                        return `${resolved}\n\n[NOTE] Ở lần chạy này, phần lập luận và kết luận cuối gần như trùng nhau.`;
+                      }
+
+                      return resolved;
+                    })()}
                   </div>
                 </div>
 
@@ -657,7 +691,7 @@ export default function SimulatorPage() {
                 <div>
                   <span style={{ color: '#3fb950', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_REASONING (lý do cuối cùng đã thực thi):</span>
                   <div className="pl-4 border-l-2 border-[#3fb950] text-[#e6edf3] whitespace-pre-wrap">
-                    {log.reason || 'No specific reasoning provided.'}
+                    {log.model_insights?.orchestrator_reasoning_summary || buildReasoningSummary(log)}
                   </div>
                 </div>
 

@@ -18,8 +18,94 @@ function sanitizeRetrievalText(text) {
     .replace(/[\uFFFD]/g, " ")
     .replace(/[^\x09\x0A\x0D\x20-\x7E\u00A0-\u024F\u1E00-\u1EFF]/g, " ")
     .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\r/g, "\n")
+    .replace(/\n{2,}/g, "\n")
     .trim();
+}
+
+function compactSnippet(text, maxChars = 420) {
+  const normalized = sanitizeRetrievalText(text)
+    .replace(/\n+/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  if (!normalized) return "Không có nội dung trích dẫn.";
+  if (normalized.length <= maxChars) return normalized;
+
+  return `${normalized.slice(0, maxChars).trim()}...`;
+}
+
+function normalizeSourceTitle(doc) {
+  const title = sanitizeRetrievalText(doc?.title || "");
+  if (title) return title;
+
+  const id = String(doc?._id || "");
+  if (id.includes("-chunk-")) {
+    return id.split("-chunk-")[0].replace(/^paper-/, "Paper");
+  }
+
+  return id || "Unknown source";
+}
+
+function buildReadableRetrievalContext(docs, maxSnippetChars) {
+  const lines = [];
+
+  docs.forEach((doc, index) => {
+    const sourceId = String(doc?._id || "unknown");
+    const sourceTitle = normalizeSourceTitle(doc);
+    const snippet = compactSnippet(doc?.content, maxSnippetChars);
+    lines.push(
+      `${index + 1}) Nguồn: ${sourceId}`,
+      `   Tiêu đề: ${sourceTitle}`,
+      `   Trích đoạn: ${snippet}`
+    );
+  });
+
+  return lines.join("\n\n");
+}
+
+function getSourceGroupId(docId = "") {
+  const id = String(docId || "");
+  const chunkIndex = id.indexOf("-chunk-");
+  return chunkIndex >= 0 ? id.slice(0, chunkIndex) : id;
+}
+
+function selectDiverseResults(results, topK, maxChunksPerSource, variationSeed = 0) {
+  const groups = new Map();
+  for (const doc of results) {
+    const group = getSourceGroupId(doc?._id);
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(doc);
+  }
+
+  // Sort each group by score descending first.
+  for (const docs of groups.values()) {
+    docs.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+  }
+
+  const sortedGroupEntries = Array.from(groups.entries())
+    .sort((a, b) => Number((b[1]?.[0]?.score || 0)) - Number((a[1]?.[0]?.score || 0)));
+
+  const selected = [];
+  const perSourceCount = new Map();
+
+  const candidatePerGroup = 3;
+
+  for (const [group, docs] of sortedGroupEntries) {
+    if (!docs?.length) continue;
+    const used = perSourceCount.get(group) || 0;
+    if (used >= maxChunksPerSource) continue;
+
+    const usable = docs.slice(0, Math.min(candidatePerGroup, docs.length));
+    const pickIndex = Math.abs(Number(variationSeed || 0) + selected.length) % usable.length;
+    const doc = usable[pickIndex];
+
+    selected.push(doc);
+    perSourceCount.set(group, used + 1);
+    if (selected.length >= topK) break;
+  }
+
+  return selected;
 }
 
 async function executeRAGTool(salinity, moisture, mongoDb, cropStage = "") {
@@ -29,7 +115,9 @@ async function executeRAGTool(salinity, moisture, mongoDb, cropStage = "") {
     : `Salinity is ${salinity} ppt, moisture is ${moisture}%.`;
   const topK = Math.max(1, parseInt(process.env.VECTOR_TOP_K || "3", 10));
   const candidateLimit = Math.max(topK * 8, 24);
-  const allowedSourceRef = String(process.env.RETRIEVAL_ALLOWED_SOURCE_REF || "FILE_UPLOAD").trim();
+  const snippetChars = Math.max(160, parseInt(process.env.RETRIEVAL_SNIPPET_MAX_CHARS || "420", 10));
+  const maxChunksPerSource = Math.max(1, parseInt(process.env.RETRIEVAL_MAX_CHUNKS_PER_SOURCE || "1", 10));
+  const variationSeed = Math.round(Number(salinity || 0) * 10) + Math.round(Number(moisture || 0));
 
   try {
     const queryVector = await embeddings.embedQuery(queryText);
@@ -50,28 +138,22 @@ async function executeRAGTool(salinity, moisture, mongoDb, cropStage = "") {
     const minScore = parseFloat(process.env.VECTOR_MIN_SCORE || "0.72");
     const paperOnlyResults = results.filter((r) => {
       const id = String(r?._id || "");
-      const sourceRef = String(r?.source_ref || "");
-      return id.startsWith("paper-") || (allowedSourceRef && sourceRef === allowedSourceRef);
+      return id.startsWith("paper-");
     });
-    const validResults = paperOnlyResults
+    const scoredResults = paperOnlyResults
       .filter((r) => r.score >= minScore)
-      .slice(0, topK);
+      .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+
+    const validResults = selectDiverseResults(scoredResults, topK, maxChunksPerSource, variationSeed);
 
     if (validResults.length === 0) {
       return { hitCount: 0, sourceIds: [], context: "No uploaded-paper evidence found via retrieval." };
     }
 
-    const sourceIds = [];
-    const contextDocs = [];
+    const sourceIds = validResults.map((doc) => String(doc._id));
+    const context = buildReadableRetrievalContext(validResults, snippetChars);
 
-    validResults.forEach((doc) => {
-      sourceIds.push(doc._id);
-      const cleanTitle = sanitizeRetrievalText(doc.title);
-      const cleanContent = sanitizeRetrievalText(doc.content);
-      contextDocs.push(`[${doc._id}] ${cleanTitle}: ${cleanContent}`);
-    });
-
-    return { hitCount: validResults.length, sourceIds, context: contextDocs.join("\n\n") };
+    return { hitCount: validResults.length, sourceIds, context };
   } catch (err) {
     console.error("Vector Retrieval Error:", err);
     return { hitCount: 0, sourceIds: [], context: "Vector Search offline." };

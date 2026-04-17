@@ -20,20 +20,25 @@ router.post("/api/override", farmController.overrideActuator);
  */
 router.get("/api/decision-details", async (req, res) => {
     try {
-        const snapshot = await db.ref("/").once("value");
-        const root = snapshot.val() || {};
+        const [
+            sensorSnapshot,
+            aiStatusSnapshot,
+            actuatorSnapshot,
+            latestActionSnapshot,
+        ] = await Promise.all([
+            db.ref("sensor_data").once("value"),
+            db.ref("ai_status").once("value"),
+            db.ref("actuator").once("value"),
+            db.ref("action_logs").limitToLast(1).once("value"),
+        ]);
 
-        const sensorData = root.sensor_data || {};
-        const externalForecast = (root.sensor_data?.external_forecast) || {};
-        const tideData = (root.sensor_data?.external_forecast) || {};
-        const aiStatus = root.ai_status || {};
-        const actuator = root.actuator || {};
-        const actionLogs = root.action_logs || {};
-
-        // Extract latest action for decision details
-        const latestAction = Object.values(actionLogs).sort((a, b) =>
-            new Date(b.timestamp) - new Date(a.timestamp)
-        )[0] || {};
+        const sensorData = sensorSnapshot.val() || {};
+        const externalForecast = sensorData?.external_forecast || {};
+        const tideData = sensorData?.external_forecast || {};
+        const aiStatus = aiStatusSnapshot.val() || {};
+        const actuator = actuatorSnapshot.val() || {};
+        const latestActionMap = latestActionSnapshot.val() || {};
+        const latestAction = Object.values(latestActionMap)[0] || {};
 
         const decision = {
             executed_state: actuator.valve_state,

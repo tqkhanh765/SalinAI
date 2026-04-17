@@ -12,7 +12,9 @@ const {
     isQuotaError,
     parseRetrySeconds,
     withTimeout,
+    buildFallbackAction,
 } = require("../services/core/agentSafetyService");
+const { toVietnamISOString } = require("../utils/vietnamTime");
 
 const { executeRAGTool } = require("../services/ai/retrievalService");
 const { researcherAgent } = require("./agentResearch");
@@ -23,13 +25,14 @@ const {
 } = require("./agentOrchestration");
 const { buildPolicyPromptBlock } = require("../services/ai/policyLearningService");
 
-const MAX_RESEARCH_LOOPS = Math.max(3, parseInt(process.env.MAX_RESEARCH_LOOPS || "3", 10));
-const MAX_ORCHESTRATION_LOOPS = Math.max(3, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "3", 10));
-const AGENT_PHASE_TIMEOUT_MS = Math.max(3000, parseInt(process.env.AGENT_PHASE_TIMEOUT_MS || "12000", 10));
+const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS || "1", 10));
+const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "1", 10));
+const AGENT_PHASE_TIMEOUT_MS = Math.max(2000, parseInt(process.env.AGENT_PHASE_TIMEOUT_MS || "8000", 10));
 const MAX_TRACE_STEPS = Math.max(10, parseInt(process.env.AGENT_TRACE_MAX_STEPS || "40", 10));
 const MAX_INSIGHT_CHARS = Math.max(200, parseInt(process.env.AGENT_INSIGHT_MAX_CHARS || "800", 10));
 const MAX_RETRIEVAL_OUTPUT_CHARS = Math.max(400, parseInt(process.env.RETRIEVAL_OUTPUT_MAX_CHARS || "2200", 10));
 const MAX_FULL_OUTPUT_CHARS = Math.max(2000, parseInt(process.env.MODEL_OUTPUT_MAX_CHARS || "12000", 10));
+const MAX_ORCHESTRATOR_OUTPUT_PREVIEW_CHARS = Math.max(400, parseInt(process.env.ORCHESTRATOR_OUTPUT_PREVIEW_CHARS || "1400", 10));
 
 // ─── Pipeline Execution ──────────────────────────────────────────────────────
 async function runAgent(sensorData) {
@@ -50,6 +53,7 @@ async function runAgent(sensorData) {
     let actionResult = null;
     let researcherRawOutput = "";
     let orchestratorRawOutput = "";
+    let orchestratorArgumentReason = "";
     let retrievalOutputPreview = "";
     const agentTrace = [];
 
@@ -82,6 +86,80 @@ async function runAgent(sensorData) {
         return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
     };
 
+    const buildReasoningSummary = (reason, action) => {
+        const actionLabel = String(action || "NO_ACTION").toUpperCase();
+        const normalizedReason = compactText(
+            String(reason || "Không có lý do cụ thể").replace(/^Đã phân tích từ văn bản Orchestrator:\s*/i, ""),
+            120
+        ).replace(/[.\s]+$/g, "");
+        return `${normalizedReason}. Vì vậy hệ thống chọn ${actionLabel}.`;
+    };
+
+    const buildOrchestratorOutputPreview = ({ rawOutput, toolReason, researcherSummary, action }) => {
+        const cleanRaw = truncateText(extractOrchestratorNarrative(rawOutput || ""), MAX_ORCHESTRATOR_OUTPUT_PREVIEW_CHARS);
+        const cleanToolReason = compactText(toolReason || "", 180);
+        const cleanResearcher = compactText(researcherSummary || "", 260);
+        const actionLabel = String(action || "NO_ACTION").toUpperCase();
+
+        if (cleanRaw && cleanRaw.length >= 80) {
+            return cleanRaw;
+        }
+
+        if (cleanResearcher && cleanToolReason) {
+            return `Từ phần phân tích của Researcher: ${cleanResearcher} Dựa trên bối cảnh hiện tại, Orchestrator kết luận ${cleanToolReason} (kết quả: ${actionLabel}).`;
+        }
+
+        return cleanRaw || cleanToolReason || "Không có output thô từ Orchestrator trong log này.";
+    };
+
+    const cleanModelArtifacts = (value) => {
+        const text = String(value || "");
+        return text
+            .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "")
+            .replace(/<\|end_of_text\|>:\/\/[\s\S]*$/gi, "")
+            .replace(/<\|end_of_text\|>/gi, "")
+            .replace(/```[\s\S]*?```/g, "")
+            .replace(/\n{3,}/g, "\n\n")
+            .trim();
+    };
+
+    const extractOrchestratorNarrative = (value) => {
+        const cleaned = cleanModelArtifacts(value);
+        if (!cleaned) return "";
+
+        const decisionIndex = cleaned.search(/\n\s*(Quyết định|Lý do|Nguồn)\s*:/i);
+        const narrative = decisionIndex > 0 ? cleaned.slice(0, decisionIndex).trim() : cleaned;
+        return narrative;
+    };
+
+    const normalizeFarmerReason = (reason, state = "NO_ACTION") => {
+        const cleaned = cleanModelArtifacts(String(reason || "")).replace(/^Đã phân tích từ văn bản Orchestrator:\s*/i, "").trim();
+        const concise = compactText(cleaned, 170);
+        if (concise) return concise;
+
+        const action = String(state || "NO_ACTION").toUpperCase();
+        if (action === "OPEN") return "Điều kiện hiện tại cho thấy cần cấp nước để bảo vệ cây trồng.";
+        if (action === "CLOSED" || action === "CLOSE") return "Điều kiện hiện tại có rủi ro nên tạm đóng van để an toàn hơn.";
+        return "Điều kiện chưa yêu cầu thay đổi trạng thái van ở thời điểm này.";
+    };
+
+    const ensureResearcherCitations = (text, sourceIds = []) => {
+        const normalized = String(text || "").trim();
+        const validIds = Array.isArray(sourceIds) ? sourceIds.filter(Boolean).map((id) => String(id)) : [];
+        if (!normalized) return normalized;
+        if (validIds.length === 0) return normalized;
+
+        const hasRealCitation = validIds.some((id) => normalized.includes(id));
+        const usesPlaceholder = /guideline\s*[xyz]|nguồn\s*[xyz]|paper\s*[xyz]/i.test(normalized);
+
+        if (hasRealCitation && !usesPlaceholder) {
+            return normalized;
+        }
+
+        const citationBlock = `\n\nNguồn đã dùng: ${validIds.join(", ")}.`;
+        return `${normalized}${citationBlock}`;
+    };
+
     const stripThinkTags = (value) => {
         const text = String(value || "");
         return text
@@ -93,7 +171,7 @@ async function runAgent(sensorData) {
     };
 
     const parseDecisionFromText = (content) => {
-        const text = toText(content);
+        const text = cleanModelArtifacts(toText(content));
         if (!text) return null;
 
         const safetyDecision = text.match(/(?:safety\s*decision)\s*:\s*(OPEN|CLOSED|NO_ACTION)/i);
@@ -109,9 +187,11 @@ async function runAgent(sensorData) {
 
         if (!state) return null;
 
+        const narrative = extractOrchestratorNarrative(text);
+
         return {
             state,
-            reason: compactText(text, 260),
+            reason: compactText(narrative || text, 260),
         };
     };
 
@@ -120,7 +200,7 @@ async function runAgent(sensorData) {
             return;
         }
         agentTrace.push({
-            timestamp: new Date().toISOString(),
+            timestamp: toVietnamISOString(),
             phase,
             event,
             message,
@@ -171,7 +251,8 @@ ${mandatoryRetrieval.context}`,
             researcherRawOutput = truncateText(researcherContent);
 
             if (!response.tool_calls || response.tool_calls.length === 0) {
-                researcherSummary = researcherContent;
+                researcherSummary = ensureResearcherCitations(researcherContent, finalSourceIds);
+                researcherRawOutput = truncateText(researcherSummary);
                 addTrace("researcher", "summary", "Researcher tạo bản tóm tắt cuối", {
                     preview: compactText(researcherSummary, 400),
                 });
@@ -237,8 +318,8 @@ ${mandatoryRetrieval.context}`,
                 "Orchestrator phase"
             );
             orchestratorMessages.push(response);
-            const orchestratorContent = stripThinkTags(toText(response?.content));
-            orchestratorRawOutput = truncateText(orchestratorContent);
+            const orchestratorContent = cleanModelArtifacts(stripThinkTags(toText(response?.content)));
+            orchestratorRawOutput = orchestratorContent;
 
             if (!response.tool_calls || response.tool_calls.length === 0) {
                 const parsedDecision = parseDecisionFromText(orchestratorContent);
@@ -246,10 +327,11 @@ ${mandatoryRetrieval.context}`,
                     const toolInstance = orchestratorTools.find((tool) => tool.name === "execute_valve_control");
                     const rawOutput = await toolInstance.invoke({
                         state: parsedDecision.state,
-                        reason: `Đã phân tích từ văn bản Orchestrator: ${stripThinkTags(parsedDecision.reason)}`,
+                        reason: normalizeFarmerReason(parsedDecision.reason, parsedDecision.state),
                         source_ids: (finalSourceIds || []).map((id) => String(id)),
                     });
                     actionResult = JSON.parse(rawOutput);
+                    actionResult.reason = normalizeFarmerReason(actionResult.reason, actionResult.executed_state);
                     addTrace("orchestrator", "parsed_text_decision", "Không có tool_call; đã đọc quyết định từ văn bản trả lời", {
                         state: actionResult.executed_state,
                     });
@@ -268,8 +350,10 @@ ${mandatoryRetrieval.context}`,
                 if (toolCall.name === "execute_valve_control") {
                     console.log("[Orchestrator] ⚡ Đang gửi lệnh điều khiển phần cứng...");
                     const toolInstance = orchestratorTools.find((tool) => tool.name === toolCall.name);
+                    orchestratorArgumentReason = stripThinkTags(toText(toolCall.args?.reason || ""));
                     const rawOutput = await toolInstance.invoke(toolCall.args);
                     actionResult = JSON.parse(rawOutput);
+                    actionResult.reason = normalizeFarmerReason(actionResult.reason, actionResult.executed_state);
                     addTrace("orchestrator", "decision", "Đã thực thi tool điều khiển van", {
                         state: actionResult.executed_state,
                         blocked_by_manual: actionResult.blocked_by_manual,
@@ -305,7 +389,14 @@ ${mandatoryRetrieval.context}`,
             agentTrace,
             modelInsights: {
                 researcher_output_preview: researcherRawOutput,
-                orchestrator_output_preview: orchestratorRawOutput,
+                orchestrator_output_preview: buildOrchestratorOutputPreview({
+                    rawOutput: orchestratorRawOutput,
+                    toolReason: orchestratorArgumentReason,
+                    researcherSummary,
+                    action: actionResult.executed_state,
+                }),
+                orchestrator_reasoning_summary: buildReasoningSummary(actionResult.reason, actionResult.executed_state),
+                orchestrator_tool_reason: truncateText(orchestratorArgumentReason, MAX_FULL_OUTPUT_CHARS),
                 retrieval_output_preview: retrievalOutputPreview,
                 researcher_provider: String(process.env.RESEARCHER_PROVIDER || "gemini").toLowerCase(),
                 researcher_model:
@@ -334,6 +425,46 @@ ${mandatoryRetrieval.context}`,
         addTrace("pipeline", "error", err.message, {
             code: err.code || "UNKNOWN_ERROR",
         });
+
+        try {
+            const fallbackReason = `Fallback an toàn do lỗi pipeline AI: ${err.message}`;
+            const fallbackAction = await buildFallbackAction(sensorData, fallbackReason);
+            addTrace("orchestrator", "decision", "Đã kích hoạt fallback action để đảm bảo hệ thống không treo", {
+                state: fallbackAction.executed_state,
+                fallback: true,
+                blocked_by_manual: fallbackAction.blocked_by_manual,
+            });
+
+            await finalizeAction({
+                actionResult: fallbackAction,
+                sensorData,
+                finalHitCount,
+                finalSourceIds,
+                researcherSummary: researcherSummary || "Fallback path: không có bản tóm tắt Researcher đầy đủ.",
+                actor: "FALLBACK_AGENT",
+                mongoDb,
+                agentTrace,
+                modelInsights: {
+                    researcher_output_preview: researcherRawOutput,
+                    orchestrator_output_preview: buildOrchestratorOutputPreview({
+                        rawOutput: orchestratorRawOutput,
+                        toolReason: orchestratorArgumentReason || fallbackAction.reason,
+                        researcherSummary,
+                        action: fallbackAction.executed_state,
+                    }),
+                    orchestrator_reasoning_summary: buildReasoningSummary(fallbackAction.reason, fallbackAction.executed_state),
+                    orchestrator_tool_reason: truncateText(orchestratorArgumentReason, MAX_FULL_OUTPUT_CHARS),
+                    retrieval_output_preview: retrievalOutputPreview,
+                    fallback: true,
+                    fallback_error: String(err.message || "unknown"),
+                },
+            });
+
+            console.warn(`[Orchestrator] ⚠️ Dùng fallback action do lỗi pipeline: ${err.message}`);
+            return;
+        } catch (fallbackErr) {
+            console.error("[Orchestrator] Fallback action failed:", fallbackErr.message);
+        }
 
         await fbdb.ref("ai_status").update({
             is_processing: false,

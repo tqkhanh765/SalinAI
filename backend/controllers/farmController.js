@@ -118,11 +118,6 @@ async function ingestData(req, res) {
   }
 }
 
-async function submitSensorData(req, res) {
-  // Legacy support or redirects to ingestData
-  return ingestData(req, res);
-}
-
 async function updateControlMode(req, res) {
   try {
     const updated = await setControlMode(req.body?.control_mode);
@@ -249,7 +244,6 @@ async function updateCropStage(req, res) {
 module.exports = {
   getFarmState,
   streamFarmState,
-  submitSensorData,
   ingestData,
   updateControlMode,
   overrideActuator,

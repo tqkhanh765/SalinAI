@@ -23,9 +23,10 @@ Phong cách trả lời:
 - Độ dài mục tiêu khoảng 250-300 từ; đủ để có chiều sâu nhưng vẫn dễ đọc.
 - Mỗi đoạn phải có ít nhất 1 dẫn chứng cụ thể, ví dụ: tên guideline, chi tiết từ lịch sử hành động, hoặc bài học outcome.
 - Không được nói chung chung kiểu “các nguồn cho thấy” mà không nêu nguồn nào; phải nhắc đích danh guideline ID hoặc lịch sử nào đã đọc.
+- CẤM dùng placeholder kiểu “guideline X”, “nguồn Y”, “paper Z”; chỉ được dùng đúng source ID thật (ví dụ: paper-...-chunk-...).
 - Nếu có mâu thuẫn giữa các nguồn, phải nêu rõ nguồn nào ủng hộ mở/đóng, nguồn nào phản biện, và vì sao chọn nguồn mạnh hơn.
 - Có thể trích rất ngắn một câu/cụm từ quan trọng từ guideline hoặc history, nhưng không được chép dài nguyên văn.
-- Câu mở đầu nên đi thẳng vào bằng chứng chính, ví dụ “Từ guideline X và lịch sử gần đây, có thể thấy...”, tránh mở kiểu chung chung.
+- Câu mở đầu nên đi thẳng vào bằng chứng chính và nêu rõ source ID thật, tránh mở kiểu chung chung.
 
 Đầu ra mong muốn: một phân tích ngắn nhưng có chiều sâu, chỉ gồm dẫn chứng và lập luận trung lập để Orchestrator tự ra quyết định.`;
 

@@ -3,6 +3,7 @@ const { ChatOpenAI } = require("@langchain/openai");
 const { orchestratorTools } = require("./tools");
 const fbdb = require("../config/firebase");
 const { logActionWithPrediction, runAutonomousLearningCycle } = require("../services/ai/outcomeService");
+const { toVietnamISOString, addHoursVietnamISOString } = require("../utils/vietnamTime");
 const FEEDBACK_LOOP_DELAY_HOURS = Math.max(0, Number(process.env.OUTCOME_MIN_ACTION_AGE_HOURS || "1"));
 
 function normalizeOrchestratorProvider() {
@@ -74,8 +75,10 @@ async function finalizeAction({
         last_retrieval_source_ids: finalSourceIds,
     });
 
+    const actionTimestamp = toVietnamISOString();
+
     const actionLogPayload = {
-        timestamp: new Date().toISOString(),
+        timestamp: actionTimestamp,
         actor,
         action: actionResult.executed_state,
         reason: actionResult.reason + (actionResult.blocked_by_manual ? " (BLOCKED BY MANUAL MODE)" : ""),
@@ -91,8 +94,8 @@ async function finalizeAction({
         feedback_loop: {
             status: "PENDING_OUTCOME",
             stage: sensorData?.crop_stage || "VEGETATIVE",
-            action_at: new Date().toISOString(),
-            next_check_at: new Date(Date.now() + FEEDBACK_LOOP_DELAY_HOURS * 60 * 60 * 1000).toISOString(),
+            action_at: actionTimestamp,
+            next_check_at: addHoursVietnamISOString(FEEDBACK_LOOP_DELAY_HOURS),
             note: `Đang chờ outcome sau ${FEEDBACK_LOOP_DELAY_HOURS} giờ để cập nhật policy memory.`,
         },
     };

@@ -74,9 +74,11 @@ async function logActionWithPrediction(action) {
             ...action,
             timestamp: action.timestamp || now.toISOString(),
             prediction: {
-                expected_moisture: calculateExpectedMoisture(action.state, action.sensor_snapshot),
-                expected_salinity_trend: calculateExpectedSalinity(action.state, action.sensor_snapshot),
-                expected_outcome: action.state === "CLOSED" ? "moisture_stable_or_increase" : "moisture_decrease_or_stable",
+                expected_moisture: calculateExpectedMoisture(action.executed_state || action.action || action.state, action.sensor_snapshot),
+                expected_salinity_trend: calculateExpectedSalinity(action.executed_state || action.action || action.state, action.sensor_snapshot),
+                expected_outcome: String(action.executed_state || action.action || action.state || "").toUpperCase() === "CLOSED"
+                    ? "moisture_decrease_or_stable"
+                    : "moisture_increase_or_stable",
                 
                 // Will be filled in 24+ hours
                 actual_moisture: null,
@@ -441,14 +443,15 @@ async function updateGuidelineSuccessRate(sourceId, reward) {
  * Expected moisture after action
  */
 function calculateExpectedMoisture(valveState, sensor) {
-    const current = sensor?.moisture || 60;
+    const current = Number(sensor?.moisture ?? sensor?.soil_moisture ?? 60);
+    const state = String(valveState || "").toUpperCase();
     
-    if (valveState === "CLOSED") {
-        // Expect moisture to stay or increase (no irrigation)
-        return Math.min(100, current + 5);
+    if (state === "OPEN") {
+        // OPEN means irrigation intake active, moisture should improve.
+        return Math.min(100, current + 8);
     } else {
-        // Expect moisture to decrease (irrigation happening)
-        return Math.max(0, current - 10);
+        // CLOSED/NO_ACTION usually leads to stable or gradual moisture drop.
+        return Math.max(0, current - 4);
     }
 }
 
@@ -456,14 +459,15 @@ function calculateExpectedMoisture(valveState, sensor) {
  * Expected salinity trend after action
  */
 function calculateExpectedSalinity(valveState, sensor) {
-    const current = sensor?.salinity || 1.5;
+    const current = Number(sensor?.salinity ?? sensor?.river_salinity ?? 1.5);
+    const state = String(valveState || "").toUpperCase();
     
-    if (valveState === "CLOSED") {
-        // Expect salinity to stabilize or increase (no fresh water)
-        return current + 0.2;
+    if (state === "OPEN") {
+        // OPEN can dilute salinity with intake water under normal conditions.
+        return Math.max(0, current - 0.2);
     } else {
-        // Expect salinity to decrease (fresh water intake)
-        return Math.max(0, current - 0.3);
+        // CLOSED/NO_ACTION tends to keep salinity stable or slightly rise.
+        return current + 0.15;
     }
 }
 

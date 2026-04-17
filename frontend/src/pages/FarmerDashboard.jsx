@@ -139,6 +139,10 @@ export default function FarmerDashboard() {
   const activeValveDisplay = controlScope === 'all' ? 'TẤT CẢ VAN' : activeValveId;
   const controlModeVi = (actuator.control_mode || 'AUTO').toUpperCase() === 'AUTO' ? 'TỰ ĐỘNG' : 'THỦ CÔNG';
 
+  const formatVnTime = (value, opts = {}) => {
+    return new Date(value).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', ...opts });
+  };
+
   const readings = {
     // Salinity & moisture come from wokwi sensor readings (live)
     salinity: Number(sensorData.salinity ?? 0),
@@ -147,7 +151,6 @@ export default function FarmerDashboard() {
     temperature: sensorData.temperature ?? decisionDetails?.weatherMetrics?.temperature?.value ?? null,
     humidity: sensorData.humidity ?? decisionDetails?.weatherMetrics?.humidity?.value ?? null,
     rainfall24h: sensorData.rainfall_24h ?? decisionDetails?.weatherMetrics?.rainfall_24h?.value ?? null,
-    tideStatus: sensorData.tide_status ?? decisionDetails?.tideInfo?.status ?? null,
     // crop_stage is hardcoded VEGETATIVE by wokwi-poller
     cropStage: sensorData.crop_stage ?? decisionDetails?.sensorMetrics?.crop_stage?.value ?? 'VEGETATIVE',
     riverWaterLevel: sensorData.river_water_level ?? decisionDetails?.sensorMetrics?.water_level?.value ?? null,
@@ -272,7 +275,7 @@ export default function FarmerDashboard() {
 
   const salinityColor = readings.salinity <= 4 ? '#6FCF97' : readings.salinity <= 6 ? '#F2C94C' : '#EB5757';
   const trendData = sensorHistory.map((item) => ({
-    time: item.timestamp ? new Date(item.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--',
+    time: item.timestamp ? formatVnTime(item.timestamp, { hour: '2-digit', minute: '2-digit' }) : '--:--',
     salinity: Number(item.salinity || 0),
     moisture: Number(item.moisture || 0),
   }));
@@ -281,19 +284,19 @@ export default function FarmerDashboard() {
     ? trendData
     : [
       {
-        time: new Date(Date.now() - 10 * 60 * 1000).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        time: formatVnTime(new Date(Date.now() - 10 * 60 * 1000), { hour: '2-digit', minute: '2-digit' }),
         salinity: Number(readings.salinity || 0),
         moisture: Number(readings.soilMoisture || 0),
       },
       {
-        time: new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }),
+        time: formatVnTime(new Date(), { hour: '2-digit', minute: '2-digit' }),
         salinity: Number(readings.salinity || 0),
         moisture: Number(readings.soilMoisture || 0),
       },
     ];
 
   const formatTime = (d) =>
-    d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    formatVnTime(d, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
   const formatActionLabel = (action) => {
     const normalized = String(action || '').toUpperCase();
@@ -495,7 +498,7 @@ export default function FarmerDashboard() {
                         {buildLogSummary(log).headline}
                       </p>
                       <span className="text-[11px] text-gray-500 whitespace-nowrap">
-                        {log.timestamp ? new Date(log.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                        {log.timestamp ? formatVnTime(log.timestamp, { hour: '2-digit', minute: '2-digit' }) : '--:--'}
                       </span>
                     </div>
 
