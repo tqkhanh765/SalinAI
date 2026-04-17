@@ -50,9 +50,9 @@ When building this in the Langflow UI, use these exact components:
 
 1. **Webhook / API Trigger Node** (Represents the Firebase Listener).
 2. **Conditional Router Node** (Represents the Enterprise Pre-Filter).
-3. **Agent Node (Subagent)** (Use the `Tool Calling Agent` component, hook it to Gemini 2.5 Flash).
+3. **Agent Node (Subagent)** (Use the `Tool Calling Agent` component, hook it to `SAOLA4_SMALL`).
 4. **Vector Store Node** (Use `MongoDB Atlas` component configured to your `vector_index`).
-5. **Agent Node (Orchestrator)** (Use a second `Tool Calling Agent` component hooked to Gemini 2.5 Flash).
+5. **Agent Node (Orchestrator)** (Use a second `Tool Calling Agent` component hooked to `SAOLA_PLANNER`).
 6. **Custom Tool Nodes** (Use the `Javascript Function` component for the Valve Actuator).
 
 By wiring the Subagent's "Text Output" directly into the Orchestrator's "System Prompt" input, the Langflow UI will perfectly mathematically match the backend code we wrote in `langchain.js`!

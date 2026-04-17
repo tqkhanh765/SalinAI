@@ -2,19 +2,24 @@ const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { ChatOpenAI } = require("@langchain/openai");
 const { orchestratorTools } = require("./tools");
 const fbdb = require("../config/firebase");
-const { logActionWithPrediction } = require("../services/ai/outcomeService");
+const { logActionWithPrediction, runAutonomousLearningCycle } = require("../services/ai/outcomeService");
+const FEEDBACK_LOOP_DELAY_HOURS = Math.max(0, Number(process.env.OUTCOME_MIN_ACTION_AGE_HOURS || "1"));
+
+function normalizeOrchestratorProvider() {
+    return String(process.env.AI_PROVIDER || "gemini").toLowerCase();
+}
 
 function createOrchestrationLLM() {
-    const provider = String(process.env.AI_PROVIDER).toLowerCase();
+    const provider = normalizeOrchestratorProvider();
     const temperature = Number(process.env.LLM_TEMPERATURE || "0.2");
 
-    if (provider === "saola") {
-        const apiKey = process.env.SAOLA_API_KEY;
-        const baseURL = process.env.SAOLA_BASE_URL;
-        const model = process.env.SAOLA_MODEL || "saola-chat";
+    if (provider === "saola_planner") {
+        const apiKey = process.env.SAOLA_PLANNER_API_KEY;
+        const baseURL = process.env.SAOLA_PLANNER_BASE_URL;
+        const model = process.env.SAOLA_PLANNER_MODEL || "saola-chat";
 
         if (!apiKey || !baseURL) {
-            throw new Error("AI_PROVIDER=saola requires SAOLA_API_KEY and SAOLA_BASE_URL");
+            throw new Error("AI_PROVIDER=saola_planner requires SAOLA_PLANNER_API_KEY and SAOLA_PLANNER_BASE_URL");
         }
 
         return new ChatOpenAI({
@@ -83,6 +88,13 @@ async function finalizeAction({
         subagent_summary: researcherSummary,
         agent_trace: agentTrace,
         model_insights: modelInsights,
+        feedback_loop: {
+            status: "PENDING_OUTCOME",
+            stage: sensorData?.crop_stage || "VEGETATIVE",
+            action_at: new Date().toISOString(),
+            next_check_at: new Date(Date.now() + FEEDBACK_LOOP_DELAY_HOURS * 60 * 60 * 1000).toISOString(),
+            note: `Đang chờ outcome sau ${FEEDBACK_LOOP_DELAY_HOURS} giờ để cập nhật policy memory.`,
+        },
     };
 
     await fbdb.ref("action_logs").push(actionLogPayload);
@@ -90,6 +102,22 @@ async function finalizeAction({
     if (mongoDb) {
         // Log with predictions for 24h outcome tracking
         await logActionWithPrediction(actionLogPayload);
+
+        await fbdb.ref("ai_status").update({
+            feedback_loop: {
+                status: "PENDING_OUTCOME",
+                stage: sensorData?.crop_stage || "VEGETATIVE",
+                action: actionResult.executed_state,
+                action_at: actionLogPayload.timestamp,
+                next_check_at: actionLogPayload.feedback_loop.next_check_at,
+                note: `Đã ghi action và đang chờ outcome sau ${FEEDBACK_LOOP_DELAY_HOURS} giờ để xác nhận feedback loop.`,
+            },
+        });
+
+        // Trigger an immediate scan so new actions are not left waiting for the next scheduler tick.
+        runAutonomousLearningCycle({ minActionAgeHours: FEEDBACK_LOOP_DELAY_HOURS }).catch((error) => {
+            console.error("[Outcome] Immediate scan failed:", error.message);
+        });
     }
 }
 

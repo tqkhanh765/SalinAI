@@ -194,8 +194,35 @@ export default function SimulatorPage() {
       ? `Không có bản trích văn bản đầy đủ trong log cũ. Nguồn đã dùng: ${lastLog.retrieval.source_ids.join(', ')}`
       : 'Không có dữ liệu retrieval từ papers.');
 
-  const researcherAgentName = 'Gemini';
-  const orchestratorAgentName = 'SaoLa';
+  const feedbackLoop = aiStatus?.feedback_loop || {};
+  const feedbackDelayHours = Number(feedbackLoop.min_action_age_hours ?? 1);
+  const normalizeFeedbackStatus = (status) => {
+    const normalized = String(status || '').toUpperCase();
+    if (normalized === 'PENDING_24H' || normalized === 'AWAITING_24H_OUTCOME') return 'PENDING_OUTCOME';
+    return normalized || 'IDLE';
+  };
+  const feedbackLoopStatus = normalizeFeedbackStatus(feedbackLoop.status || (isProcessing ? 'PROCESSING' : 'IDLE'));
+  const isPendingFeedback = feedbackLoopStatus === 'PENDING_OUTCOME';
+  const hasFeedbackLoop = isPendingFeedback || feedbackLoopStatus === 'EVALUATED' || Boolean(feedbackLoop.action_at);
+  const feedbackLoopStateLabel = hasFeedbackLoop ? 'ĐANG HOẠT ĐỘNG' : 'CHƯA CÓ';
+  const feedbackLoopLabel = isPendingFeedback
+    ? `Đang chờ outcome ${feedbackDelayHours}h`
+    : feedbackLoopStatus === 'EVALUATED'
+      ? 'Feedback loop đã khép kín'
+      : feedbackLoopStatus === 'PROCESSING'
+        ? 'AI đang xử lý'
+        : 'Chưa có vòng phản hồi';
+
+  const getDecisionOrigin = (log = {}) => {
+    const actor = String(log?.actor || '').toUpperCase();
+    if (actor.includes('AI') || actor.includes('ORCHESTRATOR')) {
+      return { label: 'AI-GENERATED', bg: '#23863633', color: '#3fb950' };
+    }
+    return { label: 'RULE-BASED', bg: '#1f6feb33', color: '#79c0ff' };
+  };
+
+  const researcherAgentName = 'SaoLa4-small';
+  const orchestratorAgentName = 'SaoLa-Llama3.1-planner';
 
   // Helper: format nullable number
   const fmt = (v, digits = 1, suffix = '') =>
@@ -444,6 +471,25 @@ export default function SimulatorPage() {
                 </p>
               </div>
             </div>
+
+            <div className="rounded-2xl border p-4" style={{ borderColor: '#1F6F5F20', background: '#F8FBFA' }}>
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#9ca3af' }}>Feedback Loop</p>
+                  <p className="text-sm font-bold mt-1" style={{ color: '#1F6F5F' }}>{feedbackLoopLabel}</p>
+                </div>
+                <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: hasFeedbackLoop ? '#6FCF9720' : '#E5E7EB', color: hasFeedbackLoop ? '#1F6F5F' : '#4B5563' }}>
+                  {feedbackLoopStateLabel}
+                </span>
+              </div>
+              <p className="text-xs text-gray-600 leading-relaxed">
+                {isPendingFeedback
+                  ? `Action vừa được ghi nhận. Hệ thống đang chờ outcome đủ ${feedbackDelayHours} giờ để chấm reward và cập nhật policy memory.`
+                  : feedbackLoopStatus === 'EVALUATED'
+                    ? 'Action cũ đã được hậu kiểm và feedback đã quay trở lại policy memory.'
+                    : 'Sau khi có action đầu tiên, trạng thái feedback loop sẽ hiện ở đây.'}
+              </p>
+            </div>
           </div>
         </div>
 
@@ -476,6 +522,9 @@ export default function SimulatorPage() {
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
                     <span style={{ color: '#58a6ff' }}>[{log.actor || 'SYSTEM_DAEMON'}]</span>
+                    <span className="px-2 py-0.5 rounded-md text-xs font-bold" style={{ background: getDecisionOrigin(log).bg, color: getDecisionOrigin(log).color }}>
+                      {getDecisionOrigin(log).label}
+                    </span>
                     {log.action === 'OPEN' ? (
                       <span className="bg-[#238636] text-white px-2 py-0.5 rounded-md text-xs font-bold">EXECUTED: OPEN VALVE</span>
                     ) : log.action === 'CLOSED' || log.action === 'CLOSE' ? (

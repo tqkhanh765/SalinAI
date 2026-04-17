@@ -49,7 +49,7 @@ Target: Apr 12-14 | Owner: A (primary) + C
 - [x] Task 3.4 🔴 [A] Implement backend/agent/langchain.js end-to-end chain:
   - Build retrieval query from environmental factors plus crop_stage.
   - Generate embedding and query Atlas Vector Search.
-  - Inject retrieved context into Gemini 2.5 Flash prompt.
+  - Inject retrieved context into the research agent prompt.
   - Execute tools and persist logs.
 - [x] Task 3.5 🔴 [C] Register listener and chain bootstrap in backend/server.js.
 - [x] Task 3.6 🔴 [A + C] Enforce dual logging for every decision to Firebase action_logs and MongoDB action_logs.

@@ -10,6 +10,7 @@ const AUTO_FEEDBACK_SOURCE = "auto_outcome_evaluator";
 const AUTO_REWARD_PASS_THRESHOLD = Number(process.env.AUTO_REWARD_PASS_THRESHOLD || "0.35");
 const OUTCOME_EVAL_BATCH_SIZE = Math.max(10, parseInt(process.env.OUTCOME_EVAL_BATCH_SIZE || "80", 10));
 const OUTCOME_RECHECK_INTERVAL_HOURS = Math.max(1, parseInt(process.env.OUTCOME_RECHECK_INTERVAL_HOURS || "6", 10));
+const OUTCOME_MIN_ACTION_AGE_HOURS = Math.max(0, parseInt(process.env.OUTCOME_MIN_ACTION_AGE_HOURS || "1", 10));
 
 const DEFAULT_STAGE_PROFILE = {
     moistureTarget: { min: 40, max: 80, ideal: 60 },
@@ -67,8 +68,11 @@ async function logActionWithPrediction(action) {
         const mongoDb = getDb();
         if (!mongoDb) return;
 
+        const now = new Date();
+
         const enrichedAction = {
             ...action,
+            timestamp: action.timestamp || now.toISOString(),
             prediction: {
                 expected_moisture: calculateExpectedMoisture(action.state, action.sensor_snapshot),
                 expected_salinity_trend: calculateExpectedSalinity(action.state, action.sensor_snapshot),
@@ -81,7 +85,8 @@ async function logActionWithPrediction(action) {
                 reward: null,
                 evaluated_at: null,
             },
-            created_at: new Date(),
+            created_at: now,
+            createdAt: now,
         };
 
         await mongoDb.collection("action_logs").insertOne(enrichedAction);
@@ -93,42 +98,67 @@ async function logActionWithPrediction(action) {
 }
 
 /**
- * Evaluate old actions (24+ hours old) against actual outcomes
- * Should be called periodically (e.g., every 6 hours)
+ * Evaluate old actions against delayed outcomes.
+ * Delay window is configurable via OUTCOME_MIN_ACTION_AGE_HOURS.
  */
-async function evaluateOutcomes() {
+async function evaluateOutcomes({ minActionAgeHours = OUTCOME_MIN_ACTION_AGE_HOURS } = {}) {
     try {
         const mongoDb = getDb();
         if (!mongoDb) return { evaluated: 0, rewards: [] };
 
-        // Find un-evaluated actions that are 24+ hours old
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        // Find un-evaluated actions that are old enough for a reliable outcome check
+        const minimumAge = Math.max(0, Number(minActionAgeHours || 0));
+        const oneDayAgo = new Date(Date.now() - minimumAge * 60 * 60 * 1000);
         
         const recheckBefore = new Date(Date.now() - OUTCOME_RECHECK_INTERVAL_HOURS * 60 * 60 * 1000);
 
+        const pendingFilter = {
+            $or: [
+                { "prediction.reward": null },
+                { "prediction.reward": { $exists: false } },
+            ],
+        };
+
         const oldActions = await mongoDb.collection("action_logs")
             .find({
-                created_at: { $lt: oneDayAgo },
-                "prediction.reward": null,  // Not yet evaluated
-                $or: [
-                    { "prediction.last_check_at": { $exists: false } },
-                    { "prediction.last_check_at": { $lt: recheckBefore } },
+                $and: [
+                    pendingFilter,
+                    {
+                        $or: [
+                            { created_at: { $lt: oneDayAgo } },
+                            { createdAt: { $lt: oneDayAgo } },
+                            { timestamp: { $lt: oneDayAgo.toISOString() } },
+                        ],
+                    },
+                    {
+                        $or: [
+                            { "prediction.last_check_at": { $exists: false } },
+                            { "prediction.last_check_at": { $lt: recheckBefore } },
+                        ],
+                    },
                 ],
             })
             .limit(OUTCOME_EVAL_BATCH_SIZE)
             .toArray();
 
-        console.log(`[Outcome] Found ${oldActions.length} actions to evaluate`);
+        const totalPending = await mongoDb.collection("action_logs").countDocuments(pendingFilter);
+        const awaitingWindow = Math.max(0, totalPending - oldActions.length);
+        console.log(`[Outcome] Found ${oldActions.length} actions to evaluate (awaiting window: ${awaitingWindow}, delay=${minimumAge}h)`);
 
         const results = [];
 
         for (const action of oldActions) {
             try {
                 // Get sensor data at that time
-                const actionTime = action.created_at;
-                const sensor24hAfter = await getSensorDataNearTime(new Date(actionTime.getTime() + 24 * 60 * 60 * 1000));
+                const actionTime = action.created_at || action.createdAt || (action.timestamp ? new Date(action.timestamp) : null);
+                const actionTimeValue = actionTime instanceof Date ? actionTime : new Date(actionTime);
+                if (!actionTimeValue || Number.isNaN(actionTimeValue.getTime())) {
+                    console.log(`[Outcome] Skipping ${action._id} because action time is missing or invalid`);
+                    continue;
+                }
+                const sensorAfterDelay = await getSensorDataNearTime(new Date(actionTimeValue.getTime() + minimumAge * 60 * 60 * 1000));
 
-                if (!sensor24hAfter) {
+                if (!sensorAfterDelay) {
                     console.log(`[Outcome] No sensor data found for evaluation of ${action._id}`);
                     await mongoDb.collection("action_logs").updateOne(
                         { _id: action._id },
@@ -147,7 +177,7 @@ async function evaluateOutcomes() {
                 // Compare prediction vs actual
                 const reward = calculateReward(
                     action.prediction,
-                    sensor24hAfter,
+                    sensorAfterDelay,
                     action.sensor_snapshot
                 );
 
@@ -156,8 +186,8 @@ async function evaluateOutcomes() {
                     { _id: action._id },
                     {
                         $set: {
-                            "prediction.actual_moisture": sensor24hAfter.moisture,
-                            "prediction.actual_salinity": sensor24hAfter.salinity,
+                            "prediction.actual_moisture": sensorAfterDelay.moisture,
+                            "prediction.actual_salinity": sensorAfterDelay.salinity,
                             "prediction.reward": reward,
                             "prediction.evaluated_at": new Date(),
                             "prediction.last_check_at": new Date(),
@@ -178,8 +208,8 @@ async function evaluateOutcomes() {
                     reason: action.reason || "",
                     sensor_snapshot: action.sensor_snapshot || {},
                     actual_sensor: {
-                        salinity: sensor24hAfter.salinity,
-                        moisture: sensor24hAfter.moisture,
+                        salinity: sensorAfterDelay.salinity,
+                        moisture: sensorAfterDelay.moisture,
                     },
                     evaluated_at: new Date(),
                 });
@@ -259,8 +289,8 @@ async function upsertAutoFeedbackFromOutcome(result) {
     return { inserted: true, skipped: false };
 }
 
-async function runAutonomousLearningCycle() {
-    const outcomeResult = await evaluateOutcomes();
+async function runAutonomousLearningCycle(options = {}) {
+    const outcomeResult = await evaluateOutcomes(options);
     const rewards = Array.isArray(outcomeResult?.rewards) ? outcomeResult.rewards : [];
 
     let inserted = 0;
@@ -275,6 +305,27 @@ async function runAutonomousLearningCycle() {
     if (inserted > 0) {
         const { refreshPolicySummary } = require("./policyLearningService");
         await refreshPolicySummary();
+    }
+
+    try {
+        const currentLoopSnapshot = (await fbdb.ref("ai_status/feedback_loop").once("value")).val() || {};
+        const feedbackState = {
+            status: outcomeResult.evaluated > 0 ? "EVALUATED" : "PENDING_OUTCOME",
+            last_cycle_at: new Date().toISOString(),
+            evaluated: Number(outcomeResult?.evaluated || 0),
+            feedback_inserted: inserted,
+            feedback_skipped: skipped,
+            min_action_age_hours: Number(options?.minActionAgeHours ?? OUTCOME_MIN_ACTION_AGE_HOURS),
+        };
+
+        await fbdb.ref("ai_status").update({
+            feedback_loop: {
+                ...currentLoopSnapshot,
+                ...feedbackState,
+            },
+        });
+    } catch (err) {
+        console.error('[Outcome] Failed to publish feedback loop state:', err.message);
     }
 
     return {
@@ -296,12 +347,15 @@ async function getSensorDataNearTime(targetTime) {
         const before = new Date(targetTime.getTime() - 2 * 60 * 60 * 1000);
         const after = new Date(targetTime.getTime() + 2 * 60 * 60 * 1000);
 
-        const data = await mongoDb.collection("sensor_logs")
-            .findOne({
-                timestamp: { $gte: before, $lte: after }
-            });
+        const data = await mongoDb.collection("sensor_history")
+            .find({
+                timestamp: { $gte: before.toISOString(), $lte: after.toISOString() }
+            })
+            .sort({ timestamp: 1 })
+            .limit(1)
+            .toArray();
 
-        return data;
+        return data[0] || null;
 
     } catch (err) {
         return null;

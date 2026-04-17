@@ -144,7 +144,7 @@ All services must write and read this structure exactly.
 ```
 
 ### 3.3 Prompt Injection Rule
-Gemini 2.5 Flash system prompt must include:
+The system prompt must include:
 - Hard safety policies.
 - Current sensor_data and crop_stage.
 - Retrieved agricultural guideline snippets with source ids.

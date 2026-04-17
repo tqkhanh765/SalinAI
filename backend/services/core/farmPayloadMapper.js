@@ -54,6 +54,7 @@ function normalizeActionLogs(rawLogs, limit = 20) {
 function buildFarmStatePayload(root, limit = 20, sensorHistory = []) {
   const sensorData = root.sensor_data || {};
   const actuator = root.actuator || {};
+  const aiStatus = root.ai_status || {};
   const actionLogs = normalizeActionLogs(root.action_logs, limit);
 
   return {
@@ -72,6 +73,7 @@ function buildFarmStatePayload(root, limit = 20, sensorHistory = []) {
       timestamp: sensorData.timestamp || null,
     },
     actuator: normalizeActuatorSnapshot(actuator),
+    aiStatus,
     actionLogs,
     sensorHistory,
     fetchedAt: new Date().toISOString(),

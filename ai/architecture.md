@@ -24,8 +24,8 @@ SalinAI is a 3-layer event-driven irrigation intelligence system.
 | Component | File(s) | Responsibility |
 |---|---|---|
 | Agent Trigger | `farmController.js` | Invoked directly by Ingestion Endpoint only when delta filters pass. |
-| Agent orchestration | `backend/agent/researcherAgent.js`, `backend/agent/agentOrchestration.js` | Researcher gathers evidence; orchestrator makes final valve decision |
-| Retrieval module | `backend/agent/agentRetrieval.js` | Vector search against `guideline_documents` |
+| Agent orchestration | `backend/agent/agentResearch.js`, `backend/agent/agentOrchestration.js` | `SAOLA4_SMALL` gathers evidence; `SAOLA_PLANNER` makes final valve decision |
+| Retrieval module | `backend/services/ai/retrievalService.js` | Vector search against `guideline_documents` |
 | Agent safety service | `backend/services/core/agentSafetyService.js` | Timeout guard, fallback decision, resilience |
 | Prompt and tools | `backend/agent/prompt.js`, `backend/agent/tools.js` | Human-readable reasoning + safe actuator tool contract |
 
@@ -59,7 +59,7 @@ SalinAI is a 3-layer event-driven irrigation intelligence system.
 4. **AI Trigger Filter:**
    - Compare current values with the last history point in MongoDB.
    - **Trigger Agent ONLY if:** Salinity delta > 0.5 ppt OR Moisture delta > 10% OR Weather becomes extreme.
-5. **Agentic Loop:** If triggered, `agentRetrieval` gets guidelines -> Gemini reasons -> Tools execute.
+5. **Agentic Loop:** If triggered, `retrievalService` gets guidelines -> `SAOLA4_SMALL` reasons -> `SAOLA_PLANNER` executes tools.
 6. **Execution:** Result written to Firebase; ESP32 reads updated `valve_state` via direct RTDB fetch.
 
 ## 5. API Surface (Implemented)
@@ -118,7 +118,8 @@ MANUAL: AI reasoning/logging still runs, actuator write is blocked.
  │    ├── /agent
  │    │    ├── langchain.js
  │    │    ├── agentUtils.js
- │    │    ├── agentRetrieval.js
+ │    │    ├── agentResearch.js
+ │    │    ├── services/ai/retrievalService.js
  │    │    ├── agentOrchestration.js
  │    │    ├── prompt.js
  │    │    └── tools.js
@@ -154,7 +155,7 @@ MANUAL: AI reasoning/logging still runs, actuator write is blocked.
 |---|---|---|
 | Frontend | React + Vite | Dashboard and simulator UX |
 | Backend | Node.js + Express | APIs, orchestration, control policies |
-| LLM | Gemini 2.5 Flash | Reasoning and decision output |
+| LLM | SAOLA_PLANNER + SAOLA4_SMALL | Orchestration and research reasoning |
 | Embeddings | Gemini embedding model | Query/doc vectorization |
 | Realtime bus | Firebase Realtime DB | Event and command synchronization |
 | Vector DB + history | MongoDB Atlas | RAG retrieval + persistent history |
