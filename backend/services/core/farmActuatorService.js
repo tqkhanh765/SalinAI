@@ -22,8 +22,9 @@ async function setControlMode(controlModeInput) {
   return { control_mode: mode };
 }
 
-async function overrideActuatorFields({ control_mode, valve_state }) {
+async function overrideActuatorFields({ control_mode, valve_state, crop_stage }) {
   const updates = {};
+  const { CROP_STAGES } = require("./farmPayloadMapper");
 
   if (control_mode != null) {
     const mode = String(control_mode).toUpperCase();
@@ -39,6 +40,14 @@ async function overrideActuatorFields({ control_mode, valve_state }) {
       throw createValidationError("Invalid valve_state", VALVE_STATES);
     }
     updates.valve_state = valve;
+  }
+
+  if (crop_stage != null) {
+    const stage = String(crop_stage).toUpperCase();
+    if (!CROP_STAGES.includes(stage)) {
+      throw createValidationError("Invalid crop_stage", CROP_STAGES);
+    }
+    updates.crop_stage = stage;
   }
 
   if (!Object.keys(updates).length) {

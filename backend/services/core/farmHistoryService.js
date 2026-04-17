@@ -34,6 +34,7 @@ async function persistSensorHistoryPoint(payload) {
     await mongo.collection(SENSOR_HISTORY_COLLECTION).insertOne({
       salinity: toNumber(payload.salinity, 0),
       moisture: toNumber(payload.moisture, 0),
+      water_flow: toNumber(payload.water_flow, 0),
       timestamp: payload.timestamp || new Date().toISOString(),
       crop_stage: payload.crop_stage || "VEGETATIVE",
       river_water_level: payload.river_water_level != null ? toNumber(payload.river_water_level, null) : null,

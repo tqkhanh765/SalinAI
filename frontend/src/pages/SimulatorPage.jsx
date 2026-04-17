@@ -132,13 +132,6 @@ const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading
                 VAN {valveOpen ? 'ĐÃ MỞ' : 'ĐÃ ĐÓNG'}
               </span>
             </div>
-            <div
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-sm font-semibold"
-              style={{ background: 'rgba(255,255,255,0.2)', color: 'white' }}
-            >
-              <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: valveOpen ? '#fff' : '#6FCF97' }} />
-              {valveOpen ? '✅ An Toàn - Có Thể Tưới' : '🚫 Chặn Nước'}
-            </div>
           </>
         )}
       </div>
@@ -178,7 +171,7 @@ export default function SimulatorPage() {
   const liveHumidity = sensorData.humidity ?? sensorData.external_forecast?.humidity ?? null;
   const liveRain24h = sensorData.rainfall_24h ?? sensorData.external_forecast?.rainfall_24h ?? null;
   const liveTide = sensorData.tide_status ?? sensorData.external_forecast?.tide_status ?? null;
-  const liveCropStage = sensorData.crop_stage ?? 'VEGETATIVE';
+  const liveCropStage = actuator.crop_stage ?? 'VEGETATIVE';
 
   const valveOpen = actuator.valve_state === 'OPEN';
   const isProcessing = aiStatus.is_processing;
@@ -336,14 +329,13 @@ export default function SimulatorPage() {
               </div>
               <div>
                 <h2 className="font-bold text-base" style={{ color: '#1F6F5F' }}>Cảm Biến IoT (Thực Tế)</h2>
-                <p className="text-xs text-gray-400">Firebase SalinAI/sensor_data/ · Nhận Push Event</p>
               </div>
             </div>
 
             {/* Salinity with gauge */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold" style={{ color: '#1F6F5F' }}>💧 Độ Mặn</span>
+                <span className="text-sm font-semibold" style={{ color: '#1F6F5F' }}>Độ Mặn</span>
                 <span className="text-2xl font-extrabold tabular-nums" style={{ color: salinityColor }}>
                   {fmt(liveSalinity, 1)} <span className="text-sm font-semibold text-gray-400">‰</span>
                 </span>
@@ -364,7 +356,7 @@ export default function SimulatorPage() {
             {/* Moisture & Water Flow */}
             <div className="grid grid-cols-2 gap-3">
               <div className="rounded-xl p-3" style={{ background: '#F7F9F9' }}>
-                <p className="text-xs text-gray-400 mb-1">🌱 Độ Ẩm Đất</p>
+                <p className="text-xs text-gray-400 mb-1">Độ Ẩm Đất</p>
                 <p className="font-extrabold text-xl tabular-nums" style={{ color: '#2FA084' }}>
                   {fmt(liveMoisture, 0)}<span className="text-sm font-semibold text-gray-400 ml-1">%</span>
                 </p>
@@ -374,7 +366,7 @@ export default function SimulatorPage() {
                 </div>
               </div>
               <div className="rounded-xl p-3" style={{ background: '#F7F9F9' }}>
-                <p className="text-xs text-gray-400 mb-1">🚿 Lưu Lượng</p>
+                <p className="text-xs text-gray-400 mb-1">Lưu Lượng</p>
                 <p className="font-extrabold text-xl tabular-nums" style={{ color: '#56CCF2' }}>
                   {fmt(liveWaterFlow, 1)}<span className="text-sm font-semibold text-gray-400 ml-1">L/min</span>
                 </p>
@@ -384,7 +376,7 @@ export default function SimulatorPage() {
             {/* Weather from Open-Meteo */}
             <div className="rounded-xl p-3" style={{ background: '#F7F9F9' }}>
               <p className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: '#9ca3af' }}>
-                🌤 Thời Tiết Thực (Open-Meteo)
+                Thời Tiết Thực (Open-Meteo)
               </p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
                 <span className="text-gray-500">Nhiệt Độ</span>
@@ -420,7 +412,6 @@ export default function SimulatorPage() {
                 </div>
                 <div>
                   <h2 className="font-bold text-base" style={{ color: '#1F6F5F' }}>Trạng Thái Van</h2>
-                  <p className="text-xs text-gray-400">Quyết định bởi AI Agent · hoàn toàn tự động</p>
                 </div>
               </div>
               <ValveStatusCard
@@ -467,7 +458,7 @@ export default function SimulatorPage() {
             )}
 
             {/* Auto-poll countdown banner */}
-            <div className="rounded-2xl p-4 flex items-center gap-3" style={{
+            {/* <div className="rounded-2xl p-4 flex items-center gap-3" style={{
               background: isProcessing ? '#F2C94C10' : '#2FA08410',
               border: `1.5px solid ${isProcessing ? '#F2C94C40' : '#2FA08430'}`,
             }}>

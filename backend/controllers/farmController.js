@@ -140,6 +140,7 @@ async function overrideActuator(req, res) {
     const updated = await overrideActuatorFields({
       control_mode: req.body?.control_mode,
       valve_state: req.body?.valve_state,
+      crop_stage: req.body?.crop_stage,
     });
 
     res.status(200).json({

@@ -16,23 +16,18 @@ function normalizeActuatorSnapshot(raw = {}) {
     valve_state: VALVE_STATES.includes(raw.valve_state) ? raw.valve_state : "CLOSED",
     pump_state: String(raw.pump_state || "OFF").toUpperCase() === "ON" ? "ON" : "OFF",
     control_mode: CONTROL_MODES.includes(raw.control_mode) ? raw.control_mode : "AUTO",
+    crop_stage: CROP_STAGES.includes(raw.crop_stage) ? raw.crop_stage : "VEGETATIVE",
   };
 }
 
 function normalizeNestedSensorPayload(body = {}) {
   // Optimized for flat Event-Driven Push Payload from ESP32
-  const cropStage = String(body.crop_stage || "VEGETATIVE").toUpperCase();
-
-  if (!CROP_STAGES.includes(cropStage)) {
-    return { error: { error: "Invalid crop_stage", allowed: CROP_STAGES } };
-  }
 
   const payload = {
     salinity: toNumber(body.salinity, 0),
     moisture: toNumber(body.moisture, 0),
     ph: body.ph != null ? toNumber(body.ph, null) : null,
     river_water_level: body.river_water_level != null ? toNumber(body.river_water_level, null) : null,
-    crop_stage: cropStage,
     timestamp: new Date().toISOString(),
     external_forecast: {
       tide_status: body.tide_status || null,
@@ -69,7 +64,6 @@ function buildFarmStatePayload(root, limit = 20, sensorHistory = []) {
       weather_code: sensorData.external_forecast?.weather_code != null ? toNumber(sensorData.external_forecast.weather_code, null) : null,
       weather: sensorData.external_forecast?.weather || null,
       tide_status: sensorData.external_forecast?.tide_status || null,
-      crop_stage: sensorData.crop_stage || "VEGETATIVE",
       timestamp: sensorData.timestamp || null,
     },
     actuator: normalizeActuatorSnapshot(actuator),

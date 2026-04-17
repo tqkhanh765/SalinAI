@@ -118,11 +118,6 @@ export default function Navbar({ activePage, setActivePage }) {
               )}
             </button>
           ))}
-
-          <div className="flex items-center gap-2 px-4 py-2">
-            <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: '#6FCF97' }} />
-            <span className="text-white/70 text-xs">AI Agentic Đang Hoạt Động</span>
-          </div>
         </div>
       </div>
     </nav>
