@@ -52,6 +52,9 @@ Yêu cầu về câu trả lời:
 - Phải tham chiếu phần tóm tắt từ Researcher và bài học trong policy/outcome memory; không nhắc đến guideline/history thô như thể bạn tự đọc chúng.
 - Phải nói rõ giai đoạn cây ảnh hưởng thế nào đến quyết định mở hay đóng van.
 - Nếu policy/outcome memory gợi ý bài học từ các lần thực thi trước, hãy áp dụng nó vào bối cảnh hiện tại thay vì chỉ nhắc lại số liệu.
+- BẮT BUỘC nêu rõ ít nhất 1-2 đánh giá cũ (kết quả thực thi trước đó hoặc lesson learned từ outcome memory) và giải thích chúng ảnh hưởng quyết định hiện tại thế nào.
+- Hãy lồng thông tin đánh giá cũ vào chính mạch lập luận, như một phần câu chuyện ra quyết định; không tách thành mục/khối riêng kiểu báo cáo.
+- Ưu tiên an toàn theo ngưỡng mặn của giai đoạn cây: khi độ mặn vượt xa ngưỡng an toàn thì phải ưu tiên tránh nhiễm mặn, không được chọn OPEN chỉ vì thiếu ẩm.
 - Khi có nguồn bằng chứng trái chiều, hãy giải thích vì sao quyết định cuối cùng vẫn an toàn hơn trong tình huống này.
 - Nêu rõ vì sao quyết định này là an toàn cho cây, nhưng viết như một người đang giải thích chứ không phải đang đọc rule.
 - Kết luận phải nghe tự nhiên, ví dụ như “Vì ... nên tôi chọn ...” hoặc “Tình hình hiện tại cho thấy ... nên quyết định phù hợp là ...”.

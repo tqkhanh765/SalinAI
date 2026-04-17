@@ -222,7 +222,7 @@ export default function SimulatorPage() {
   };
 
   const researcherAgentName = 'SaoLa4-small';
-  const orchestratorAgentName = 'SaoLa-Llama3.1-planner';
+  const orchestratorAgentName = 'SaoLa4-medium';
 
   // Helper: format nullable number
   const fmt = (v, digits = 1, suffix = '') =>

@@ -7,7 +7,7 @@ function normalizeResearcherProvider() {
     if (explicitProvider) return explicitProvider;
 
     const globalProvider = String(process.env.AI_PROVIDER || "gemini").toLowerCase();
-    if (globalProvider === "saola_planner") {
+    if (globalProvider === "saola4_medium") {
         return "gemini";
     }
 

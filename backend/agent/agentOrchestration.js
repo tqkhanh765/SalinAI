@@ -7,20 +7,20 @@ const { toVietnamISOString, addHoursVietnamISOString } = require("../utils/vietn
 const FEEDBACK_LOOP_DELAY_HOURS = Math.max(0, Number(process.env.OUTCOME_MIN_ACTION_AGE_HOURS || "1"));
 
 function normalizeOrchestratorProvider() {
-    return String(process.env.AI_PROVIDER || "gemini").toLowerCase();
+    return String(process.env.AI_PROVIDER || "gemini").toLowerCase().trim();
 }
 
 function createOrchestrationLLM() {
     const provider = normalizeOrchestratorProvider();
     const temperature = Number(process.env.LLM_TEMPERATURE || "0.2");
 
-    if (provider === "saola_planner") {
-        const apiKey = process.env.SAOLA_PLANNER_API_KEY;
-        const baseURL = process.env.SAOLA_PLANNER_BASE_URL;
-        const model = process.env.SAOLA_PLANNER_MODEL || "saola-chat";
+    if (provider === "saola4_medium") {
+        const apiKey = process.env.SAOLA4_MEDIUM_API_KEY;
+        const baseURL = process.env.SAOLA4_MEDIUM_BASE_URL;
+        const model = process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium";
 
         if (!apiKey || !baseURL) {
-            throw new Error("AI_PROVIDER=saola_planner requires SAOLA_PLANNER_API_KEY and SAOLA_PLANNER_BASE_URL");
+            throw new Error("AI_PROVIDER=saola4_medium requires SAOLA4_MEDIUM_API_KEY and SAOLA4_MEDIUM_BASE_URL");
         }
 
         return new ChatOpenAI({
