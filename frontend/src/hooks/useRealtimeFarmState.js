@@ -127,10 +127,6 @@ export function useRealtimeFarmState() {
     await overrideActuator({ valve_state: state });
   };
 
-  const setCropStage = async (stage) => {
-    await overrideActuator({ crop_stage: stage });
-  };
-
   const submitSensorData = async (payload) => {
     await pushSensorData(payload);
   };

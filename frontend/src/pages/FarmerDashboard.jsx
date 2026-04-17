@@ -399,22 +399,22 @@ export default function FarmerDashboard() {
             Tổng Quan Môi Trường Hiện Tại
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-            <StatCard icon="💧" label="Độ Mặn" value={readings.salinity.toFixed(1)} unit="‰" color={salinityColor} bg={`${salinityColor}20`} />
-            <StatCard icon="🌡️" label="Nhiệt Độ" value={readings.temperature != null ? Number(readings.temperature).toFixed(1) : '--'} unit="°C" color="#F2994A" bg="#F2994A20" />
-            <StatCard icon="💦" label="Độ Ẩm KK" value={readings.humidity != null ? Number(readings.humidity).toFixed(0) : '--'} unit="%" color="#2FA084" bg="#2FA08420" />
-            <StatCard icon="🌱" label="Độ Ẩm Đất" value={Number(readings.soilMoisture || 0).toFixed(0)} unit="%" color="#6FCF97" bg="#6FCF9720" />
-            <StatCard icon="⚗️" label="Độ pH" value={readings.ph != null ? Number(readings.ph).toFixed(1) : '--'} unit="pH" color="#9B59B6" bg="#9B59B620" />
-            <StatCard icon="🌧️" label="Mưa 24h" value={readings.rainfall24h != null ? Number(readings.rainfall24h).toFixed(1) : '--'} unit="mm" color="#2D9CDB" bg="#2D9CDB20" />
-            <StatCard icon="🌊" label="Thủy Triều" value={formatTideStatusVi(readings.tideStatus)} unit="" color="#1F6F5F" bg="#1F6F5F20" />
-            <StatCard icon="🌾" label="Giai Đoạn Cây" value={getCropStageLabel(readings.cropStage)} unit="" color="#1F6F5F" bg="#1F6F5F20" />
-            <StatCard icon="📏" label="Mực Nước Sông" value={readings.riverWaterLevel != null ? Number(readings.riverWaterLevel).toFixed(2) : '--'} unit="m" color="#56CCF2" bg="#56CCF220" />
-            <StatCard icon="🌤️" label="Điều Kiện Trời" value={readings.weather} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+            <StatCard icon={<FarmIcons.Droplets />} label="Độ Mặn" value={readings.salinity.toFixed(1)} unit="‰" color={salinityColor} bg={`${salinityColor}20`} />
+            <StatCard icon={<FarmIcons.Thermometer />} label="Nhiệt Độ" value={readings.temperature != null ? Number(readings.temperature).toFixed(1) : '--'} unit="°C" color="#F2994A" bg="#F2994A20" />
+            <StatCard icon={<FarmIcons.Droplet />} label="Độ Ẩm KK" value={readings.humidity != null ? Number(readings.humidity).toFixed(0) : '--'} unit="%" color="#2FA084" bg="#2FA08420" />
+            <StatCard icon={<FarmIcons.Sprout />} label="Độ Ẩm Đất" value={Number(readings.soilMoisture || 0).toFixed(0)} unit="%" color="#6FCF97" bg="#6FCF9720" />
+            <StatCard icon={<FarmIcons.Beaker />} label="Độ pH" value={readings.ph != null ? Number(readings.ph).toFixed(1) : '--'} unit="pH" color="#9B59B6" bg="#9B59B620" />
+            <StatCard icon={<FarmIcons.CloudRain />} label="Mưa 24h" value={readings.rainfall24h != null ? Number(readings.rainfall24h).toFixed(1) : '--'} unit="mm" color="#2D9CDB" bg="#2D9CDB20" />
+            <StatCard icon={<FarmIcons.Waves />} label="Thủy Triều" value={formatTideStatusVi(readings.tideStatus)} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+            <StatCard icon={<FarmIcons.Wheat />} label="Giai Đoạn Cây" value={getCropStageLabel(readings.cropStage)} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+            <StatCard icon={<FarmIcons.Ruler />} label="Mực Nước Sông" value={readings.riverWaterLevel != null ? Number(readings.riverWaterLevel).toFixed(2) : '--'} unit="m" color="#56CCF2" bg="#56CCF220" />
+            <StatCard icon={<FarmIcons.CloudSun />} label="Điều Kiện Trời" value={readings.weather} unit="" color="#1F6F5F" bg="#1F6F5F20" />
           </div>
 
           <div className="mt-4 bg-white rounded-2xl p-4 shadow-sm border" style={{ borderColor: '#1F6F5F20' }}>
             <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
               <div className="md:flex-1">
-                <p className="text-sm font-bold" style={{ color: '#1F6F5F' }}>Thiết Lập Giai Đoạn Cây</p>
+                <p className="text-sm font-bold" style={{ color: '#1F6F5F' }}>CHỌN GIAI ĐOẠN CÂY TRỒNG</p>
                 <p className="text-xs text-gray-500 mt-1">Chỉnh giai đoạn sinh trưởng để AI đánh giá ngưỡng mục tiêu phù hợp hơn.</p>
               </div>
 
@@ -444,93 +444,8 @@ export default function FarmerDashboard() {
           </div>
         </div>
 
-        {/* ── Theo Doi AI Theo Thoi Gian Thuc ────────────────────── */}
-        <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-            <div>
-              <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>Theo Dõi AI Theo Thời Gian Thực</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Dữ liệu máy chủ · cảm biến · trạng thái van · trạng thái AI · nhật ký hành động</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: '#1F6F5F10', color: '#1F6F5F' }}>
-                Chế độ: {controlModeVi}
-              </span>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: aiStatus.is_processing ? '#F2C94C20' : '#6FCF9720', color: aiStatus.is_processing ? '#B45309' : '#1F6F5F' }}>
-                {aiStatus.is_processing ? 'AI đang xử lý...' : 'AI đang chờ'}
-              </span>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-            <StatCard icon="🚰" label="Trạng Thái Van" value={realtimeValveOpen ? 'MỞ' : 'ĐÓNG'} unit="" color={realtimeValveOpen ? '#2FA084' : '#1F6F5F'} bg={realtimeValveOpen ? '#2FA08420' : '#1F6F5F20'} />
-            <StatCard icon="🤖" label="Chế Độ Điều Khiển" value={controlModeVi} unit="" color="#1F6F5F" bg="#1F6F5F20" />
-            <StatCard icon="⚙️" label="Trạng Thái AI" value={aiStatus.is_processing ? 'ĐANG XỬ LÝ' : 'ĐANG CHỜ'} unit="" color={aiStatus.is_processing ? '#B45309' : '#2FA084'} bg={aiStatus.is_processing ? '#F2C94C20' : '#2FA08420'} />
-            <StatCard icon="📌" label="Vùng Điều Khiển" value={controlScope === 'all' ? 'TOÀN VÙNG' : 'ĐƠN VAN'} unit="" color="#1F6F5F" bg="#1F6F5F20" />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="rounded-xl border p-3" style={{ borderColor: '#1F6F5F20' }}>
-              <p className="text-xs text-gray-400 mb-2">Biểu đồ thời gian thực (dữ liệu cảm biến)</p>
-              <div style={{ width: '100%', height: 180 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={historyChartData} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} interval="preserveEnd" />
-                    <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="salinity" stroke="#2FA084" strokeWidth={2.2} dot={false} />
-                    <Line type="monotone" dataKey="moisture" stroke="#1F6F5F" strokeWidth={2.2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="rounded-xl border p-3" style={{ borderColor: '#1F6F5F20' }}>
-              <p className="text-xs text-gray-400 mb-2">Nhật Ký Hành Động Dễ Hiểu</p>
-              <div className="space-y-3 max-h-60 overflow-auto pr-1">
-                {actionLogs.slice(0, 8).map((log) => (
-                  <div key={log.id} className="rounded-xl p-3 border" style={{ background: '#f8faf9', borderColor: '#1F6F5F1A' }}>
-                    <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <p className="text-sm font-bold" style={{ color: '#1F6F5F' }}>
-                        {buildLogSummary(log).headline}
-                      </p>
-                      <span className="text-[11px] text-gray-500 whitespace-nowrap">
-                        {log.timestamp ? new Date(log.timestamp).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-gray-600 mb-2">
-                      Người thực hiện: <strong>{formatActorLabel(log.actor)}</strong>
-                    </p>
-
-                    <p className="text-xs leading-relaxed text-gray-700 mb-2">
-                      {log.reason || 'Không có mô tả chi tiết.'}
-                    </p>
-
-                    <div className="rounded-lg px-2.5 py-2" style={{ background: '#2FA08412' }}>
-                      <p className="text-[11px] font-semibold" style={{ color: '#1F6F5F' }}>
-                        Ảnh hưởng:
-                      </p>
-                      <p className="text-[11px] text-gray-700 leading-relaxed">
-                        {buildLogSummary(log).impact}
-                      </p>
-                    </div>
-
-                    <p className="mt-2 text-[11px] text-gray-500">
-                      Loại hành động: {formatActionLabel(log.action)}
-                    </p>
-                  </div>
-                ))}
-                {!actionLogs.length && (
-                  <p className="text-xs text-gray-400">Chưa có nhật ký hành động từ máy chủ.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-
         {/* ── Field Map Section ─────────────────────────────────────────── */}
-        <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
+        {/* <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
           <div className="flex flex-col md:flex-row md:items-center justify-between mb-5 gap-3">
             <div>
               <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>Bản Đồ Cấp Nước</h2>
@@ -588,7 +503,7 @@ export default function FarmerDashboard() {
               ))}
             </MapContainer>
           </div>
-        </div>
+        </div> */}
 
         {/* ── Valve Control Section ─────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
