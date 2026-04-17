@@ -29,7 +29,14 @@ const { createLangchainResilienceService } = require("../services/ai/langchainRe
 
 const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS || "2", 10));
 const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "3", 10));
-const AGENT_PHASE_TIMEOUT_MS = Math.max(2000, parseInt(process.env.AGENT_PHASE_TIMEOUT_MS || "8000", 10));
+const RESEARCHER_PHASE_TIMEOUT_MS = Math.max(
+    2000,
+    parseInt(process.env.RESEARCHER_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "20000", 10)
+);
+const ORCHESTRATOR_PHASE_TIMEOUT_MS = Math.max(
+    2000,
+    parseInt(process.env.ORCHESTRATOR_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "20000", 10)
+);
 const MAX_TRACE_STEPS = Math.max(10, parseInt(process.env.AGENT_TRACE_MAX_STEPS || "40", 10));
 const MAX_INSIGHT_CHARS = Math.max(200, parseInt(process.env.AGENT_INSIGHT_MAX_CHARS || "800", 10));
 const MAX_RETRIEVAL_OUTPUT_CHARS = Math.max(400, parseInt(process.env.RETRIEVAL_OUTPUT_MAX_CHARS || "2200", 10));
@@ -148,7 +155,7 @@ ${mandatoryRetrieval.context}`,
             addTrace("researcher", "iteration", `Vòng Researcher ${researchLoop} bắt đầu`);
             const response = await withTimeout(
                 researcherAgent.invoke(researcherMessages),
-                AGENT_PHASE_TIMEOUT_MS,
+                RESEARCHER_PHASE_TIMEOUT_MS,
                 "Researcher phase"
             );
             researcherMessages.push(response);
@@ -231,7 +238,7 @@ ${mandatoryRetrieval.context}`,
             addTrace("orchestrator", "iteration", `Vòng Orchestrator ${orchestrationLoop} bắt đầu`);
             const response = await withTimeout(
                 orchestratorAgent.invoke(orchestratorMessages),
-                AGENT_PHASE_TIMEOUT_MS,
+                ORCHESTRATOR_PHASE_TIMEOUT_MS,
                 "Orchestrator phase"
             );
             orchestratorMessages.push(response);
