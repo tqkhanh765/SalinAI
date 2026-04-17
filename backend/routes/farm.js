@@ -7,6 +7,7 @@ const db = require("../config/firebase");
 router.get("/api/farm-state", farmController.getFarmState);
 router.get("/api/farm-stream", farmController.streamFarmState);
 router.post("/api/ingest", farmController.ingestData);
+router.post("/api/sensor-data", farmController.ingestData);
 router.post("/api/decision-feedback", farmController.submitDecisionFeedback);
 router.get("/api/policy-summary", farmController.getAgentPolicySummary);
 router.patch("/api/control-mode", farmController.updateControlMode);

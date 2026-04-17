@@ -40,7 +40,7 @@ export async function fetchFarmState(logLimit = 20) {
 
 export async function pushSensorData(payload) {
   try {
-    const response = await http.post('/api/sensor-data', payload);
+    const response = await http.post('/api/ingest', payload);
     return response.data;
   } catch (error) {
     throw normalizeApiError(error);

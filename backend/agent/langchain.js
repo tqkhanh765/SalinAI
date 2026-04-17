@@ -31,11 +31,11 @@ const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS |
 const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "3", 10));
 const RESEARCHER_PHASE_TIMEOUT_MS = Math.max(
     2000,
-    parseInt(process.env.RESEARCHER_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "25000", 10)
+    parseInt(process.env.RESEARCHER_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "60000", 10)
 );
 const ORCHESTRATOR_PHASE_TIMEOUT_MS = Math.max(
     2000,
-    parseInt(process.env.ORCHESTRATOR_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "20000", 10)
+    parseInt(process.env.ORCHESTRATOR_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "60000", 10)
 );
 const AGENT_TIMEOUT_RETRIES = Math.max(0, parseInt(process.env.AGENT_TIMEOUT_RETRIES || "1", 10));
 const AGENT_TIMEOUT_RETRY_DELAY_MS = Math.max(0, parseInt(process.env.AGENT_TIMEOUT_RETRY_DELAY_MS || "600", 10));
