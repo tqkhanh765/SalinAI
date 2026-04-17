@@ -31,12 +31,14 @@ const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS |
 const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "3", 10));
 const RESEARCHER_PHASE_TIMEOUT_MS = Math.max(
     2000,
-    parseInt(process.env.RESEARCHER_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "20000", 10)
+    parseInt(process.env.RESEARCHER_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "25000", 10)
 );
 const ORCHESTRATOR_PHASE_TIMEOUT_MS = Math.max(
     2000,
     parseInt(process.env.ORCHESTRATOR_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "20000", 10)
 );
+const AGENT_TIMEOUT_RETRIES = Math.max(0, parseInt(process.env.AGENT_TIMEOUT_RETRIES || "1", 10));
+const AGENT_TIMEOUT_RETRY_DELAY_MS = Math.max(0, parseInt(process.env.AGENT_TIMEOUT_RETRY_DELAY_MS || "600", 10));
 const MAX_TRACE_STEPS = Math.max(10, parseInt(process.env.AGENT_TRACE_MAX_STEPS || "40", 10));
 const MAX_INSIGHT_CHARS = Math.max(200, parseInt(process.env.AGENT_INSIGHT_MAX_CHARS || "800", 10));
 const MAX_RETRIEVAL_OUTPUT_CHARS = Math.max(400, parseInt(process.env.RETRIEVAL_OUTPUT_MAX_CHARS || "2200", 10));
@@ -118,6 +120,44 @@ async function runAgent(sensorData) {
         });
     };
 
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    const invokeWithPhaseTimeoutRetry = async ({ phaseKey, label, timeoutMs, invokeFn, iteration }) => {
+        let lastError;
+        const maxAttempts = AGENT_TIMEOUT_RETRIES + 1;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const startedAt = Date.now();
+            try {
+                const response = await withTimeout(invokeFn(), timeoutMs, label);
+                addTrace(phaseKey, "latency", `${label} hoàn tất`, {
+                    iteration,
+                    attempt,
+                    duration_ms: Date.now() - startedAt,
+                    timeout_ms: timeoutMs,
+                });
+                return response;
+            } catch (err) {
+                lastError = err;
+                if (err?.code !== "AGENT_TIMEOUT" || attempt >= maxAttempts) {
+                    throw err;
+                }
+
+                addTrace(phaseKey, "timeout_retry", `${label} timeout, thử lại`, {
+                    iteration,
+                    attempt,
+                    max_attempts: maxAttempts,
+                    timeout_ms: timeoutMs,
+                    retry_delay_ms: AGENT_TIMEOUT_RETRY_DELAY_MS,
+                });
+
+                await sleep(AGENT_TIMEOUT_RETRY_DELAY_MS);
+            }
+        }
+
+        throw lastError;
+    };
+
     try {
         console.log("\n[Pipeline] 🚀 Bắt đầu pipeline nhiều tác tử...");
         addTrace("pipeline", "start", "Bắt đầu pipeline nhiều tác tử", {
@@ -153,11 +193,13 @@ ${mandatoryRetrieval.context}`,
         while (researchLoop < MAX_RESEARCH_LOOPS) {
             researchLoop++;
             addTrace("researcher", "iteration", `Vòng Researcher ${researchLoop} bắt đầu`);
-            const response = await withTimeout(
-                researcherAgent.invoke(researcherMessages),
-                RESEARCHER_PHASE_TIMEOUT_MS,
-                "Researcher phase"
-            );
+            const response = await invokeWithPhaseTimeoutRetry({
+                phaseKey: "researcher",
+                label: "Researcher phase",
+                timeoutMs: RESEARCHER_PHASE_TIMEOUT_MS,
+                invokeFn: () => researcherAgent.invoke(researcherMessages),
+                iteration: researchLoop,
+            });
             researcherMessages.push(response);
             const researcherContent = stripThinkTags(toText(response?.content));
             researcherRawOutput = truncateText(researcherContent);
@@ -236,11 +278,13 @@ ${mandatoryRetrieval.context}`,
         while (orchestrationLoop < MAX_ORCHESTRATION_LOOPS) {
             orchestrationLoop++;
             addTrace("orchestrator", "iteration", `Vòng Orchestrator ${orchestrationLoop} bắt đầu`);
-            const response = await withTimeout(
-                orchestratorAgent.invoke(orchestratorMessages),
-                ORCHESTRATOR_PHASE_TIMEOUT_MS,
-                "Orchestrator phase"
-            );
+            const response = await invokeWithPhaseTimeoutRetry({
+                phaseKey: "orchestrator",
+                label: "Orchestrator phase",
+                timeoutMs: ORCHESTRATOR_PHASE_TIMEOUT_MS,
+                invokeFn: () => orchestratorAgent.invoke(orchestratorMessages),
+                iteration: orchestrationLoop,
+            });
             orchestratorMessages.push(response);
             const orchestratorContent = cleanModelArtifacts(stripThinkTags(toText(response?.content)));
             orchestratorRawOutput = orchestratorContent;
