@@ -2,8 +2,8 @@ const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
 const { ChatOpenAI } = require("@langchain/openai");
 const { researcherTools } = require("./tools");
 
-function normalizeResearcherProvider() {
-    const explicitProvider = String(process.env.RESEARCHER_PROVIDER || "").toLowerCase().trim();
+function normalizeResearcherProvider(providerOverride = "") {
+    const explicitProvider = String(providerOverride || process.env.RESEARCHER_PROVIDER || "").toLowerCase().trim();
     if (explicitProvider) return explicitProvider;
 
     const globalProvider = String(process.env.AI_PROVIDER || "gemini").toLowerCase();
@@ -14,8 +14,8 @@ function normalizeResearcherProvider() {
     return globalProvider;
 }
 
-function createResearcherLLM() {
-    const provider = normalizeResearcherProvider();
+function createResearcherLLM(providerOverride = "") {
+    const provider = normalizeResearcherProvider(providerOverride);
     const temperature = Number(process.env.RESEARCHER_TEMPERATURE || process.env.LLM_TEMPERATURE || "0.2");
 
     if (provider === "saola4_small") {
@@ -44,8 +44,14 @@ function createResearcherLLM() {
     });
 }
 
-const researcherAgent = createResearcherLLM().bindTools(researcherTools);
+function createResearcherAgent(providerOverride = "") {
+    return createResearcherLLM(providerOverride).bindTools(researcherTools);
+}
+
+const researcherAgent = createResearcherAgent();
 
 module.exports = {
     researcherAgent,
+    createResearcherAgent,
+    normalizeResearcherProvider,
 };

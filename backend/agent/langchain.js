@@ -17,7 +17,7 @@ const {
 const { toVietnamISOString } = require("../utils/vietnamTime");
 
 const { executeRAGTool } = require("../services/ai/retrievalService");
-const { researcherAgent } = require("./agentResearch");
+const { researcherAgent, createResearcherAgent, normalizeResearcherProvider } = require("./agentResearch");
 
 const {
     orchestratorAgent,
@@ -29,6 +29,8 @@ const { createLangchainResilienceService } = require("../services/ai/langchainRe
 
 const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS || "2", 10));
 const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "3", 10));
+const PRIMARY_RESEARCHER_PROVIDER = normalizeResearcherProvider();
+const RESEARCHER_FALLBACK_PROVIDER = String(process.env.RESEARCHER_FALLBACK_PROVIDER || "gemini").toLowerCase().trim();
 const RESEARCHER_PHASE_TIMEOUT_MS = Math.max(
     2000,
     parseInt(process.env.RESEARCHER_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "60000", 10)
@@ -44,6 +46,19 @@ const MAX_INSIGHT_CHARS = Math.max(200, parseInt(process.env.AGENT_INSIGHT_MAX_C
 const MAX_RETRIEVAL_OUTPUT_CHARS = Math.max(400, parseInt(process.env.RETRIEVAL_OUTPUT_MAX_CHARS || "2200", 10));
 const MAX_FULL_OUTPUT_CHARS = Math.max(2000, parseInt(process.env.MODEL_OUTPUT_MAX_CHARS || "12000", 10));
 const MAX_ORCHESTRATOR_OUTPUT_PREVIEW_CHARS = Math.max(700, parseInt(process.env.ORCHESTRATOR_OUTPUT_PREVIEW_CHARS || "1600", 10));
+
+const shouldUseResearcherFallback =
+    Boolean(RESEARCHER_FALLBACK_PROVIDER) &&
+    RESEARCHER_FALLBACK_PROVIDER !== PRIMARY_RESEARCHER_PROVIDER;
+
+let fallbackResearcherAgent = null;
+if (shouldUseResearcherFallback) {
+    try {
+        fallbackResearcherAgent = createResearcherAgent(RESEARCHER_FALLBACK_PROVIDER);
+    } catch (error) {
+        console.warn(`[Researcher] Không thể khởi tạo fallback provider '${RESEARCHER_FALLBACK_PROVIDER}': ${error.message}`);
+    }
+}
 
 const {
     toText,
@@ -106,6 +121,9 @@ async function runAgent(sensorData) {
     let policyMemoryPreview = "";
     let policyContextForModel = "";
     let researcherTimedOut = false;
+    let researcherProviderUsed = PRIMARY_RESEARCHER_PROVIDER;
+    let researcherFailoverApplied = false;
+    let activeResearcherAgent = researcherAgent;
     const agentTrace = [];
 
     const addTrace = (phase, event, message, meta = {}) => {
@@ -200,16 +218,30 @@ ${mandatoryRetrieval.context}`,
                     phaseKey: "researcher",
                     label: "Researcher phase",
                     timeoutMs: RESEARCHER_PHASE_TIMEOUT_MS,
-                    invokeFn: () => researcherAgent.invoke(researcherMessages),
+                    invokeFn: () => activeResearcherAgent.invoke(researcherMessages),
                     iteration: researchLoop,
                 });
             } catch (err) {
                 if (err?.code === "AGENT_TIMEOUT") {
+                    if (!researcherFailoverApplied && fallbackResearcherAgent) {
+                        researcherFailoverApplied = true;
+                        activeResearcherAgent = fallbackResearcherAgent;
+                        researcherProviderUsed = RESEARCHER_FALLBACK_PROVIDER;
+                        addTrace("researcher", "provider_failover", "Researcher timeout; chuyển sang provider dự phòng", {
+                            from: PRIMARY_RESEARCHER_PROVIDER,
+                            to: RESEARCHER_FALLBACK_PROVIDER,
+                            iteration: researchLoop,
+                            timeout_ms: RESEARCHER_PHASE_TIMEOUT_MS,
+                        });
+                        continue;
+                    }
+
                     researcherTimedOut = true;
                     researcherRawOutput = `Researcher timeout sau ${RESEARCHER_PHASE_TIMEOUT_MS}ms. Dùng summary dự phòng từ retrieval để tiếp tục Orchestrator.`;
                     addTrace("researcher", "timeout_degraded", "Researcher timeout; chuyển sang chế độ degrade và tiếp tục pipeline", {
                         iteration: researchLoop,
                         timeout_ms: RESEARCHER_PHASE_TIMEOUT_MS,
+                        provider: researcherProviderUsed,
                     });
                     break;
                 }
@@ -417,9 +449,11 @@ ${mandatoryRetrieval.context}`,
                 orchestrator_reasoning_summary: buildReasoningSummary(actionResult.reason, actionResult.executed_state),
                 orchestrator_tool_reason: truncateText(orchestratorArgumentReason, MAX_FULL_OUTPUT_CHARS),
                 retrieval_output_preview: retrievalOutputPreview,
-                researcher_provider: String(process.env.RESEARCHER_PROVIDER || "gemini").toLowerCase(),
+                researcher_provider: researcherProviderUsed,
                 researcher_model:
-                    process.env.SAOLA4_SMALL_MODEL || process.env.RESEARCHER_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash",
+                    researcherProviderUsed === "saola4_small"
+                        ? (process.env.SAOLA4_SMALL_MODEL || "saola4-small")
+                        : (process.env.RESEARCHER_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash"),
                 orchestrator_provider: String(process.env.AI_PROVIDER || "gemini").toLowerCase(),
                 orchestrator_model:
                     String(process.env.AI_PROVIDER || "gemini").toLowerCase() === "saola4_medium"
