@@ -378,7 +378,7 @@ export default function FarmerDashboard() {
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
           <div>
             <h1 className="text-2xl md:text-3xl font-extrabold leading-tight mt-1" style={{ color: '#1F6F5F' }}>
-              Thửa ruộng A-01
+              Trạm Gateway SAL-84
             </h1>
           </div>
           <div className="flex items-center gap-2 bg-white rounded-xl px-3 py-2 shadow-sm border self-start sm:self-auto"
