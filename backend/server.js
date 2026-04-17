@@ -2,7 +2,9 @@
  * Backend application entrypoint.
  * Bootstraps Express, connects shared services, and mounts routes that power the farm APIs and AI pipeline.
  */
-require("dotenv").config({ path: '../.env' });
+const path = require("path");
+
+require("dotenv").config({ path: path.resolve(__dirname, "..", ".env") });
 const express = require("express");
 const cors = require("cors");
 

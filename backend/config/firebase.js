@@ -1,4 +1,4 @@
-require("dotenv").config({ path: '../.env' });
+require("dotenv").config({ path: path.resolve(__dirname, "..", "..", ".env") });
 const admin = require("firebase-admin");
 const fs = require("fs");
 const path = require("path");
@@ -16,11 +16,11 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
     );
   }
 } else if (fs.existsSync(serviceAccountPath)) {
-  // serviceAccountKey.json lives in /backend/ root — ignored by .gitignore
-  serviceAccount = require("../serviceAccountKey.json");
+  const fileContent = fs.readFileSync(serviceAccountPath, "utf8");
+  serviceAccount = JSON.parse(fileContent);
 } else {
   throw new Error(
-    "Missing Firebase credentials. Add backend/serviceAccountKey.json or set FIREBASE_SERVICE_ACCOUNT_JSON in root .env"
+    "Missing Firebase credentials. Set FIREBASE_SERVICE_ACCOUNT_JSON and FIREBASE_DATABASE_URL in the deploy environment, or add backend/serviceAccountKey.json for local use."
   );
 }
 
