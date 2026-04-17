@@ -1,15 +1,41 @@
 const { ChatGoogleGenerativeAI } = require("@langchain/google-genai");
-const { researcherTools, orchestratorTools } = require("./tools");
+const { ChatOpenAI } = require("@langchain/openai");
+const { orchestratorTools } = require("./tools");
 const fbdb = require("../config/firebase");
 const { logActionWithPrediction } = require("../services/ai/outcomeService");
 
-const llm = new ChatGoogleGenerativeAI({
-  model: "gemini-2.5-flash", 
-  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-  temperature: 0.2
-});
+function createOrchestrationLLM() {
+    const provider = String(process.env.AI_PROVIDER).toLowerCase();
+    const temperature = Number(process.env.LLM_TEMPERATURE || "0.2");
 
-const researcherAgent = llm.bindTools(researcherTools);
+    if (provider === "saola") {
+        const apiKey = process.env.SAOLA_API_KEY;
+        const baseURL = process.env.SAOLA_BASE_URL;
+        const model = process.env.SAOLA_MODEL || "saola-chat";
+
+        if (!apiKey || !baseURL) {
+            throw new Error("AI_PROVIDER=saola requires SAOLA_API_KEY and SAOLA_BASE_URL");
+        }
+
+        return new ChatOpenAI({
+            model,
+            apiKey,
+            temperature,
+            configuration: {
+                baseURL,
+            },
+        });
+    }
+
+    return new ChatGoogleGenerativeAI({
+        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+        apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
+        temperature,
+    });
+}
+
+const llm = createOrchestrationLLM();
+
 const orchestratorAgent = llm.bindTools(orchestratorTools);
 
 async function finalizeAction({
@@ -20,6 +46,8 @@ async function finalizeAction({
     researcherSummary,
     actor,
     mongoDb,
+    agentTrace = [],
+    modelInsights = {},
 }) {
     if (!actionResult) {
         return;
@@ -53,6 +81,8 @@ async function finalizeAction({
         },
         sensor_snapshot: sensorData,
         subagent_summary: researcherSummary,
+        agent_trace: agentTrace,
+        model_insights: modelInsights,
     };
 
     await fbdb.ref("action_logs").push(actionLogPayload);
@@ -64,7 +94,6 @@ async function finalizeAction({
 }
 
 module.exports = {
-    researcherAgent,
     orchestratorAgent,
     finalizeAction,
 };

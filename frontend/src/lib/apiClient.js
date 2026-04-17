@@ -65,4 +65,13 @@ export async function overrideActuator(payload) {
   }
 }
 
+export async function updateCropStage(crop_stage) {
+  try {
+    const response = await http.patch('/api/crop-stage', { crop_stage });
+    return response.data;
+  } catch (error) {
+    throw normalizeApiError(error);
+  }
+}
+
 export { API_BASE_URL, http };

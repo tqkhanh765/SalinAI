@@ -5,6 +5,7 @@ import {
   overrideActuator,
   pushSensorData,
   updateControlMode,
+  updateCropStage,
 } from '../lib/apiClient';
 
 const DEFAULT_SENSOR = { salinity: 0, moisture: 0, water_flow: 0, timestamp: null };
@@ -132,6 +133,10 @@ export function useRealtimeFarmState() {
 
   const submitSensorData = async (payload) => {
     await pushSensorData(payload);
+  };
+
+  const setCropStage = async (cropStage) => {
+    await updateCropStage(cropStage);
   };
 
   return {

@@ -1,4 +1,4 @@
-const fbdb = require("../config/firebase");
+const fbdb = require("../../config/firebase");
 
 function isQuotaError(err) {
     const status = err?.status;

@@ -1,3 +1,7 @@
+/**
+ * Farm API controller.
+ * Validates incoming sensor updates, serves realtime snapshots, and exposes feedback/policy endpoints for the AI workflow.
+ */
 const db = require("../config/firebase");
 const { buildFarmStatePayload, normalizeNestedSensorPayload } = require("../services/core/farmPayloadMapper");
 const { getLatestSensorHistory } = require("../services/core/farmHistoryService");
@@ -6,7 +10,9 @@ const { ingestSensorPayload } = require("../services/core/farmSensorIngestionSer
 const { setControlMode, overrideActuatorFields } = require("../services/core/farmActuatorService");
 const { validateIngestPayload } = require("../services/core/farmIngestValidationService");
 const { decideAiTrigger } = require("../services/core/farmAiTriggerService");
+const { CROP_STAGES } = require("../services/core/farmPayloadMapper");
 const { runAgent } = require("../agent/langchain");
+const { saveDecisionFeedback, getPolicySummary } = require("../services/ai/policyLearningService");
 
 async function buildStatePayload(root, limit) {
   const sensorHistory = await getLatestSensorHistory(30);
@@ -105,6 +111,9 @@ async function ingestData(req, res) {
 
   } catch (error) {
     console.error("[Ingest API] ❌ Internal Error:", error.message);
+    if (error.status) {
+      return res.status(error.status).json(error.payload || { error: error.message });
+    }
     res.status(500).json({ error: "Internal Server Error", details: error.message });
   }
 }
@@ -152,6 +161,92 @@ async function overrideActuator(req, res) {
   }
 }
 
+async function submitDecisionFeedback(req, res) {
+  try {
+    const actionLogId = String(req.body?.action_log_id || "").trim();
+    const verdict = req.body?.verdict;
+    const notes = req.body?.notes || "";
+    const correctedAction = req.body?.corrected_action || null;
+
+    if (!actionLogId) {
+      return res.status(400).json({ error: "action_log_id is required" });
+    }
+
+    const actionSnapshot = await db.ref(`action_logs/${actionLogId}`).once("value");
+    const actionLog = actionSnapshot.val();
+
+    if (!actionLog) {
+      return res.status(404).json({ error: "Action log not found" });
+    }
+
+    const result = await saveDecisionFeedback({
+      action_log_id: actionLogId,
+      verdict,
+      notes,
+      corrected_action: correctedAction,
+      action: actionLog.action,
+      reason: actionLog.reason,
+      sensor_snapshot: actionLog.sensor_snapshot || {},
+      source_ids: actionLog.retrieval?.source_ids || [],
+    });
+
+    return res.status(200).json({
+      status: "OK",
+      message: "Feedback saved and policy memory refreshed.",
+      feedback_id: result.feedbackId,
+      policy: result.policy,
+    });
+  } catch (error) {
+    if (String(error.message || "").includes("verdict")) {
+      return res.status(400).json({ error: error.message });
+    }
+    console.error("[Farm API] Failed to submit decision feedback:", error.message);
+    return res.status(500).json({ error: "Failed to submit decision feedback", details: error.message });
+  }
+}
+
+async function getAgentPolicySummary(req, res) {
+  try {
+    const policy = await getPolicySummary();
+    return res.status(200).json({
+      status: "OK",
+      policy,
+    });
+  } catch (error) {
+    console.error("[Farm API] Failed to get policy summary:", error.message);
+    return res.status(500).json({ error: "Failed to get policy summary", details: error.message });
+  }
+}
+
+async function updateCropStage(req, res) {
+  try {
+    const nextStage = String(req.body?.crop_stage || "").trim().toUpperCase();
+
+    if (!CROP_STAGES.includes(nextStage)) {
+      return res.status(400).json({
+        error: "Invalid crop_stage",
+        allowed: CROP_STAGES,
+      });
+    }
+
+    const sensorRef = db.ref("sensor_data");
+    await sensorRef.update({
+      crop_stage: nextStage,
+      timestamp: new Date().toISOString(),
+    });
+
+    const updatedSnapshot = await sensorRef.once("value");
+
+    return res.status(200).json({
+      status: "OK",
+      updated: updatedSnapshot.val() || { crop_stage: nextStage },
+    });
+  } catch (error) {
+    console.error("[Farm API] Failed to update crop stage:", error.message);
+    return res.status(500).json({ error: "Failed to update crop stage", details: error.message });
+  }
+}
+
 module.exports = {
   getFarmState,
   streamFarmState,
@@ -159,4 +254,7 @@ module.exports = {
   ingestData,
   updateControlMode,
   overrideActuator,
+  submitDecisionFeedback,
+  getAgentPolicySummary,
+  updateCropStage,
 };

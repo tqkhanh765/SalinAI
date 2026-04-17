@@ -1,3 +1,7 @@
+/**
+ * AI trigger policy service.
+ * Decides when a new sensor update is significant enough to launch the AI pipeline.
+ */
 const DEFAULT_THRESHOLDS = {
   salinityDelta: 0.5,
   moistureDelta: 10,
