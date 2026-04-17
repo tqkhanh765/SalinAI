@@ -7,7 +7,7 @@ import {
   updateControlMode,
 } from '../lib/apiClient';
 
-const DEFAULT_SENSOR = { salinity: 0, moisture: 0, timestamp: null };
+const DEFAULT_SENSOR = { salinity: 0, moisture: 0, water_flow: 0, timestamp: null };
 const DEFAULT_ACTUATOR = { valve_state: 'CLOSED', control_mode: 'AUTO' };
 const DEFAULT_AI_STATUS = { is_processing: false, last_reasoning: '' };
 
@@ -36,6 +36,7 @@ export function useRealtimeFarmState() {
           payload.sensorHistory.map((item) => ({
             salinity: Number(item.salinity || 0),
             moisture: Number(item.moisture || 0),
+            water_flow: Number(item.water_flow || 0),
             timestamp: item.timestamp || new Date().toISOString(),
           })).slice(-30)
         );
@@ -46,6 +47,7 @@ export function useRealtimeFarmState() {
         const point = {
           salinity: Number(nextSensor.salinity || 0),
           moisture: Number(nextSensor.moisture || 0),
+          water_flow: Number(nextSensor.water_flow || 0),
           timestamp: nextSensor.timestamp || new Date().toISOString(),
         };
 
@@ -124,6 +126,10 @@ export function useRealtimeFarmState() {
     await overrideActuator({ valve_state: state });
   };
 
+  const setCropStage = async (stage) => {
+    await overrideActuator({ crop_stage: stage });
+  };
+
   const submitSensorData = async (payload) => {
     await pushSensorData(payload);
   };
@@ -139,6 +145,7 @@ export function useRealtimeFarmState() {
     error,
     setControlMode,
     setValveState,
+    setCropStage,
     submitSensorData,
   };
 }

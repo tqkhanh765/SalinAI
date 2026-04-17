@@ -10,7 +10,7 @@ async function getLatestSensorHistory(limit = 30) {
 
     const docs = await mongo
       .collection(SENSOR_HISTORY_COLLECTION)
-      .find({}, { projection: { _id: 0, timestamp: 1, salinity: 1, moisture: 1, river_water_level: 1 } })
+      .find({}, { projection: { _id: 0, timestamp: 1, salinity: 1, moisture: 1, water_flow: 1, river_water_level: 1 } })
       .sort({ timestamp: -1 })
       .limit(limit)
       .toArray();
@@ -30,6 +30,7 @@ async function persistSensorHistoryPoint(payload) {
     await mongo.collection(SENSOR_HISTORY_COLLECTION).insertOne({
       salinity: toNumber(payload.salinity, 0),
       moisture: toNumber(payload.moisture, 0),
+      water_flow: toNumber(payload.water_flow, 0),
       timestamp: payload.timestamp || new Date().toISOString(),
       crop_stage: payload.crop_stage || "VEGETATIVE",
       river_water_level: payload.river_water_level != null ? toNumber(payload.river_water_level, null) : null,
