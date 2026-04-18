@@ -397,6 +397,7 @@ ${mandatoryRetrieval.context}`,
 
             for (const toolCall of response.tool_calls) {
                 if (toolCall.name === "execute_valve_control") {
+                    console.log("[Orchestrator] 🛠️ TOOL CALL ARGS:", JSON.stringify(toolCall.args, null, 2));
 
                     const toolInstance = orchestratorTools.find((tool) => tool.name === toolCall.name);
                     orchestratorArgumentReason = stripThinkTags(toText(toolCall.args?.reason || ""));
