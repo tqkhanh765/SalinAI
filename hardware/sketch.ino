@@ -167,11 +167,7 @@
     void loop() {
       static unsigned long lastRead = 0;
 
-      // ─── KIỂM TRA VAN LIÊN TỤC (Chạy song song, không bị kẹt 45s) ───
-      runActuatorPoll();
-      digitalWrite(VALVE_LED_PIN, currentAction == "CLOSED" ? HIGH : LOW);
-
-      // ─── THỰC THI STEP SENSOR MỖI 45 GIÂY ─────────────────────────────
+      // Thực thi 1 step mỗi 45 giây (tăng lên để AI kịp suy nghĩ trong 1 step)
       if (millis() - lastRead > (lastRead == 0 ? 0 : 45000)) {
         lastRead = millis();
 
@@ -199,7 +195,7 @@
           lastSalinity   = sal;
           lastMoisture   = mois;
           eagerPollUntil = millis() + EAGER_DURATION_MS;
-          lastActuatorPoll = 0; // poll ngay sau khi gửi data
+          lastActuatorPoll = 0; // poll ngay
         } else {
           Serial.printf("[Step %02d] Sal:%.1f Mois:%.0f%% | IDLE\n",
                         currentStep, sal, mois);
