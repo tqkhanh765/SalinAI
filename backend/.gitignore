@@ -1,0 +1,9 @@
+# Dependencies
+node_modules/
+
+# Secrets — NEVER commit these
+serviceAccountKey.json
+.env
+
+# Keep the example template
+!.env.example

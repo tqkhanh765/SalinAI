@@ -1,0 +1,11 @@
+node_modules
+.env
+serviceAccountKey.json
+*.log
+npm-debug.log*
+.git
+.gitignore
+.vscode
+.idea
+.DS_Store
+Thumbs.db

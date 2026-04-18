@@ -1,0 +1,70 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: salinai-backend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      PORT: ${PORT:-3001}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:80}
+      FIREBASE_DATABASE_URL: ${FIREBASE_DATABASE_URL:-}
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
+      AI_PROVIDER: ${AI_PROVIDER:-gemini}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.2}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      SAOLA4_MEDIUM_API_KEY: ${SAOLA4_MEDIUM_API_KEY:-}
+      SAOLA4_MEDIUM_BASE_URL: ${SAOLA4_MEDIUM_BASE_URL:-}
+      SAOLA4_MEDIUM_MODEL: ${SAOLA4_MEDIUM_MODEL:-SaoLa4-medium}
+      RESEARCHER_PROVIDER: ${RESEARCHER_PROVIDER:-gemini}
+      SAOLA4_SMALL_API_KEY: ${SAOLA4_SMALL_API_KEY:-}
+      SAOLA4_SMALL_BASE_URL: ${SAOLA4_SMALL_BASE_URL:-}
+      SAOLA4_SMALL_MODEL: ${SAOLA4_SMALL_MODEL:-saola4-small}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-gemini-embedding-001}
+      MONGODB_URI: ${MONGODB_URI:-}
+      VECTOR_TOP_K: ${VECTOR_TOP_K:-3}
+      VECTOR_MIN_SCORE: ${VECTOR_MIN_SCORE:-0.5}
+      OPENWEATHERMAP_API_KEY: ${OPENWEATHERMAP_API_KEY:-}
+      OPENWEATHERMAP_LOCATION: ${OPENWEATHERMAP_LOCATION:-Can Tho,VN}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+    volumes:
+      - ./backend/serviceAccountKey.json:/app/serviceAccountKey.json:ro
+    networks:
+      - salinai-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:3001}
+    container_name: salinai-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - salinai-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  salinai-net:
+    driver: bridge
