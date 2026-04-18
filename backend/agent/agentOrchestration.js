@@ -96,6 +96,10 @@ async function finalizeAction({
         reason: fullReason,
         sensor_snapshot: sensorData,
         subagent_summary: researcherSummary,
+        retrieval: {
+            hit_count: finalHitCount || 0,
+            source_ids: finalSourceIds || []
+        },
         agent_trace: agentTrace,
         model_insights: modelInsights,
     };

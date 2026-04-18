@@ -62,7 +62,7 @@ function startFirebaseWatcher() {
       if (shouldTriggerAI) {
         if (isAiTriggerLocked) return;
         isAiTriggerLocked = true;
-        console.log(`[Firebase Watcher] 🤖 AI Triggered: ${triggerReason}`);
+        console.log(`[Firebase Watcher] 🤖 AI Triggered (PID: ${process.pid}): ${triggerReason}`);
 
         await db.ref("SalinAI/ai_status").update({
           is_processing: true,
