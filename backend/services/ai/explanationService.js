@@ -15,37 +15,37 @@ function buildDetailedExplanation(sensorData, weatherData, tideData, guidelines,
 
     if (salinity > salinityThreshold) {
         factors.push({
-            name: "🧂 Salinity",
+            name: "🧂 Độ mặn",
             value: `${salinity} ppt`,
             threshold: `< ${salinityThreshold} ppt`,
-            status: "⚠️ HIGH",
-            reasoning: `Salinity is too high for crop stage ${sensorData?.crop_stage}. This may reduce yield.`
+            status: "⚠️ CAO",
+            reasoning: `Độ mặn hiện tại đang vượt ngưỡng an toàn cho giai đoạn ${sensorData?.crop_stage}. Cần đóng van để tránh cháy lá.`
         });
     } else {
         factors.push({
-            name: "🧂 Salinity",
+            name: "🧂 Độ mặn",
             value: `${salinity} ppt`,
             threshold: `< ${salinityThreshold} ppt`,
-            status: "✅ SAFE",
-            reasoning: `Salinity is within a safe range for stage ${sensorData?.crop_stage}`
+            status: "✅ AN TOÀN",
+            reasoning: `Nước sông đang đủ ngọt, rất thích hợp để lấy nước vào ruộng.`
         });
     }
 
     // ─── Factor 2: Moisture ──────────────────────────────────────────────
     const moisture = sensorData?.moisture || 0;
-    let moistureStatus = "✅ GOOD";
-    let moistureReasoning = "Soil moisture is in a healthy range";
+    let moistureStatus = "✅ TỐT";
+    let moistureReasoning = "Độ ẩm đất đang ở mức lý tưởng cho cây lúa.";
 
     if (moisture < 40) {
-        moistureStatus = "🔴 DRY";
-        moistureReasoning = "Soil is too dry; crops need water.";
+        moistureStatus = "🔴 KHÔ";
+        moistureReasoning = "Đất đang quá khô, lúa cần được tiếp nước ngay.";
     } else if (moisture > 80) {
-        moistureStatus = "🔵 WET";
-        moistureReasoning = "Soil is too wet; fungal risk is higher.";
+        moistureStatus = "🔵 QUÁ ƯỚT";
+        moistureReasoning = "Đất đang quá sũng nước, cần hạn chế tưới để tránh úng rễ.";
     }
 
     factors.push({
-        name: "💧 Soil Moisture",
+        name: "💧 Độ ẩm đất",
         value: `${moisture}%`,
         threshold: "40-80%",
         status: moistureStatus,
@@ -58,61 +58,61 @@ function buildDetailedExplanation(sensorData, weatherData, tideData, guidelines,
     const temp = weatherData?.temperature || 0;
 
     let weatherAdvice = `${temp}°C, độ ẩm ${humidity}%`;
-    let weatherStatus = "✅ NORMAL";
+    let weatherStatus = "✅ BÌNH THƯỜNG";
 
     if (rainfall > 40) {
-        weatherAdvice = `Heavy rain ${rainfall}mm in 24h! ⚠️`;
-        weatherStatus = "🔴 HEAVY RAIN";
+        weatherAdvice = `Mưa rất to (${rainfall}mm/24h)! ⚠️`;
+        weatherStatus = "🔴 MƯA LỚN";
     } else if (humidity > 80) {
-        weatherAdvice = `Very high air humidity ${humidity}% -> fungal disease risk`;
-        weatherStatus = "⚠️ HIGH HUMIDITY";
+        weatherAdvice = `Lưu ý độ ẩm không khí cao (${humidity}%)`;
+        weatherStatus = "⚠️ ẨM CAO";
     }
 
     factors.push({
-        name: "☀️ Weather",
+        name: "☀️ Thời tiết",
         value: weatherAdvice,
-        threshold: "< 40mm rain, humidity < 80%",
+        threshold: "< 40mm mưa, ẩm < 80%",
         status: weatherStatus,
-        reasoning: `${temp}°C, ${humidity}% humid, ${rainfall}mm rain/24h`
+        reasoning: `Nhiệt độ ${temp}°C, lượng mưa tích lũy ${rainfall}mm.`
     });
 
     // ─── Factor 4: Tide ──────────────────────────────────────────────
     const tideStatus = tideData?.tide_status || "FALLING";
     const tideConfidence = (tideData?.confidence_score * 100).toFixed(0);
 
-    let tideAdvice = "Tide condition is normal";
+    let tideAdvice = "Điều kiện thủy triều bình thường.";
     let tideWarning = "";
 
     if (tideStatus === "RISING" && salinity > 1.0) {
-        tideAdvice = `⚠️ Rising tide + high salinity = elevated salinity intrusion risk!`;
-        tideWarning = "CRITICAL";
+        tideAdvice = `⚠️ Triều dâng + mặn cao = Nguy cơ xâm nhập mặn rất lớn!`;
+        tideWarning = "🔴 NGUY CẤP";
     } else if (tideStatus === "RISING") {
-        tideAdvice = `Tide is rising (${tideConfidence}% confidence)`;
+        tideAdvice = `Nước đang dâng (Độ tin cậy ${tideConfidence}%)`;
     }
 
     factors.push({
-        name: "🌊 Tide",
-        value: `${tideStatus} (${tideConfidence}% confidence)`,
-        threshold: "FALLING preferred when salinity > 1ppt",
-        status: tideWarning ? "🔴 RISING" : "✅ OK",
+        name: "🌊 Thủy triều",
+        value: `${tideStatus === 'RISING' ? 'ĐANG LÊN' : 'ĐANG XUỐNG'}`,
+        threshold: "Ưu tiên lấy nước khi triều xuống",
+        status: tideWarning || "✅ OK",
         reasoning: tideAdvice
     });
 
     // ─── Factor 5: Crop Stage ────────────────────────────────────────
     const cropStageAdvice = getStageSafetyAdvice(sensorData?.crop_stage);
     factors.push({
-        name: "🌱 Crop Stage",
-        value: sensorData?.crop_stage || "UNKNOWN",
+        name: "🌱 Giai đoạn lúa",
+        value: sensorData?.crop_stage || "CHƯA XÁC ĐỊNH",
         threshold: cropStageAdvice.threshold,
-        status: "ℹ️ INFO",
+        status: "ℹ️ THÔNG TIN",
         reasoning: cropStageAdvice.advice
     });
 
     // ─── Build Final Explanation ──────────────────────────────────────
     return {
         timestamp: new Date().toISOString(),
-        decision: decision?.executed_state || "UNKNOWN",
-        mainReason: decision?.reason || "No decision yet",
+        decision: decision?.executed_state || "ĐANG QUAN SÁT",
+        mainReason: decision?.reason || "Chưa có quyết định",
         factors,
         guidelines_applied: guidelines || [],
         summary: buildSummary(factors, decision)
@@ -155,7 +155,18 @@ function getStageSafetyAdvice(cropStage) {
             threshold: "Tránh nước đọng"
         }
     };
-    return advice[cropStage] || { advice: "Unknown stage", threshold: "N/A" };
+    return advice[cropStage] || { advice: "Giai đoạn chưa xác định", threshold: "N/A" };
+}
+
+/**
+ * Helper to convert technical terms to friendly Vietnamese
+ */
+function humanizeAction(text) {
+    if (!text) return text;
+    return text
+        .replace(/\bNO_ACTION\b/g, "Duy trì trạng thái")
+        .replace(/\bOPEN\b/g, "Mở van")
+        .replace(/\bCLOSED\b/g, "Đóng van");
 }
 
 /**
@@ -167,11 +178,13 @@ function buildSummary(factors, decision) {
         .map(f => f.name)
         .join(" + ");
 
+    const stateDesc = decision?.executed_state === "OPEN" ? "MỞ VAN" : "ĐÓNG VAN";
+
     if (riskFactors) {
-        return `⚠️ Risk detected: ${riskFactors} -> Decision: ${decision?.executed_state}`;
+        return `⚠️ Phát hiện rủi ro: ${riskFactors} -> Quyết định: ${stateDesc}`;
     }
 
-    return `✅ Conditions are normal -> Valve: ${decision?.executed_state === "OPEN" ? "OPEN" : "CLOSED"}`;
+    return `✅ Các chỉ số ổn định -> Trạng thái van: ${stateDesc}`;
 }
 
 /**
@@ -184,25 +197,25 @@ function formatDecisionDisplay(sensorData, weatherData, tideData, guidelines, de
             salinity: {
                 value: sensorData?.salinity || 0,
                 unit: "ppt",
-                label: "River Salinity",
+                label: "Độ mặn nước sông",
                 threshold: getSalinityThreshold(sensorData?.crop_stage),
-                status: (sensorData?.salinity || 0) > getSalinityThreshold(sensorData?.crop_stage) ? "HIGH" : "OK"
+                status: (sensorData?.salinity || 0) > getSalinityThreshold(sensorData?.crop_stage) ? "CAO" : "ỔN ĐỊNH"
             },
             moisture: {
                 value: sensorData?.moisture || 0,
                 unit: "%",
-                label: "Soil Moisture",
+                label: "Độ ẩm đất",
                 threshold: "40-80%",
                 status: getMoistureStatus(sensorData?.moisture || 0)
             },
             water_level: {
                 value: sensorData?.river_water_level || 0,
                 unit: "m",
-                label: "River Water Level"
+                label: "Mực nước sông"
             },
             crop_stage: {
-                value: sensorData?.crop_stage || "UNKNOWN",
-                label: "Crop Stage"
+                value: sensorData?.crop_stage || "CHƯA XÁC ĐỊNH",
+                label: "Giai đoạn lúa"
             }
         },
 
@@ -211,54 +224,58 @@ function formatDecisionDisplay(sensorData, weatherData, tideData, guidelines, de
             temperature: {
                 value: weatherData?.temperature || 0,
                 unit: "°C",
-                label: "Temperature"
+                label: "Nhiệt độ"
             },
             humidity: {
                 value: weatherData?.humidity || 0,
                 unit: "%",
-                label: "Air Humidity"
+                label: "Độ ẩm không khí"
             },
             rainfall_24h: {
                 value: weatherData?.rainfall_24h || 0,
                 unit: "mm",
-                label: "Rainfall (24h)",
-                alert: (weatherData?.rainfall_24h || 0) > 40 ? "⚠️ HEAVY RAIN" : null
+                label: "Lượng mưa (24h)",
+                alert: (weatherData?.rainfall_24h || 0) > 40 ? "⚠️ MƯA LỚN" : null
             },
-            source: weatherData?.source || "UNKNOWN"
+            source: weatherData?.source || "HỆ THỐNG"
         },
 
         // ─── Tide Info ──────────────────────────────────
         tideInfo: {
-            status: tideData?.tide_status || "UNKNOWN",
+            status: tideData?.tide_status || "CHƯA CẬP NHẬT",
             confidence: ((tideData?.confidence_score || 0) * 100).toFixed(0) + "%",
-            label: tideData?.tide_status === "RISING" ? "🌊 Rising Tide" : "🌊 Falling Tide"
+            label: tideData?.tide_status === "RISING" ? "🌊 Triều đang lên" : "🌊 Triều đang xuống"
         },
 
         // ─── AI Decision ───────────────────────────────
         aiDecision: {
-            valve_state: decision?.executed_state || "NO_ACTION",
-            reason: decision?.reason || "No decision yet",
+            valve_state: humanizeAction(decision?.executed_state) || "ĐANG QUAN SÁT",
+            reason: humanizeAction(decision?.reason) || "Chưa có quyết định",
             source_ids: decision?.source_ids || [],
             is_processing: aiStatus?.is_processing || false,
-            last_reasoning: aiStatus?.last_reasoning || "N/A"
+            last_reasoning: humanizeAction(aiStatus?.last_reasoning) || "N/A"
         },
 
         // ─── Retrieved Guidelines ──────────────────────
         guidelines: {
             count: guidelines?.length || 0,
             ids: guidelines || [],
-            info: "Applied agricultural guideline evidence"
+            info: "Bằng chứng kỹ thuật canh tác đã áp dụng"
         },
 
         // ─── Detailed Explanation ──────────────────────
-        explanation: buildDetailedExplanation(sensorData, weatherData, tideData, guidelines, decision)
+        explanation: {
+            ...buildDetailedExplanation(sensorData, weatherData, tideData, guidelines, decision),
+            mainReason: humanizeAction(decision?.reason || "Chưa có quyết định"),
+            decision: humanizeAction(decision?.executed_state || "ĐANG QUAN SÁT")
+        }
     };
 }
 
 function getMoistureStatus(moisture) {
-    if (moisture < 40) return "DRY ⚠️";
-    if (moisture > 80) return "WET ⚠️";
-    return "GOOD ✅";
+    if (moisture < 40) return "KHÔ ⚠️";
+    if (moisture > 80) return "ÚNG ⚠️";
+    return "TỐT ✅";
 }
 
 module.exports = {

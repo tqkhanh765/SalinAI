@@ -39,15 +39,22 @@ const execute_valve_control = new DynamicStructuredTool({
   schema: z.object({
     state: z.enum(["OPEN", "CLOSED", "NO_ACTION"]),
     reason: z.string(),
-    source_ids: z.array(z.string())
+    source_ids: z.array(z.string()),
+    suggested_thresholds: z.object({
+      salinity_delta: z.number().nullable().optional().default(0.5).describe("Threshold for next salinity change trigger"),
+      moisture_delta: z.number().nullable().optional().default(10.0).describe("Threshold for next moisture change trigger"),
+      recovery_salinity: z.number().nullable().optional().describe("If CLOSED, trigger AI if salinity falls below this value"),
+      urgent_moisture: z.number().nullable().optional().describe("Trigger AI if moisture falls below this value")
+    }).optional()
   }),
-  func: async ({ state, reason, source_ids }) => {
+  func: async ({ state, reason, source_ids, suggested_thresholds }) => {
     const actuatorSnap = await fbdb.ref("SalinAI/actuator").once("value");
     const actuator = actuatorSnap.val() || {};
     return JSON.stringify({ 
       executed_state: state, 
       reason, 
       source_ids, 
+      suggested_thresholds,
       blocked_by_manual: actuator.control_mode === "MANUAL" 
     });
   }

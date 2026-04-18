@@ -114,7 +114,7 @@ export default function FarmerDashboard() {
   const [isCropStageUpdating, setIsCropStageUpdating] = useState(false);
 
   const CROP_STAGE_OPTIONS = [
-    { value: 'GERMINATION', label: 'Nảy mầm'},
+    { value: 'GERMINATION', label: 'Nảy mầm' },
     { value: 'SEEDLING', label: 'Cây con' },
     { value: 'VEGETATIVE', label: 'Phát triển thân, lá' },
     { value: 'FLOWERING', label: 'Ra hoa' },
@@ -421,7 +421,7 @@ export default function FarmerDashboard() {
             <StatCard icon={WeatherIcon} label="Điều Kiện Trời" value={readings.weather} unit="" color="#1F6F5F" bg="#1F6F5F20" />
           </div>
 
-          <div className="mt-4 bg-white rounded-2xl p-4 shadow-sm border" style={{ borderColor: '#1F6F5F20' }}>
+        <div className="mt-4 bg-white rounded-2xl p-4 shadow-sm border" style={{ borderColor: '#1F6F5F20' }}>
             <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
               <div className="md:flex-1">
                 <p className="text-sm font-bold" style={{ color: '#1F6F5F' }}> CHỌN GIAI ĐOẠN PHÁT TRIỂN CỦA CÂY</p>
@@ -489,8 +489,8 @@ export default function FarmerDashboard() {
                     ? 'linear-gradient(135deg, #6FCF97 0%, #2FA084 100%)'
                     : 'linear-gradient(135deg, #EB5757 0%, #c12a2a 100%)',
                 border: 'none',
-                boxShadow: (uiControlMode === 'auto' || isToggling) 
-                  ? 'none' 
+                boxShadow: (uiControlMode === 'auto' || isToggling)
+                  ? 'none'
                   : valveOpen
                     ? '0 8px 25px rgba(47,160,132,0.35)'
                     : '0 8px 25px rgba(235,87,87,0.35)',
@@ -670,7 +670,7 @@ export default function FarmerDashboard() {
                       Người thực hiện: <strong>{formatActorLabel(log.actor)}</strong>
                     </p>
 
-                    <p className="text-xs leading-relaxed text-gray-700 mb-2">
+                    <p className="text-xs leading-relaxed text-gray-700 mb-2" style={{ whiteSpace: 'pre-line' }}>
                       {log.reason || 'Không có mô tả chi tiết.'}
                     </p>
 
@@ -678,7 +678,7 @@ export default function FarmerDashboard() {
                       <p className="text-[11px] font-semibold" style={{ color: '#1F6F5F' }}>
                         Ảnh hưởng:
                       </p>
-                      <p className="text-[11px] text-gray-700 leading-relaxed">
+                      <p className="text-[11px] text-gray-700 leading-relaxed" style={{ whiteSpace: 'pre-line' }}>
                         {buildLogSummary(log).impact}
                       </p>
                     </div>

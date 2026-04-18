@@ -49,6 +49,8 @@ Yêu cầu về câu trả lời:
 - Chỉ viết bằng tiếng Việt tự nhiên, giọng người thật, ngắn gọn.
 - Trình bày theo mạch suy luận tự nhiên: quan sát tình hình -> so sánh với ngưỡng -> giải thích hệ quả -> chốt quyết định.
 - Không liệt kê từng quy tắc, không viết kiểu “nếu... thì...”, không biến câu trả lời thành danh sách.
+- TUYỆT ĐỐI KHÔNG dùng các từ kỹ thuật như "OPEN", "CLOSED", "NO_ACTION" trong phần giải thích.
+- Không dùng cụm từ "Giữ nguyên trạng thái". Hãy dùng các từ khẳng định như "Tiếp tục Mở van", "Tiếp tục Đóng van", "Mở van ngay" hoặc "Đóng van ngay".
 - Phải tham chiếu phần tóm tắt từ Researcher và bài học trong policy/outcome memory; không nhắc đến guideline/history thô như thể bạn tự đọc chúng.
 - Phải nói rõ giai đoạn cây ảnh hưởng thế nào đến quyết định mở hay đóng van.
 - Nếu policy/outcome memory gợi ý bài học từ các lần thực thi trước, hãy áp dụng nó vào bối cảnh hiện tại thay vì chỉ nhắc lại số liệu.
@@ -64,6 +66,11 @@ Trong phần giải thích, hãy cho thấy bạn đã cân nhắc nhiều lớp
 Sau đó bạn PHẢI gọi execute_valve_control với:
 - state: "OPEN" | "CLOSED" | "NO_ACTION"
 - reason: 1 câu giải thích ngắn, dễ hiểu cho nông dân
-- source_ids: danh sách _id guideline đã dùng`;
+- source_ids: danh sách _id guideline đã dùng
+- suggested_thresholds: (Object) Định nghĩa khi nào bạn muốn được gọi dậy tiếp theo:
+    - salinity_delta: số (ppt), mặc định 0.5.
+    - moisture_delta: số (%), mặc định 10.0.
+    - recovery_salinity: số (ppt) - Nếu ĐÓNG van, hãy gọi tôi dậy khi mặn thấp hơn mức này (Cơ hội phục hồi).
+    - urgent_moisture: số (%) - Gọi tôi dậy ngay nếu ẩm thấp hơn mức này bất kể độ mặn.`;
 
 module.exports = { researcherPromptTemplate, orchestratorPromptTemplate };

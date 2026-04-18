@@ -76,39 +76,17 @@ async function ingestData(req, res) {
     // 4. AI Trigger Filter (Delta-based Invocation)
     const { shouldTriggerAI, triggerReason } = decideAiTrigger(enrichedPayload, previousPoint);
 
+    // 4. Note: AI Triggering is now handled globally by farmFirebaseWatcher.js 
+    // to prevent duplicate executions from different ingestion sources.
     if (shouldTriggerAI) {
-      console.log(`[Ingest API] 🤖 AI Triggered: ${triggerReason}`);
-
-      await db.ref("SalinAI/ai_status").update({
-        is_processing: true,
-        last_reasoning: `Triggered by: ${triggerReason}`,
-      });
-
-      // Run Agent pipeline (non-blocking for the HTTP response)
-      runAgent(enrichedPayload).catch(err => {
-        console.error("[Ingest API] ❌ AI Agent failure:", err.message);
-        db.ref("SalinAI/ai_status").update({
-          is_processing: false,
-          last_reasoning: `AI Error: ${err.message}`,
-        }).catch((statusErr) => {
-          console.error("[Ingest API] Failed to update ai_status after AI error:", statusErr.message);
-        });
-      });
-
-      return res.status(200).json({
-        status: "OK",
-        message: "Data synced. AI reasoning triggered.",
-        trigger: triggerReason,
-        updated: enrichedPayload
-      });
-    } else {
-      console.log("[Ingest API] 💤 Data synced to UI. AI execution skipped (no significant delta).");
-      return res.status(200).json({
-        status: "OK",
-        message: "Data synced to UI. AI execution skipped (no significant delta).",
-        updated: enrichedPayload
-      });
+      console.log(`[Ingest API] 🤖 AI Trigger Candidate: ${triggerReason} (Delegating to Watcher)`);
     }
+
+    return res.status(200).json({
+      status: "OK",
+      message: "Data synced. Watcher will handle AI trigger if needed.",
+      updated: enrichedPayload
+    });
 
   } catch (error) {
     console.error("[Ingest API] ❌ Internal Error:", error.message);

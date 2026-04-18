@@ -1,9 +1,3 @@
-/**
- * Firebase Watcher Service.
- * Listens to realtime changes in SalinAI/sensor_data and triggers the AI pipeline 
- * if significant changes are detected. This allows hardware (like Wokwi or ESP32) 
- * to skip the REST API and write directly to Firebase while still benefiting from AI.
- */
 const db = require("../../config/firebase");
 const { getLatestSensorHistory, persistSensorHistoryPoint } = require("./farmHistoryService");
 const { decideAiTrigger } = require("./farmAiTriggerService");
@@ -12,69 +6,72 @@ const { fetchWeatherData } = require("../external/weatherService");
 const { getTideData } = require("../external/tideService");
 
 let lastProcessedTimestamp = null;
+let lastProcessedFingerprint = ""; 
+let isAiTriggerLocked = false;    
+let isWatcherStarted = false; 
+const TRIGGER_COOLDOWN_MS = 8000; 
 
 function startFirebaseWatcher() {
-  console.log("   -> Firebase Watcher enabled (Listening to SalinAI/sensor_data)");
+  if (isWatcherStarted) return;
+  isWatcherStarted = true;
+  console.log("   -> Firebase Watcher enabled (SalinAI/sensor_data)");
 
   const sensorRef = db.ref("SalinAI/sensor_data");
+  let isAddingEnrichment = false;
 
   sensorRef.on("value", async (snapshot) => {
     try {
       const sensorData = snapshot.val();
       if (!sensorData || !sensorData.timestamp) return;
 
-      // Avoid re-processing the same update (idempotency)
-      if (sensorData.timestamp === lastProcessedTimestamp) return;
-      lastProcessedTimestamp = sensorData.timestamp;
+      const fingerprint = `${sensorData.salinity}-${sensorData.moisture}-${sensorData.timestamp}`;
+      if (fingerprint === lastProcessedFingerprint || isAddingEnrichment) return;
 
-      // 1. Fetch Weather & Tide early to enrich the data
+      lastProcessedFingerprint = fingerprint;
+      lastProcessedTimestamp = sensorData.timestamp;
+      isAddingEnrichment = true;
+
       const weatherData = await fetchWeatherData().catch(() => null);
       const tideData = await getTideData(sensorData.river_water_level, weatherData).catch(() => null);
 
       const enrichedData = {
         ...sensorData,
-        external_forecast: {
-          ...weatherData,
-          ...tideData,
-        }
+        external_forecast: { ...weatherData, ...tideData }
       };
 
-      // Update Firebase immediately so the UI (Dashboard) shows the weather data
-      // We use update() to merge, and lastProcessedTimestamp will prevent Infinite Loops.
-      await db.ref("SalinAI/sensor_data").update({
+      await db.ref("SalinAI/sensor_enrichment").update({
         external_forecast: enrichedData.external_forecast
-      }).catch(err => console.error("[Firebase Watcher] ❌ UI Update failed:", err.message));
+      }).catch(() => {});
 
-      // 2. Get previous point from history to compare deltas
       const history = await getLatestSensorHistory(1);
       const previousPoint = history.length > 0 ? history[0] : null;
 
-      // 3. Persist to MongoDB History immediately so next update has a reference
+      const { shouldTriggerAI, triggerReason } = await decideAiTrigger(enrichedData, previousPoint);
       await persistSensorHistoryPoint(enrichedData);
 
-      // 4. Decide if AI should trigger
-      const { shouldTriggerAI, triggerReason } = decideAiTrigger(enrichedData, previousPoint);
-
       if (shouldTriggerAI) {
-        console.log(`[Firebase Watcher] 🤖 AI Triggered via DB update: ${triggerReason}`);
+        if (isAiTriggerLocked) return;
+        isAiTriggerLocked = true;
+        console.log(`[Firebase Watcher] 🤖 AI Triggered: ${triggerReason}`);
 
         await db.ref("SalinAI/ai_status").update({
           is_processing: true,
-          last_reasoning: `Triggered by DB: ${triggerReason}`,
+          last_reasoning: `Triggered: ${triggerReason}`,
         });
 
-        // Run Agent pipeline with enriched data
-        runAgent(enrichedData).catch(err => {
-          console.error("[Firebase Watcher] ❌ AI Agent failure:", err.message);
-          db.ref("SalinAI/ai_status").update({
-            is_processing: false,
-            last_reasoning: `AI Error (Watcher): ${err.message}`,
+        runAgent(enrichedData)
+          .then(() => {
+            setTimeout(() => { isAiTriggerLocked = false; }, TRIGGER_COOLDOWN_MS);
+          })
+          .catch(() => {
+            db.ref("SalinAI/ai_status").update({ is_processing: false });
+            isAiTriggerLocked = false;
           });
-        });
       }
-
     } catch (error) {
       console.error("[Firebase Watcher] Error:", error.message);
+    } finally {
+      isAddingEnrichment = false;
     }
   });
 }

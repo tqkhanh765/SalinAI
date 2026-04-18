@@ -434,7 +434,7 @@ export default function SimulatorPage() {
                     <p className="text-xs font-semibold uppercase tracking-wider mb-1" style={{ color: '#9ca3af' }}>
                       Quyết Định Mới Nhất Của Agent
                     </p>
-                    <p className="text-sm font-medium leading-relaxed" style={{ color: '#1F6F5F' }}>
+                    <p className="text-sm font-medium leading-relaxed" style={{ color: '#1F6F5F', whiteSpace: 'pre-line' }}>
                       {lastLog.reason || 'Không có lý do'}
                     </p>
                     {lastLog.timestamp && (

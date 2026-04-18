@@ -463,7 +463,8 @@ ${mandatoryRetrieval.context}`,
             },
         });
 
-        console.log(`[Orchestrator] ✅ Hành động cuối: ${actionResult.executed_state} | Lý do: ${actionResult.reason}`);
+        // Log moved to finalizeAction for better consolidation.
+
     } catch (err) {
         normalizePipelineError(err);
 

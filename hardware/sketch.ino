@@ -167,8 +167,8 @@ const float mock_flow[TOTAL_STEPS] = {
   void loop() {
     static unsigned long lastRead = 0;
 
-    // Thực thi 1 step mỗi 45 giây (tăng lên để AI kịp suy nghĩ trong 1 step)
-    if (millis() - lastRead > 45000) {
+    // Thực thi 1 step mỗi 45 giây (Khởi đầu ngay lập tức ở lần đầu)
+    if (millis() - lastRead > (lastRead == 0 ? 0 : 45000)) {
       lastRead = millis();
 
       float sal  = mock_salinity[currentStep];

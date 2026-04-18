@@ -18,19 +18,8 @@ function createOrchestrationLLM() {
         const apiKey = process.env.SAOLA4_MEDIUM_API_KEY;
         const baseURL = process.env.SAOLA4_MEDIUM_BASE_URL;
         const model = process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium";
-
-        if (!apiKey || !baseURL) {
-            throw new Error("AI_PROVIDER=saola4_medium requires SAOLA4_MEDIUM_API_KEY and SAOLA4_MEDIUM_BASE_URL");
-        }
-
-        return new ChatOpenAI({
-            model,
-            apiKey,
-            temperature,
-            configuration: {
-                baseURL,
-            },
-        });
+        if (!apiKey || !baseURL) throw new Error("Missing SAOLA4_MEDIUM config");
+        return new ChatOpenAI({ model, apiKey, temperature, configuration: { baseURL } });
     }
 
     return new ChatGoogleGenerativeAI({
@@ -41,7 +30,6 @@ function createOrchestrationLLM() {
 }
 
 const llm = createOrchestrationLLM();
-
 const orchestratorAgent = llm.bindTools(orchestratorTools);
 
 async function finalizeAction({
@@ -55,79 +43,67 @@ async function finalizeAction({
     agentTrace = [],
     modelInsights = {},
 }) {
-    if (!actionResult) {
-        return;
+    if (!actionResult) return;
+
+    const actuatorSnap = await fbdb.ref("SalinAI/actuator").once("value");
+    const currentValveState = actuatorSnap.val()?.valve_state || "CLOSED";
+
+    let finalState = actionResult.executed_state;
+    let humanReason = actionResult.reason || "AI thực hiện hành động.";
+
+    humanReason = humanReason
+        .replace(/\bNO_ACTION\b/gi, "duy trì trạng thái")
+        .replace(/\bOPEN\b/gi, "mở van")
+        .replace(/\bCLOSED\b/gi, "đóng van")
+        .replace(/\bACTUATOR\b/gi, "thiết bị")
+        .replace(/\bVALVE\b/gi, "van");
+
+    if (finalState === "NO_ACTION" || !finalState) {
+        finalState = currentValveState;
+        humanReason = `[${finalState === "OPEN" ? "MỞ" : "ĐÓNG"} VAN] ` + humanReason;
     }
 
-    if (!actionResult.blocked_by_manual && (actionResult.executed_state === "OPEN" || actionResult.executed_state === "CLOSED")) {
-        await fbdb.ref("SalinAI/actuator/valve_state").set(actionResult.executed_state);
-
-        // Mirror control action for existing hardware integrations.
-        const esp32Action = actionResult.executed_state === "OPEN" ? "OPEN" : "CLOSED";
-        await fbdb.ref("SalinAI/control/action").set(esp32Action);
+    if (!actionResult.blocked_by_manual && (finalState === "OPEN" || finalState === "CLOSED")) {
+        await fbdb.ref("SalinAI/actuator/valve_state").set(finalState);
+        await fbdb.ref("SalinAI/control/action").set(finalState);
     }
 
-    const aiStatusPayload = {
+    const thresholds = actionResult.suggested_thresholds || { salinity_delta: 0.1, moisture_delta: 1.0, recovery_salinity: 0.8 };
+    const thresholdSummary = `📝 Ghi chú: Sẽ quay lại nếu mặn biến động > ${thresholds.salinity_delta}ppt | 💧 Ẩm thay đổi > ${thresholds.moisture_delta}%`;
+
+    const fullReason = humanReason + "\n\n" + thresholdSummary;
+
+    await fbdb.ref("SalinAI/ai_status").update({
         is_processing: false,
-        last_reasoning: actionResult.reason,
-        last_retrieval_hit_count: finalHitCount,
-        last_retrieval_source_ids: finalSourceIds,
-    };
-
-    await fbdb.ref("SalinAI/ai_status").update(aiStatusPayload);
+        last_reasoning: fullReason,
+        thresholds: thresholds,
+        threshold_summary: thresholdSummary
+    });
 
     const actionTimestamp = toVietnamISOString();
-
     const actionLogPayload = {
         timestamp: actionTimestamp,
         actor,
-        action: actionResult.executed_state,
-        reason: actionResult.reason + (actionResult.blocked_by_manual ? " (BLOCKED BY MANUAL MODE)" : ""),
-        retrieval: {
-            hit_count: finalHitCount,
-            source_ids: finalSourceIds,
-            retrieval_miss: finalHitCount === 0,
-        },
+        action: finalState,
+        reason: fullReason,
         sensor_snapshot: sensorData,
         subagent_summary: researcherSummary,
         agent_trace: agentTrace,
         model_insights: modelInsights,
-        feedback_loop: {
-            status: "PENDING_OUTCOME",
-            stage: sensorData?.crop_stage || "VEGETATIVE",
-            action_at: actionTimestamp,
-            next_check_at: addHoursVietnamISOString(FEEDBACK_LOOP_DELAY_HOURS),
-            note: `Đang chờ outcome sau ${FEEDBACK_LOOP_DELAY_HOURS} giờ để cập nhật policy memory.`,
-        },
     };
 
     await fbdb.ref("SalinAI/action_logs").push(actionLogPayload);
 
+    console.log(`\n+---------------- [QUYẾT ĐỊNH CỦA AI] (PID: ${process.pid}) ----------------+`);
+    console.log(`| HÀNH ĐỘNG: [${finalState === "OPEN" ? "MỞ VAN" : "ĐÓNG VAN"}]`);
+    console.log(`| LÝ DO: ${humanReason.substring(0, 70)}...`);
+    console.log(`| LÁ CHẮN: ${thresholdSummary}`);
+    console.log(`+-----------------------------------------------------------+\n`);
+
     if (mongoDb) {
-        // Log with predictions for 24h outcome tracking
-        await logActionWithPrediction(actionLogPayload);
-
-        const feedbackLoopPayload = {
-            feedback_loop: {
-                status: "PENDING_OUTCOME",
-                stage: sensorData?.crop_stage || "VEGETATIVE",
-                action: actionResult.executed_state,
-                action_at: actionLogPayload.timestamp,
-                next_check_at: actionLogPayload.feedback_loop.next_check_at,
-                note: `Đã ghi action và đang chờ outcome sau ${FEEDBACK_LOOP_DELAY_HOURS} giờ để xác nhận feedback loop.`,
-            },
-        };
-
-        await fbdb.ref("SalinAI/ai_status").update(feedbackLoopPayload);
-
-        // Trigger an immediate scan so new actions are not left waiting for the next scheduler tick.
-        runAutonomousLearningCycle({ minActionAgeHours: FEEDBACK_LOOP_DELAY_HOURS }).catch((error) => {
-            console.error("[Outcome] Immediate scan failed:", error.message);
-        });
+        await logActionWithPrediction(actionLogPayload).catch(() => {});
+        runAutonomousLearningCycle({ minActionAgeHours: FEEDBACK_LOOP_DELAY_HOURS }).catch(() => {});
     }
 }
 
-module.exports = {
-    orchestratorAgent,
-    finalizeAction,
-};
+module.exports = { orchestratorAgent, finalizeAction };
