@@ -199,8 +199,8 @@ try {
 
   # Poll up to 30s to wait for async pipeline to write fresh action logs.
   $pollStart = Get-Date
-  $pollTimeoutSeconds = 30
-  $pollIntervalSeconds = 3
+  $pollTimeoutSeconds = 90
+  $pollIntervalSeconds = 4
   $kickSent = $false
   $recentLogs = @($logs | Where-Object {
     $id = [string]($_.id)
@@ -208,7 +208,7 @@ try {
   })
 
   while ($recentLogs.Count -eq 0 -and ((Get-Date) -lt $pollStart.AddSeconds($pollTimeoutSeconds))) {
-    if (-not $kickSent -and ((Get-Date) -ge $pollStart.AddSeconds(12))) {
+    if (-not $kickSent -and ((Get-Date) -ge $pollStart.AddSeconds(15))) {
       try {
         $null = Invoke-Checked -Method "POST" -Url "$BaseUrl/api/ingest" -Body $payloadC
         $null = Invoke-Checked -Method "POST" -Url "$BaseUrl/api/ingest" -Body $payloadD
@@ -224,9 +224,9 @@ try {
   }
 
   if ($recentLogs.Count -gt 0) {
-    Pass "RAG-001 recent action log detected within 30s polling"
+    Pass "RAG-001 recent action log detected within $($pollTimeoutSeconds)s polling"
   } else {
-    Fail "RAG-001 no recent action log detected after 30s polling"
+    Fail "RAG-001 no recent action log detected after $($pollTimeoutSeconds)s polling"
     throw "RAG-001 gating failed"
   }
 

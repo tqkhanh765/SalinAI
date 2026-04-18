@@ -103,10 +103,11 @@ async function runAgent(sensorData) {
     const mongoDb = getDb();
     if (!mongoDb) {
         console.error("[Orchestrator] MongoDB chưa được kết nối.");
-        await fbdb.ref("ai_status").update({
+        const statusPayload = {
             is_processing: false,
             last_reasoning: "MongoDB chưa được kết nối. Quy trình AI không thể chạy.",
-        });
+        };
+        await fbdb.ref("SalinAI/ai_status").update(statusPayload);
         return;
     }
 
@@ -492,10 +493,11 @@ ${mandatoryRetrieval.context}`,
             console.error("[Orchestrator] Fallback action failed:", fallbackErr.message);
         }
 
-        await fbdb.ref("ai_status").update({
+        const statusPayload = {
             is_processing: false,
             last_reasoning: `Lỗi trong pipeline AI: ${err.message}`,
-        });
+        };
+        await fbdb.ref("SalinAI/ai_status").update(statusPayload);
 
         throw err;
     }

@@ -48,6 +48,7 @@ app.use(express.json());
 const healthRoute = require("./routes/health");
 const farmRoute = require("./routes/farm");
 const { startAutoLearningScheduler } = require("./services/ai/autoLearningScheduler");
+const { startFirebaseWatcher } = require("./services/core/farmFirebaseWatcher");
 
 app.use(healthRoute);
 app.use(farmRoute);
@@ -60,4 +61,5 @@ app.listen(PORT, () => {
   console.log(`   → Health check: http://localhost:${PORT}/api/health`);
 
   startAutoLearningScheduler();
+  startFirebaseWatcher();
 });

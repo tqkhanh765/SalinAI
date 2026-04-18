@@ -12,6 +12,7 @@ router.post("/api/decision-feedback", farmController.submitDecisionFeedback);
 router.get("/api/policy-summary", farmController.getAgentPolicySummary);
 router.patch("/api/control-mode", farmController.updateControlMode);
 router.patch("/api/crop-stage", farmController.updateCropStage);
+router.get("/api/ping-test", (req, res) => res.json({ message: "Active backend is here!", timestamp: new Date().toISOString() }));
 router.post("/api/override", farmController.overrideActuator);
 
 /**
@@ -27,10 +28,10 @@ router.get("/api/decision-details", async (req, res) => {
             actuatorSnapshot,
             latestActionSnapshot,
         ] = await Promise.all([
-            db.ref("sensor_data").once("value"),
-            db.ref("ai_status").once("value"),
-            db.ref("actuator").once("value"),
-            db.ref("action_logs").limitToLast(1).once("value"),
+            db.ref("SalinAI/sensor_data").once("value"),
+            db.ref("SalinAI/ai_status").once("value"),
+            db.ref("SalinAI/actuator").once("value"),
+            db.ref("SalinAI/action_logs").limitToLast(1).once("value"),
         ]);
 
         const sensorData = sensorSnapshot.val() || {};

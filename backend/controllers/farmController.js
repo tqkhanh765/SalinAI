@@ -22,7 +22,7 @@ async function buildStatePayload(root, limit) {
 async function getFarmState(req, res) {
   try {
     const limit = Math.min(Math.max(Number(req.query.logLimit || 20), 1), 100);
-    const snapshot = await db.ref("/").once("value");
+    const snapshot = await db.ref("/SalinAI").once("value");
     const root = snapshot.val() || {};
 
     res.status(200).json(await buildStatePayload(root, limit));
@@ -34,7 +34,7 @@ async function getFarmState(req, res) {
 
 function streamFarmState(req, res) {
   return streamFarmStateService(req, res, {
-    rootRef: db.ref("/"),
+    rootRef: db.ref("/SalinAI"),
     buildPayload: buildStatePayload,
   });
 }
@@ -46,7 +46,7 @@ function streamFarmState(req, res) {
 async function ingestData(req, res) {
   try {
     const rawBody = req.body || {};
-    
+
     // 1. Strict Schema Validation (Fail-Fast)
     const normalized = normalizeNestedSensorPayload(rawBody);
     if (normalized.error) {
@@ -78,19 +78,20 @@ async function ingestData(req, res) {
 
     if (shouldTriggerAI) {
       console.log(`[Ingest API] 🤖 AI Triggered: ${triggerReason}`);
-      
-      // Set AI to processing state in Firebase
-      await db.ref("ai_status").update({ 
+
+      await db.ref("SalinAI/ai_status").update({
         is_processing: true,
-        last_reasoning: `Triggered by: ${triggerReason}` 
+        last_reasoning: `Triggered by: ${triggerReason}`,
       });
 
       // Run Agent pipeline (non-blocking for the HTTP response)
       runAgent(enrichedPayload).catch(err => {
         console.error("[Ingest API] ❌ AI Agent failure:", err.message);
-        db.ref("ai_status").update({ 
-          is_processing: false, 
-          last_reasoning: `AI Error: ${err.message}` 
+        db.ref("SalinAI/ai_status").update({
+          is_processing: false,
+          last_reasoning: `AI Error: ${err.message}`,
+        }).catch((statusErr) => {
+          console.error("[Ingest API] Failed to update ai_status after AI error:", statusErr.message);
         });
       });
 
@@ -166,7 +167,7 @@ async function submitDecisionFeedback(req, res) {
       return res.status(400).json({ error: "action_log_id is required" });
     }
 
-    const actionSnapshot = await db.ref(`action_logs/${actionLogId}`).once("value");
+    const actionSnapshot = await db.ref(`SalinAI/action_logs/${actionLogId}`).once("value");
     const actionLog = actionSnapshot.val();
 
     if (!actionLog) {
@@ -223,7 +224,7 @@ async function updateCropStage(req, res) {
       });
     }
 
-    const sensorRef = db.ref("sensor_data");
+    const sensorRef = db.ref("SalinAI/sensor_data");
     await sensorRef.update({
       crop_stage: nextStage,
       timestamp: new Date().toISOString(),

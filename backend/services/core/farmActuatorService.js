@@ -18,7 +18,7 @@ async function setControlMode(controlModeInput) {
     throw createValidationError("Invalid control_mode", CONTROL_MODES);
   }
 
-  await db.ref("actuator/control_mode").set(mode);
+  await db.ref("SalinAI/actuator/control_mode").set(mode);
   return { control_mode: mode };
 }
 
@@ -45,15 +45,17 @@ async function overrideActuatorFields({ control_mode, valve_state }) {
     throw createValidationError("No valid fields to update", undefined);
   }
 
-  await db.ref("actuator").update(updates);
+  await db.ref("SalinAI/actuator").update(updates);
 
   if (updates.valve_state) {
-    await db.ref("action_logs").push({
+    const actionLogPayload = {
       timestamp: new Date().toISOString(),
       actor: "USER",
       action: updates.valve_state,
       reason: "Manual override from frontend dashboard",
-    });
+    };
+
+    await db.ref("SalinAI/action_logs").push(actionLogPayload);
   }
 
   return updates;

@@ -45,7 +45,7 @@ async function withTimeout(promise, timeoutMs, label) {
 async function buildFallbackAction(sensorData, reason) {
     const salinity = Number(sensorData?.salinity || 0);
     const desiredState = salinity >= 2 ? "CLOSED" : "OPEN";
-    const actuatorSnap = await fbdb.ref("actuator").once("value");
+    const actuatorSnap = await fbdb.ref("SalinAI/actuator").once("value");
     const actuator = actuatorSnap.val() || {};
     const blockedByManual = actuator.control_mode === "MANUAL";
 

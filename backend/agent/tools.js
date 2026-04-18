@@ -42,7 +42,7 @@ const execute_valve_control = new DynamicStructuredTool({
     source_ids: z.array(z.string())
   }),
   func: async ({ state, reason, source_ids }) => {
-    const actuatorSnap = await fbdb.ref("actuator").once("value");
+    const actuatorSnap = await fbdb.ref("SalinAI/actuator").once("value");
     const actuator = actuatorSnap.val() || {};
     return JSON.stringify({ 
       executed_state: state, 

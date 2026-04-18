@@ -310,7 +310,7 @@ async function runAutonomousLearningCycle(options = {}) {
     }
 
     try {
-        const currentLoopSnapshot = (await fbdb.ref("ai_status/feedback_loop").once("value")).val() || {};
+        const currentLoopSnapshot = (await fbdb.ref("SalinAI/ai_status/feedback_loop").once("value")).val() || {};
         const feedbackState = {
             status: outcomeResult.evaluated > 0 ? "EVALUATED" : "PENDING_OUTCOME",
             last_cycle_at: new Date().toISOString(),
@@ -320,12 +320,14 @@ async function runAutonomousLearningCycle(options = {}) {
             min_action_age_hours: Number(options?.minActionAgeHours ?? OUTCOME_MIN_ACTION_AGE_HOURS),
         };
 
-        await fbdb.ref("ai_status").update({
+        const statusPayload = {
             feedback_loop: {
                 ...currentLoopSnapshot,
                 ...feedbackState,
             },
-        });
+        };
+
+        await fbdb.ref("SalinAI/ai_status").update(statusPayload);
     } catch (err) {
         console.error('[Outcome] Failed to publish feedback loop state:', err.message);
     }

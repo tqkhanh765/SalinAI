@@ -41,7 +41,7 @@ async function ingestSensorPayload(payload) {
     },
   };
 
-  await db.ref("sensor_data").set(enrichedPayload);
+  await db.ref("SalinAI/sensor_data").set(enrichedPayload);
   await persistSensorHistoryPoint(enrichedPayload);
 
 

@@ -60,20 +60,21 @@ async function finalizeAction({
     }
 
     if (!actionResult.blocked_by_manual && (actionResult.executed_state === "OPEN" || actionResult.executed_state === "CLOSED")) {
-        await fbdb.ref("actuator/valve_state").set(actionResult.executed_state);
+        await fbdb.ref("SalinAI/actuator/valve_state").set(actionResult.executed_state);
 
-        // Mirror to SalinAI/control/action — the path the Wokwi ESP32 reads (sketch.ino line 86).
-        // The sketch checks for "OPEN" or "CLOSE" (not "CLOSED"), so translate accordingly.
-        const esp32Action = actionResult.executed_state === "OPEN" ? "OPEN" : "CLOSE";
+        // Mirror control action for existing hardware integrations.
+        const esp32Action = actionResult.executed_state === "OPEN" ? "OPEN" : "CLOSED";
         await fbdb.ref("SalinAI/control/action").set(esp32Action);
     }
 
-    await fbdb.ref("ai_status").update({
+    const aiStatusPayload = {
         is_processing: false,
         last_reasoning: actionResult.reason,
         last_retrieval_hit_count: finalHitCount,
         last_retrieval_source_ids: finalSourceIds,
-    });
+    };
+
+    await fbdb.ref("SalinAI/ai_status").update(aiStatusPayload);
 
     const actionTimestamp = toVietnamISOString();
 
@@ -100,13 +101,13 @@ async function finalizeAction({
         },
     };
 
-    await fbdb.ref("action_logs").push(actionLogPayload);
+    await fbdb.ref("SalinAI/action_logs").push(actionLogPayload);
 
     if (mongoDb) {
         // Log with predictions for 24h outcome tracking
         await logActionWithPrediction(actionLogPayload);
 
-        await fbdb.ref("ai_status").update({
+        const feedbackLoopPayload = {
             feedback_loop: {
                 status: "PENDING_OUTCOME",
                 stage: sensorData?.crop_stage || "VEGETATIVE",
@@ -115,7 +116,9 @@ async function finalizeAction({
                 next_check_at: actionLogPayload.feedback_loop.next_check_at,
                 note: `Đã ghi action và đang chờ outcome sau ${FEEDBACK_LOOP_DELAY_HOURS} giờ để xác nhận feedback loop.`,
             },
-        });
+        };
+
+        await fbdb.ref("SalinAI/ai_status").update(feedbackLoopPayload);
 
         // Trigger an immediate scan so new actions are not left waiting for the next scheduler tick.
         runAutonomousLearningCycle({ minActionAgeHours: FEEDBACK_LOOP_DELAY_HOURS }).catch((error) => {
