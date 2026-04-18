@@ -45,8 +45,10 @@ async function finalizeAction({
 }) {
     if (!actionResult) return;
 
-    const actuatorSnap = await fbdb.ref("SalinAI/actuator").once("value");
-    const currentValveState = actuatorSnap.val()?.valve_state || "CLOSED";
+    // 1. Fetch current valve state DIRECTLY from its node to ensure sync with hardware
+    const valveStateSnap = await fbdb.ref("SalinAI/actuator/valve_state").once("value");
+    const currentValveState = valveStateSnap.val() || "CLOSED";
+
 
     let finalState = actionResult.executed_state;
     let humanReason = actionResult.reason || "AI thực hiện hành động.";
@@ -60,16 +62,22 @@ async function finalizeAction({
 
     if (finalState === "NO_ACTION" || !finalState) {
         finalState = currentValveState;
-        humanReason = `[${finalState === "OPEN" ? "MỞ" : "ĐÓNG"} VAN] ` + humanReason;
+        humanReason = `[DUY TRÌ: ${finalState === "OPEN" ? "MỞ" : "ĐÓNG"} VAN] ` + humanReason;
+    } else if (finalState !== currentValveState) {
+        humanReason = `[THỰC THI: ${finalState === "OPEN" ? "MỞ" : "ĐÓNG"} VAN] ` + humanReason;
+    } else {
+        humanReason = `[XÁC NHẬN: ${finalState === "OPEN" ? "MỞ" : "ĐÓNG"} VAN] ` + humanReason;
     }
 
-    if (!actionResult.blocked_by_manual && (finalState === "OPEN" || finalState === "CLOSED")) {
-        await fbdb.ref("SalinAI/actuator/valve_state").set(finalState);
-        await fbdb.ref("SalinAI/control/action").set(finalState);
-    }
+    // 3. FORCE synchronization to ensure hardware and dashboard are always updated
+    // We update BOTH the actuator state (for UI) and control/action (for hardware)
+    // even if it matches currentValveState to prevent stale state in Wokwi
+    await fbdb.ref("SalinAI/actuator/valve_state").set(finalState);
+    await fbdb.ref("SalinAI/control/action").set(finalState);
+
 
     const thresholds = actionResult.suggested_thresholds || { salinity_delta: 0.1, moisture_delta: 1.0, recovery_salinity: 0.8 };
-    const thresholdSummary = `📝 Ghi chú: Sẽ quay lại nếu mặn biến động > ${thresholds.salinity_delta}ppt | 💧 Ẩm thay đổi > ${thresholds.moisture_delta}%`;
+    const thresholdSummary = `📝 Ghi chú: Kích hoạt AI nếu mặn biến động > ${thresholds.salinity_delta}ppt | 💧 Ẩm thay đổi > ${thresholds.moisture_delta}%`;
 
     const fullReason = humanReason + "\n\n" + thresholdSummary;
 

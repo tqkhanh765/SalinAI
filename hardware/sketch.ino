@@ -129,18 +129,22 @@
             currentAction = payload;
             isFirstSync = false;
             Serial.printf("  ✓ Van sync khởi động: %s\n", currentAction.c_str());
-          } else if (payload != currentAction) {
+          if (payload != currentAction) {
+            String oldAction = currentAction;
             currentAction  = payload;
-            Serial.printf("  -> Van: %s (AI quyet dinh)\n", currentAction.c_str());
+            Serial.printf("  -> Van thay đổi: %s -> %s (AI quyết định)\n", oldAction.c_str(), currentAction.c_str());
+            // Cập nhật phần cứng ngay lập tức
+            digitalWrite(VALVE_LED_PIN, currentAction == "CLOSED" ? HIGH : LOW);
             eagerPollUntil = 0;
           } else {
-            Serial.printf("  • Van không đổi: %s\n", currentAction.c_str());
+            Serial.printf("  • Van đồng bộ: %s\n", currentAction.c_str());
           }
         } else if (payload == "" || payload == "null") {
-          Serial.printf("  ⚠ Firebase chưa có van tại %s\n", ACTUATOR_PATH);
+          Serial.printf("  ⚠ Firebase Trống (null/empty) tại %s\n", ACTUATOR_PATH);
         } else {
-          Serial.printf("  ⚠ Payload van không hợp lệ: %s\n", payload.c_str());
+          Serial.printf("  ⚠ Dữ liệu van không hợp lệ: [%s]\n", payload.c_str());
         }
+
       } else if (code == -1) {
         Serial.printf("  ✗ Firebase timeout khi đọc van (%s)\n", ACTUATOR_PATH);
       } else {

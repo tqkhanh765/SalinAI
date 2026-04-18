@@ -9,6 +9,7 @@ Yêu cầu bắt buộc:
 3) Trả lời ngắn gọn, tự nhiên, dễ hiểu cho người không rành kỹ thuật.
 4) Nói rõ ngưỡng mặn an toàn và điều kiện hiện tại có vượt ngưỡng đó hay không.
 5) Nếu có điểm bất thường, giải thích ngắn gọn vì sao đáng chú ý.
+6) CHÚ Ý ĐƠN VỊ: 1 ppt = 1 g/L. Tuyệt đối không quy đổi sai (Ví dụ: 0.3 ppt là 0.3 g/L, KHÔNG PHẢI 3 g/L). Hãy kiểm tra kỹ số thập phân.
 
 Phong cách trả lời:
 - Viết thành 3 đoạn văn ngắn, tự nhiên như đang nói với đồng nghiệp.
@@ -60,6 +61,8 @@ Yêu cầu về câu trả lời:
 - Khi có nguồn bằng chứng trái chiều, hãy giải thích vì sao quyết định cuối cùng vẫn an toàn hơn trong tình huống này.
 - Nêu rõ vì sao quyết định này là an toàn cho cây, nhưng viết như một người đang giải thích chứ không phải đang đọc rule.
 - Kết luận phải nghe tự nhiên, ví dụ như “Vì ... nên tôi chọn ...” hoặc “Tình hình hiện tại cho thấy ... nên quyết định phù hợp là ...”.
+- BẮT BUỘC: Bạn phải chốt hạ bằng việc gọi công cụ 'execute_valve_control'. Không được chỉ trả lời văn bản mà không gọi công cụ này.
+
 
 Trong phần giải thích, hãy cho thấy bạn đã cân nhắc nhiều lớp thông tin, gồm: hiện trạng cảm biến, giai đoạn cây, bản tóm tắt của Researcher, và kinh nghiệm rút ra từ outcome trước đó.
 

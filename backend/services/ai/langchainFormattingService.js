@@ -67,7 +67,13 @@ function createLangchainFormattingService(config = {}) {
     };
 
     const buildReasoningSummary = (reason, action) => {
-        const actionLabel = String(action || "NO_ACTION").toUpperCase();
+        const friendlyLabels = {
+            "OPEN": "MỞ VAN",
+            "CLOSED": "ĐÓNG VAN",
+            "NO_ACTION": "Duy trì trạng thái hiện tại"
+        };
+        const actionLabel = friendlyLabels[String(action || "NO_ACTION").toUpperCase()] || "Duy trì trạng thái";
+        
         const cleanedReason = String(reason || "Không có lý do cụ thể")
             .replace(/^Đã phân tích từ văn bản Orchestrator:\s*/i, "")
             .replace(/\s+/g, " ")
@@ -152,7 +158,18 @@ function createLangchainFormattingService(config = {}) {
 
     const buildOrchestratorRetryPrompt = ({ attempt, maxAttempts, issue, lastOutput }) => {
         const outputPreview = compactText(lastOutput || "", 500);
-        return `Lượt ${attempt}/${maxAttempts} chưa tạo được hành động thực thi (${issue}). Hãy thử lại ngay và BẮT BUỘC gọi tool execute_valve_control trong lượt này.\n\nYêu cầu nghiêm ngặt:\n- Chỉ gọi tool execute_valve_control đúng 1 lần.\n- state chỉ được là OPEN, CLOSED hoặc NO_ACTION.\n- reason là 1 câu ngắn, dễ hiểu cho nông dân.\n- source_ids phải là danh sách nguồn guideline thực tế đã dùng.\n- Không trả lời thuần văn bản nếu chưa gọi tool.\n\nOutput trước đó để bạn tự sửa: ${outputPreview || "(không có)"}`;
+        return `Lượt ${attempt}/${maxAttempts} chưa tạo được hành động thực thi (${issue}). Hãy thử lại ngay và BẮT BUỘC đưa ra quyết định cuối cùng.
+        
+Yêu cầu nghiêm ngặt:
+1. GỌI TOOL: Hãy gọi tool 'execute_valve_control' với các tham số đúng.
+2. HOẶC NÊU RÕ QUYẾT ĐỊNH: Nếu không gọi được tool, bạn PHẢI viết rõ "Quyết định: MỞ" hoặc "Quyết định: ĐÓNG" trong văn bản trả lời.
+
+Quy tắc tham số tool:
+- state: "OPEN" | "CLOSED" | "NO_ACTION".
+- reason: 1 câu ngắn gọn bằng tiếng Việt.
+- source_ids: danh sách nguồn đã tham khảo.
+
+Nội dung bạn vừa trả lời bị lỗi: "${outputPreview}"`;
     };
 
     const ensureResearcherCitations = (text, sourceIds = []) => {
@@ -180,10 +197,20 @@ function createLangchainFormattingService(config = {}) {
         let state = safetyDecision ? safetyDecision[1].toUpperCase() : null;
 
         if (!state) {
-            const explicitState = text.match(/\b(OPEN|CLOSED|NO_ACTION|CLOSE)\b/i);
-            if (explicitState) {
-                const token = explicitState[1].toUpperCase();
-                state = token === "CLOSE" ? "CLOSED" : token;
+            // Use a more permissive search for Vietnamese keys as \b might fail with accents
+            const textUpper = text.toUpperCase();
+            if (textUpper.includes("MỞ") || textUpper.includes("NÊN MỞ") || textUpper.includes("CẦN MỞ") || textUpper.includes("HÃY MỞ")) {
+                state = "OPEN";
+            } else if (textUpper.includes("ĐÓNG") || textUpper.includes("NÊN ĐÓNG") || textUpper.includes("CẦN ĐÓNG") || textUpper.includes("HÃY ĐÓNG") || textUpper.includes("CLOSE")) {
+                state = "CLOSED";
+            } else if (textUpper.includes("GIỮ NGUYÊN") || textUpper.includes("DUY TRÌ") || textUpper.includes("KHÔNG LÀM GÌ") || textUpper.includes("KHÔNG THAY ĐỔI") || textUpper.includes("NO_ACTION")) {
+                state = "NO_ACTION";
+            } else {
+                const explicitState = text.match(/\b(OPEN|CLOSED|NO_ACTION|CLOSE)\b/i);
+                if (explicitState) {
+                    const token = explicitState[1].toUpperCase();
+                    state = token === "CLOSE" ? "CLOSED" : token;
+                }
             }
         }
 

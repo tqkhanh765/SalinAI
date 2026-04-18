@@ -181,8 +181,9 @@ async function runAgent(sensorData) {
     try {
         console.log("\n[Pipeline] 🚀 Bắt đầu pipeline nhiều tác tử...");
         addTrace("pipeline", "start", "Bắt đầu pipeline nhiều tác tử", {
-            sensor: { salinity, moisture, crop_stage },
+            sensor: { salinity, moisture, crop_stage: crop_stage || "VEGETATIVE" },
         });
+
 
         const policyPromptBlock = await buildPolicyPromptBlock();
         policyMemoryPreview = truncateText(policyPromptBlock, Math.max(700, Math.floor(MAX_ORCHESTRATOR_OUTPUT_PREVIEW_CHARS * 0.7)));
@@ -316,7 +317,7 @@ ${mandatoryRetrieval.context}`,
             });
         }
 
-        console.log("[Orchestrator] 🧠 Orchestrator đang đọc báo cáo Researcher và dữ liệu cảm biến thô...");
+
         const orchestratorMessages = [
             { role: "system", content: `${orchestratorPromptTemplate}\n\n${policyPromptBlock}` },
             {
@@ -365,7 +366,9 @@ ${mandatoryRetrieval.context}`,
                 });
 
                 if (retryable) {
+                    console.log(`[Orchestrator] ⚠️ Không thấy tool_call. Nội dung AI: "${orchestratorContent.substring(0, 150)}..."`);
                     queueRetryInstruction({
+
                         orchestratorMessages,
                         buildRetryPrompt: buildOrchestratorRetryPrompt,
                         attempt: orchestrationLoop,
@@ -384,7 +387,7 @@ ${mandatoryRetrieval.context}`,
 
             for (const toolCall of response.tool_calls) {
                 if (toolCall.name === "execute_valve_control") {
-                    console.log("[Orchestrator] ⚡ Đang gửi lệnh điều khiển phần cứng...");
+
                     const toolInstance = orchestratorTools.find((tool) => tool.name === toolCall.name);
                     orchestratorArgumentReason = stripThinkTags(toText(toolCall.args?.reason || ""));
                     const rawOutput = await toolInstance.invoke(toolCall.args);

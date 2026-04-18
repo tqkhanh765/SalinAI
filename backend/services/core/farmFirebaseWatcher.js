@@ -19,13 +19,23 @@ function startFirebaseWatcher() {
   const sensorRef = db.ref("SalinAI/sensor_data");
   let isAddingEnrichment = false;
 
+  let isInitialSnapshot = true;
   sensorRef.on("value", async (snapshot) => {
     try {
       const sensorData = snapshot.val();
       if (!sensorData || !sensorData.timestamp) return;
 
+      // Skip the very first trigger that Firebase always sends on connect
+      if (isInitialSnapshot) {
+        isInitialSnapshot = false;
+        const fingerprint = `${sensorData.salinity}-${sensorData.moisture}-${sensorData.timestamp}`;
+        lastProcessedFingerprint = fingerprint;
+        return;
+      }
+
       const fingerprint = `${sensorData.salinity}-${sensorData.moisture}-${sensorData.timestamp}`;
       if (fingerprint === lastProcessedFingerprint || isAddingEnrichment) return;
+
 
       lastProcessedFingerprint = fingerprint;
       lastProcessedTimestamp = sensorData.timestamp;
