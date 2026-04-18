@@ -135,16 +135,18 @@ async function executeRAGTool(salinity, moisture, mongoDb, cropStage = "") {
     ]);
 
     const results = await cursor.toArray();
-    const minScore = parseFloat(process.env.VECTOR_MIN_SCORE || "0.72");
-    const paperOnlyResults = results.filter((r) => {
+    const relevantResults = results.filter((r) => {
       const id = String(r?._id || "");
-      return id.startsWith("paper-");
+      return id.startsWith("paper-") || id.startsWith("guide-");
     });
-    const scoredResults = paperOnlyResults
-      .filter((r) => r.score >= minScore)
-      .sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+    
+    // Sử dụng minScore từ env (ưu tiên sự linh hoạt qua cấu hình)
+    const envMinScore = parseFloat(process.env.VECTOR_MIN_SCORE || "0.68");
+    const scoredResults = relevantResults.filter((r) => r.score >= envMinScore);
 
-    const validResults = selectDiverseResults(scoredResults, topK, maxChunksPerSource, variationSeed);
+    const sortedResults = scoredResults.sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+
+    const validResults = selectDiverseResults(sortedResults, topK, maxChunksPerSource, variationSeed);
 
     if (validResults.length === 0) {
       return { hitCount: 0, sourceIds: [], context: "No uploaded-paper evidence found via retrieval." };

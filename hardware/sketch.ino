@@ -129,22 +129,18 @@
             currentAction = payload;
             isFirstSync = false;
             Serial.printf("  ✓ Van sync khởi động: %s\n", currentAction.c_str());
-          if (payload != currentAction) {
-            String oldAction = currentAction;
+          } else if (payload != currentAction) {
             currentAction  = payload;
-            Serial.printf("  -> Van thay đổi: %s -> %s (AI quyết định)\n", oldAction.c_str(), currentAction.c_str());
-            // Cập nhật phần cứng ngay lập tức
-            digitalWrite(VALVE_LED_PIN, currentAction == "CLOSED" ? HIGH : LOW);
+            Serial.printf("  -> Van: %s (AI quyet dinh)\n", currentAction.c_str());
             eagerPollUntil = 0;
           } else {
-            Serial.printf("  • Van đồng bộ: %s\n", currentAction.c_str());
+            Serial.printf("  • Van không đổi: %s\n", currentAction.c_str());
           }
         } else if (payload == "" || payload == "null") {
-          Serial.printf("  ⚠ Firebase Trống (null/empty) tại %s\n", ACTUATOR_PATH);
+          Serial.printf("  ⚠ Firebase chưa có van tại %s\n", ACTUATOR_PATH);
         } else {
-          Serial.printf("  ⚠ Dữ liệu van không hợp lệ: [%s]\n", payload.c_str());
+          Serial.printf("  ⚠ Payload van không hợp lệ: %s\n", payload.c_str());
         }
-
       } else if (code == -1) {
         Serial.printf("  ✗ Firebase timeout khi đọc van (%s)\n", ACTUATOR_PATH);
       } else {
@@ -171,7 +167,11 @@
     void loop() {
       static unsigned long lastRead = 0;
 
-      // Thực thi 1 step mỗi 45 giây (tăng lên để AI kịp suy nghĩ trong 1 step)
+      // ─── KIỂM TRA VAN LIÊN TỤC (Chạy song song, không bị kẹt 45s) ───
+      runActuatorPoll();
+      digitalWrite(VALVE_LED_PIN, currentAction == "CLOSED" ? HIGH : LOW);
+
+      // ─── THỰC THI STEP SENSOR MỖI 45 GIÂY ─────────────────────────────
       if (millis() - lastRead > (lastRead == 0 ? 0 : 45000)) {
         lastRead = millis();
 
@@ -199,7 +199,7 @@
           lastSalinity   = sal;
           lastMoisture   = mois;
           eagerPollUntil = millis() + EAGER_DURATION_MS;
-          lastActuatorPoll = 0; // poll ngay
+          lastActuatorPoll = 0; // poll ngay sau khi gửi data
         } else {
           Serial.printf("[Step %02d] Sal:%.1f Mois:%.0f%% | IDLE\n",
                         currentStep, sal, mois);

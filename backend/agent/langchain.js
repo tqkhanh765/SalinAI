@@ -318,11 +318,21 @@ ${mandatoryRetrieval.context}`,
         }
 
 
+        const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE } = require("../services/ai/outcomeService");
+        const currentStageUpper = String(crop_stage || "VEGETATIVE").toUpperCase();
+        const stageProfile = CROP_STAGE_PROFILES[currentStageUpper] || DEFAULT_STAGE_PROFILE;
+        
+        const constraintsBlock = `
+[THÔNG TIN THAM KHẢO NỘI BỘ - GIAI ĐOẠN ${currentStageUpper}]:
+- Ngưỡng mặn khuyến nghị: < ${stageProfile.salinityMaxSafe} ppt.
+- Trọng số ưu tiên: Độ ẩm (${(stageProfile.weights.moisture * 100).toFixed(0)}%) | Độ mặn (${(stageProfile.weights.salinity * 100).toFixed(0)}%).
+- Chỉ dẫn phong cách: ĐÂY LÀ THÔNG SỐ NỘI BỘ. Đừng trích dẫn trực tiếp con số "${stageProfile.salinityMaxSafe} ppt" vào lời thoại. Hãy dùng ngôn ngữ tự nhiên như "độ mặn đang ở mức cho phép", "có dấu hiệu chớm mặn", "vượt ngưỡng an toàn" hoặc "môi trường rất thuận lợi". Hãy giải thích dựa trên cảm nhận về sự phù hợp đối với cây lúa thay vì đọc công thức.`;
+
         const orchestratorMessages = [
-            { role: "system", content: `${orchestratorPromptTemplate}\n\n${policyPromptBlock}` },
+            { role: "system", content: `${orchestratorPromptTemplate}\n\n${policyPromptBlock}\n\n${constraintsBlock}` },
             {
                 role: "user",
-                content: `Dữ liệu cảm biến hiện tại:\n- Độ mặn: ${salinity} ppt\n- Độ ẩm đất: ${moisture}%\n- Giai đoạn cây: ${crop_stage || "VEGETATIVE"}\n\nBáo cáo từ Researcher:\n${researcherSummary}\n\nTóm tắt đánh giá cũ (policy/outcome memory):\n${policyContextForModel || "Chưa có dữ liệu đánh giá cũ."}\n\nHãy đưa ra quyết định cuối cùng và gọi tool điều khiển van. Viết ngắn gọn, tự nhiên, bằng tiếng Việt. Không liệt kê quy tắc, hãy giải thích theo kiểu suy luận của con người. Hãy lồng thông tin đánh giá cũ vào mạch văn trả lời như một phần lập luận, không tách thành block riêng.`,
+                content: `Dữ liệu cảm biến hiện tại:\n- Độ mặn: ${salinity} ppt\n- Độ ẩm đất: ${moisture}%\n- Giai đoạn cây: ${crop_stage || "VEGETATIVE"}\n\nBáo cáo từ Researcher:\n${researcherSummary}\n\nTóm tắt đánh giá cũ (policy/outcome memory):\n${policyContextForModel || "Chưa có dữ liệu đánh giá cũ."}\n\nHãy đưa ra quyết định cuối cùng và gọi tool điều khiển van. Viết ngắn gọn, tự nhiên, bằng tiếng Việt. Hãy tư duy như một chuyên gia nông nghiệp đầy kinh nghiệm, biết cân nhắc giữa rủi ro mặn và nhu cầu nước của cây.`,
             },
         ];
 
