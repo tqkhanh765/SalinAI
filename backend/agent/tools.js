@@ -41,11 +41,12 @@ const execute_valve_control = new DynamicStructuredTool({
     reason: z.string(),
     source_ids: z.array(z.string()),
     suggested_thresholds: z.object({
-      salinity_delta: z.number().nullable().optional().default(0.5).describe("Threshold for next salinity change trigger"),
-      moisture_delta: z.number().nullable().optional().default(10.0).describe("Threshold for next moisture change trigger"),
-      recovery_salinity: z.number().nullable().optional().describe("If CLOSED, trigger AI if salinity falls below this value"),
-      urgent_moisture: z.number().nullable().optional().describe("Trigger AI if moisture falls below this value")
-    }).optional()
+      salinity_delta: z.number().default(0.1).describe("Delta mặn cho lần tới (vd: 0.05)"),
+      moisture_delta: z.number().default(1.0).describe("Delta ẩm cho lần tới (vd: 5.0)"),
+      recovery_salinity: z.number().nullable().default(0.8).describe("Mức mặn an toàn để mở lại"),
+      urgent_moisture: z.number().nullable().default(30.0).describe("Mức ẩm tối thiểu cứu cây")
+    }).default({ salinity_delta: 0.1, moisture_delta: 1.0, recovery_salinity: 0.8, urgent_moisture: 30.0 })
+      .describe("BẮT BUỘC: Tính toán ngưỡng cho lần sau dựa trên rủi ro hiện tại")
   }),
   func: async ({ state, reason, source_ids, suggested_thresholds }) => {
     const actuatorSnap = await fbdb.ref("SalinAI/actuator").once("value");

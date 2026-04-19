@@ -590,7 +590,7 @@ export default function SimulatorPage() {
                   </div>
                 )}
 
-                  {/* Agent timeline trace for demo visibility */}
+                {/* Commented out Agent Trace Timeline per user request
                   {Array.isArray(log.agent_trace) && log.agent_trace.length > 0 && (
                     <div className="mb-3">
                       <span style={{ color: '#58a6ff', display: 'block', marginBottom: '6px' }}>&gt; AGENT_TRACE_TIMELINE:</span>
@@ -618,6 +618,7 @@ export default function SimulatorPage() {
                       </div>
                     </div>
                   )}
+                  */}
 
                 <div className="mb-3">
                   <span style={{ color: '#58a6ff', display: 'block', marginBottom: '4px' }}>&gt; RETRIEVAL_OUTPUT (trích từ papers):</span>

@@ -70,14 +70,20 @@ async function finalizeAction({
     }
 
     // 3. FORCE synchronization to ensure hardware and dashboard are always updated
-    // We update BOTH the actuator state (for UI) and control/action (for hardware)
-    // even if it matches currentValveState to prevent stale state in Wokwi
     await fbdb.ref("SalinAI/actuator/valve_state").set(finalState);
     await fbdb.ref("SalinAI/control/action").set(finalState);
 
 
-    const thresholds = actionResult.suggested_thresholds || { salinity_delta: 0.1, moisture_delta: 1.0, recovery_salinity: 0.8 };
-    const thresholdSummary = `📝 Ghi chú: Kích hoạt AI nếu mặn biến động > ${thresholds.salinity_delta}ppt | 💧 Ẩm thay đổi > ${thresholds.moisture_delta}%`;
+    const thresholds = actionResult.suggested_thresholds || { 
+        salinity_delta: 0.1, 
+        moisture_delta: 1.0, 
+        recovery_salinity: 0.8,
+        urgent_moisture: 30
+    };
+    
+    // Đánh dấu nếu AI không tự đưa ra ngưỡng (để mình biết mà nhắc AI)
+    const isAiManaged = !!actionResult.suggested_thresholds;
+    const thresholdSummary = `${isAiManaged ? "⚙️ AI đề xuất ngưỡng" : "⚠️ Ngưỡng mặc định"}: Mặn > ${thresholds.salinity_delta}ppt | Ẩm > ${thresholds.moisture_delta}%`;
 
     const fullReason = humanReason + "\n\n" + thresholdSummary;
 
@@ -85,7 +91,8 @@ async function finalizeAction({
         is_processing: false,
         last_reasoning: fullReason,
         thresholds: thresholds,
-        threshold_summary: thresholdSummary
+        threshold_summary: thresholdSummary,
+        threshold_ai_managed: isAiManaged
     });
 
     const actionTimestamp = toVietnamISOString();
@@ -96,6 +103,10 @@ async function finalizeAction({
         reason: fullReason,
         sensor_snapshot: sensorData,
         subagent_summary: researcherSummary,
+        retrieval: {
+            hit_count: finalHitCount || 0,
+            source_ids: finalSourceIds || []
+        },
         agent_trace: agentTrace,
         model_insights: modelInsights,
     };

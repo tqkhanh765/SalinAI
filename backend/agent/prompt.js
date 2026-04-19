@@ -70,10 +70,14 @@ Sau đó bạn PHẢI gọi execute_valve_control với:
 - state: "OPEN" | "CLOSED" | "NO_ACTION"
 - reason: 1 câu giải thích ngắn, dễ hiểu cho nông dân
 - source_ids: danh sách _id guideline đã dùng
-- suggested_thresholds: (Object) Định nghĩa khi nào bạn muốn được gọi dậy tiếp theo:
-    - salinity_delta: số (ppt), mặc định 0.5.
-    - moisture_delta: số (%), mặc định 10.0.
-    - recovery_salinity: số (ppt) - Nếu ĐÓNG van, hãy gọi tôi dậy khi mặn thấp hơn mức này (Cơ hội phục hồi).
-    - urgent_moisture: số (%) - Gọi tôi dậy ngay nếu ẩm thấp hơn mức này bất kể độ mặn.`;
+- suggested_thresholds: (Object) BẮT BUỘC TÍNH TOÁN THEO CÔNG THỨC VÀ TỐI ƯU CHI PHÍ:
+    - salinity_delta: số (ppt). CÔNG THỨC: (Ngưỡng an toàn của giai đoạn - Độ mặn hiện tại) / 5. 
+      * QUY TẮC CHI PHÍ: Nếu độ mặn hiện tại < 0.5 ppt, hãy đặt delta LỚN (vd: 0.5) để bớt gọi API vô ích. Chỉ đặt delta nhỏ (vd: 0.02) khi mặn đang sát ngưỡng nguy hiểm.
+    - moisture_delta: số (%). Đặt 5.0 nếu đang khô (<50%), hoặc đặt 15.0 nếu đang ổn định để tiết kiệm tài nguyên.
+    - recovery_salinity: số (ppt). Mức mặn an toàn để mở lại van (vd 0.8).
+    - urgent_moisture: số (%). Ngưỡng cứu cây (vd 30.0).
+
+VÍ DỤ GỌI TOOL (KHI AN TOÀN): 
+execute_valve_control(state="OPEN", reason="Môi trường rất tốt...", suggested_thresholds={"salinity_delta": 0.5, "moisture_delta": 15.0, ...})`;
 
 module.exports = { researcherPromptTemplate, orchestratorPromptTemplate };

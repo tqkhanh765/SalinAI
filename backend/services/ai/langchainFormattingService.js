@@ -70,20 +70,25 @@ function createLangchainFormattingService(config = {}) {
         const friendlyLabels = {
             "OPEN": "MỞ VAN",
             "CLOSED": "ĐÓNG VAN",
-            "NO_ACTION": "Duy trì trạng thái hiện tại"
+            "NO_ACTION": "duy trì trạng thái hiện tại"
         };
-        const actionLabel = friendlyLabels[String(action || "NO_ACTION").toUpperCase()] || "Duy trì trạng thái";
+        const actionLabel = friendlyLabels[String(action || "NO_ACTION").toUpperCase()] || "duy trì trạng thái";
         
         const cleanedReason = String(reason || "Không có lý do cụ thể")
             .replace(/^Đã phân tích từ văn bản Orchestrator:\s*/i, "")
             .replace(/\s+/g, " ")
             .trim();
 
-        const primaryClause = cleanedReason.split(/\b(?:tuy nhiên|nhưng)\b/i)[0].trim();
-        const firstSentence = primaryClause.split(/[.!?](?=\s|$)/)[0].trim();
-        const reasonCore = firstSentence || primaryClause || cleanedReason || "Không có lý do cụ thể";
+        // Không cắt theo "tuy nhiên/nhưng" nữa để tránh mất logic vế sau
+        const firstSentence = cleanedReason.split(/[.!?](?=\s|$)/)[0].trim();
+        const reasonCore = firstSentence || cleanedReason;
 
-        const conciseReason = compactText(reasonCore, 220).replace(/[.\s]+$/g, "");
+        const conciseReason = compactText(reasonCore, 280).replace(/[.\s]+$/g, "");
+        
+        // Nếu là duy trì, dùng từ ngữ mang tính tiếp diễn
+        if (String(action).toUpperCase() === "NO_ACTION") {
+            return `${conciseReason}, nên hệ thống ${actionLabel}.`;
+        }
         return `${conciseReason}. Vì vậy hệ thống chọn ${actionLabel}.`;
     };
 
