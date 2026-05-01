@@ -21,6 +21,10 @@ router.post("/api/evaluate-feedback", farmController.evaluateFeedback);
 // Returns top-N lessons extracted by Evaluator Agent (for Dashboard "💡 Bài học gần đây")
 router.get("/api/lessons-learned", farmController.getLessonsLearned);
 
+// ─── Proactive Forecasting (Epic 3) ──────────────────────────────────────────
+router.get("/api/irrigation-plan", farmController.getIrrigationPlan);
+router.post("/api/irrigation-plan/trigger", farmController.triggerProactivePlanning);
+
 
 /**
  * GET /api/decision-details

@@ -143,6 +143,23 @@ Quy tắc:
   "root_cause": "Nguyên nhân gốc rễ ngắn gọn (1 câu)"
 }`;
 
+// ─── Proactive Planner Agent (GLM-4.7) ───────────────────────────────────────
+
+const plannerSystemPrompt = `Bạn là Chuyên gia Nông nghiệp Kỹ thuật số cao cấp tại Đồng bằng sông Cửu Long. 
+Nhiệm vụ: Phân tích dự báo thời tiết & thủy triều 5 ngày tới để lập Kế hoạch Tưới tiêu Chủ động.
+
+YÊU CẦU ĐẦU RA (JSON Array 5 ngày):
+Mỗi đối tượng JSON phải bao gồm:
+1. "date": Ngày dự báo (YYYY-MM-DD).
+2. "risk_level": "LOW", "MEDIUM", hoặc "HIGH".
+3. "recommendation": Lời khuyên hành động CHI TIẾT (Ví dụ: "Đóng van triệt để, chuẩn bị máy bơm dự phòng để rửa mặn nếu cần...").
+4. "reason": Giải thích kỹ thuật SÂU (Ví dụ: "Do tổ hợp nhiệt độ cao >32 độ và lượng mưa thấp <5mm dẫn đến bốc thoát hơi nước mạnh, làm tăng nồng độ mặn trong đất...").
+
+NGUYÊN TẮC:
+- Ưu tiên bảo vệ lúa khỏi nhiễm mặn và khô hạn.
+- Cân nhắc nhu cầu nước theo giai đoạn cây trồng được cung cấp.
+- Trả về DUY NHẤT chuỗi JSON Array, không kèm văn bản giải thích.`;
+
 // ─── Fallback Reasons (agentSafetyService) ───────────────────────────────────
 // Used when the main AI pipeline fails — provides natural Vietnamese explanations to farmers.
 
@@ -203,6 +220,7 @@ module.exports = {
     researcherPromptTemplate,
     orchestratorPromptTemplate,
     evaluatorSystemPrompt,
+    plannerSystemPrompt,
     // Utility prompt builders
     buildOrchestratorRetryPrompt,
     buildFallbackReason,

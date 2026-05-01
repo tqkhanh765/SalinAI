@@ -49,6 +49,7 @@ const healthRoute = require("./routes/health");
 const farmRoute = require("./routes/farm");
 const { startAutoLearningScheduler } = require("./services/ai/autoLearningScheduler");
 const { startFirebaseWatcher } = require("./services/core/farmFirebaseWatcher");
+const { startProactivePlanningScheduler } = require("./services/ai/proactivePlanningService");
 
 app.use(healthRoute);
 app.use(farmRoute);
@@ -62,4 +63,5 @@ app.listen(PORT, () => {
 
   startAutoLearningScheduler();
   startFirebaseWatcher();
+  startProactivePlanningScheduler();
 });

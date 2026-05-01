@@ -16,6 +16,7 @@ import {
   PhIcon, RainIcon, TideIcon, CropStageIcon, WaterLevelIcon,
   WeatherIcon, ValveIcon, ControlModeIcon, AiStatusIcon, ControlScopeIcon,
 } from '../components/icons/SensorIcons';
+import IrrigationPlanPanel from '../components/IrrigationPlanPanel';
 
 // Fix leaflet default icon
 const DefaultIcon = L.icon({
@@ -525,7 +526,10 @@ export default function FarmerDashboard() {
                 </button>
               </div>
             </div>
-          </div>
+        </div>
+
+        {/* ── Irrigation Planning (Epic 3) ─────────────────────────── */}
+        <IrrigationPlanPanel />
         </div>
 
         {/* ── Valve Control Section ─────────────────────────── */}
