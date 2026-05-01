@@ -129,27 +129,27 @@
 ## 🚀 Epic 3: Proactive Forecasting (Predictive AI)
 
 ### Backend
-- [ ] **[E3-B1]** Create `forecastScheduler.js` in `backend/services/ai/`:
+- [x] **[E3-B1]** Create `forecastScheduler.js` in `backend/services/ai/`:
   - Use `node-cron` (add to dependencies) — schedule at `0 5 * * *` (05:00 AM Vietnam TZ)
   - Fetch 5-day weather + tide forecast from Open-Meteo extended API
   - Call `proactivePlannerService` with forecast data
-- [ ] **[E3-B2]** Create `proactivePlannerService.js` in `backend/services/ai/`:
+- [x] **[E3-B2]** Create `proactivePlannerService.js` in `backend/services/ai/`:
   - Takes 5-day weather + tide forecast as input
   - Calls Orchestrator LLM with a specialized prompt: *"Based on the 5-day forecast, create a day-by-day irrigation risk assessment and recommended actions."*
   - Returns structured plan: `[{ date, risk_level, recommendation, reason }]`
   - Saves to MongoDB `irrigation_plans` with `created_at` timestamp
-- [ ] **[E3-B3]** Add `GET /api/irrigation-plan` endpoint to `routes/farm.js`:
+- [x] **[E3-B3]** Add `GET /api/irrigation-plan` endpoint to `routes/farm.js`:
   - Returns latest plan from MongoDB `irrigation_plans`
   - Falls back to null/empty if no plan yet (not an error)
-- [ ] **[E3-B4]** Register `forecastScheduler` in `server.js` alongside existing schedulers
-- [ ] **[E3-B5]** Add `POST /api/irrigation-plan/trigger` dev endpoint to manually trigger plan generation (for testing without waiting for 5 AM)
+- [x] **[E3-B4]** Register `forecastScheduler` in `server.js` alongside existing schedulers
+- [x] **[E3-B5]** Add `POST /api/irrigation-plan/trigger` dev endpoint to manually trigger plan generation (for testing without waiting for 5 AM)
 
 ### Frontend
-- [ ] **[E3-F1]** Create `IrrigationPlanPanel.jsx` component:
+- [x] **[E3-F1]** Create `IrrigationPlanPanel.jsx` component:
   - Fetches `GET /api/irrigation-plan` on mount + every 10 minutes
   - Displays 3-day cards: Date | Risk Level (color-coded badge) | AI Recommendation
   - Risk levels: 🟢 Thấp / 🟡 Trung bình / 🔴 Cao
-- [ ] **[E3-F2]** Integrate `IrrigationPlanPanel` into `FarmerDashboard.jsx` below the sensor grid
+- [x] **[E3-F2]** Integrate `IrrigationPlanPanel` into `FarmerDashboard.jsx` below the sensor grid
 
 ---
 

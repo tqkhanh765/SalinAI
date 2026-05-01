@@ -17,6 +17,9 @@ import {
   WeatherIcon, ValveIcon, ControlModeIcon, AiStatusIcon, ControlScopeIcon,
 } from '../components/icons/SensorIcons';
 import IrrigationPlanPanel from '../components/IrrigationPlanPanel';
+import StreamingText from '../components/StreamingText';
+import { initSocket } from '../services/socket';
+import toast from 'react-hot-toast';
 
 // Fix leaflet default icon
 const DefaultIcon = L.icon({
@@ -106,7 +109,6 @@ export default function FarmerDashboard() {
 
   const [isToggling, setIsToggling] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [notification, setNotification] = useState(null);
   const [uiControlMode, setUiControlMode] = useState('manual');
   const [isModeUpdating, setIsModeUpdating] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
@@ -114,11 +116,17 @@ export default function FarmerDashboard() {
   const [cropStageDraft, setCropStageDraft] = useState('VEGETATIVE');
   const [isCropStageUpdating, setIsCropStageUpdating] = useState(false);
 
+  // Initialize Socket.io
+  useEffect(() => {
+    initSocket();
+  }, []);
+
   // Epic 2 states
   const [feedbackModal, setFeedbackModal] = useState(null); // { actionLogId: string }
   const [feedbackReason, setFeedbackReason] = useState('');
   const [feedbackCategory, setFeedbackCategory] = useState('Sai ngưỡng mặn');
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [hiddenFeedbackLogIds, setHiddenFeedbackLogIds] = useState([]);
   const [lessonsLearned, setLessonsLearned] = useState([]);
   const [isLessonsExpanded, setIsLessonsExpanded] = useState(true);
 
@@ -153,6 +161,7 @@ export default function FarmerDashboard() {
 
   const activeValveDisplay = controlScope === 'all' ? 'TẤT CẢ VAN' : activeValveId;
   const controlModeVi = (actuator.control_mode || 'AUTO').toUpperCase() === 'AUTO' ? 'TỰ ĐỘNG' : 'THỦ CÔNG';
+  const latestActionLogId = actionLogs?.[0]?.id || actionLogs?.[0]?._id || null;
 
   const formatVnTime = (value, opts = {}) => {
     return new Date(value).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', ...opts });
@@ -228,25 +237,33 @@ export default function FarmerDashboard() {
   }, []);
 
   const submitPositiveFeedback = async (actionLogId) => {
+    if (!actionLogId) return;
     try {
-      await fetch(`${API_BASE_URL}/api/decision-feedback`, {
+      toast.loading('Đang gửi phản hồi...', { id: `feedback-${actionLogId}` });
+      const res = await fetch(`${API_BASE_URL}/api/decision-feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action_log_id: actionLogId, verdict: 'correct' }),
       });
-      setNotification({ type: 'success', text: 'Cảm ơn! Phản hồi tích cực đã được ghi nhận.' });
-      setTimeout(() => setNotification(null), 3000);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      toast.success('Cảm ơn! Phản hồi tích cực đã được ghi nhận.', { id: `feedback-${actionLogId}` });
+      setHiddenFeedbackLogIds((prev) => (prev.includes(actionLogId) ? prev : [...prev, actionLogId]));
+      setFeedbackModal(null);
     } catch (e) {
       console.error(e);
+      toast.error('Lỗi kết nối khi gửi phản hồi.', { id: `feedback-${actionLogId}` });
     }
   };
 
   const submitNegativeFeedback = async () => {
     if (!feedbackModal?.actionLogId) return;
     setIsSubmittingFeedback(true);
+    toast.loading('Đang mở luồng phản hồi cho AI...', { id: `negative-feedback-${feedbackModal.actionLogId}` });
     try {
       // 1. Triggers Evaluator Agent
-      await fetch(`${API_BASE_URL}/api/evaluate-feedback`, {
+      const evalResponse = await fetch(`${API_BASE_URL}/api/evaluate-feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -255,9 +272,12 @@ export default function FarmerDashboard() {
           notes: `[${feedbackCategory}] ${feedbackReason}` 
         }),
       });
+      if (!evalResponse.ok) {
+        throw new Error(`Evaluator HTTP ${evalResponse.status}`);
+      }
       
       // 2. Refreshes policy memory (metrics)
-      await fetch(`${API_BASE_URL}/api/decision-feedback`, {
+      const feedbackResponse = await fetch(`${API_BASE_URL}/api/decision-feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -266,14 +286,16 @@ export default function FarmerDashboard() {
           notes: `[${feedbackCategory}] ${feedbackReason}` 
         }),
       });
+      if (!feedbackResponse.ok) {
+        throw new Error(`Feedback HTTP ${feedbackResponse.status}`);
+      }
 
       setFeedbackModal(null);
       setFeedbackReason('');
-      setNotification({ type: 'success', text: 'Cảm ơn! AI sẽ học từ phản hồi này.' });
-      setTimeout(() => setNotification(null), 3000);
+      toast.success('Cảm ơn! AI sẽ học từ phản hồi này.', { id: `negative-feedback-${feedbackModal.actionLogId}` });
+      setHiddenFeedbackLogIds((prev) => (prev.includes(feedbackModal.actionLogId) ? prev : [...prev, feedbackModal.actionLogId]));
     } catch (error) {
-      setNotification({ type: 'warning', text: 'Không thể gửi phản hồi: ' + error.message });
-      setTimeout(() => setNotification(null), 3000);
+      toast.error('Không thể gửi phản hồi: ' + error.message, { id: `negative-feedback-${feedbackModal.actionLogId}` });
     } finally {
       setIsSubmittingFeedback(false);
     }
@@ -284,17 +306,9 @@ export default function FarmerDashboard() {
     setIsModeUpdating(true);
     try {
       await setRemoteControlMode(nextMode.toUpperCase());
-      setNotification({
-        type: 'success',
-        text: nextMode === 'manual' ? '🛠️ Đã chuyển sang chế độ THỦ CÔNG.' : '🤖 Đã chuyển sang chế độ TỰ ĐỘNG.',
-      });
-      setTimeout(() => setNotification(null), 3000);
+      toast.success(nextMode === 'manual' ? '🛠️ Đã chuyển sang chế độ THỦ CÔNG.' : '🤖 Đã chuyển sang chế độ TỰ ĐỘNG.');
     } catch (error) {
-      setNotification({
-        type: 'warning',
-        text: `❌ Không thể cập nhật chế độ điều khiển: ${error.message}`,
-      });
-      setTimeout(() => setNotification(null), 3000);
+      toast.error(`❌ Không thể cập nhật chế độ điều khiển: ${error.message}`);
     } finally {
       setIsModeUpdating(false);
     }
@@ -315,17 +329,13 @@ export default function FarmerDashboard() {
         ? (isOpening ? '✅ Tất cả van đã được mở.' : '🔒 Tất cả van đã được đóng.')
         : (isOpening ? `✅ Van ${activeValveId} đã được mở.` : `🔒 Van ${activeValveId} đã được đóng.`);
 
-      setNotification({
-        type: isOpening ? 'success' : 'warning',
-        text: msg,
-      });
-      setTimeout(() => setNotification(null), 4000);
+      if (isOpening) {
+        toast.success(msg);
+      } else {
+        toast(msg);
+      }
     } catch (error) {
-      setNotification({
-        type: 'warning',
-        text: `❌ Không thể cập nhật trạng thái van: ${error.message}`,
-      });
-      setTimeout(() => setNotification(null), 4000);
+      toast.error(`❌ Không thể cập nhật trạng thái van: ${error.message}`);
     } finally {
       setIsToggling(false);
     }
@@ -339,17 +349,9 @@ export default function FarmerDashboard() {
     setIsCropStageUpdating(true);
     try {
       await setRemoteCropStage(cropStageDraft);
-      setNotification({
-        type: 'success',
-        text: `🌾 Đã cập nhật giai đoạn cây sang ${getCropStageLabel(cropStageDraft)}.`,
-      });
-      setTimeout(() => setNotification(null), 3000);
+      toast.success(`🌾 Đã cập nhật giai đoạn cây sang ${getCropStageLabel(cropStageDraft)}.`);
     } catch (error) {
-      setNotification({
-        type: 'warning',
-        text: `❌ Không thể cập nhật giai đoạn cây: ${error.message}`,
-      });
-      setTimeout(() => setNotification(null), 3500);
+      toast.error(`❌ Không thể cập nhật giai đoạn cây: ${error.message}`);
     } finally {
       setIsCropStageUpdating(false);
     }
@@ -462,21 +464,6 @@ export default function FarmerDashboard() {
             <span className="text-xs text-gray-500 font-medium">Cập nhật: {formatTime(lastUpdated)}</span>
           </div>
         </div>
-
-        {/* ── Notification ──────────────────────────────────────────── */}
-        {notification && (
-          <div
-            className="log-entry rounded-2xl px-4 py-3.5 flex items-center gap-3 shadow-sm"
-            style={{
-              background: notification.type === 'success' ? '#6FCF9715' : '#F2C94C15',
-              border: `1.5px solid ${notification.type === 'success' ? '#6FCF9740' : '#F2C94C40'}`,
-            }}
-          >
-            <p className="text-sm font-semibold" style={{ color: notification.type === 'success' ? '#1F6F5F' : '#B45309' }}>
-              {notification.text}
-            </p>
-          </div>
-        )}
 
         {/* ── Unified Environment Grid ───────────────────────────────── */}
         <div>
@@ -715,23 +702,43 @@ export default function FarmerDashboard() {
 
 
           {/* AI Decision & Feedback Panel */}
-          {aiStatus.last_reasoning && (
+          {(aiStatus.last_reasoning || aiStatus.is_processing) && (
             <div className="mb-4 bg-blue-50 border rounded-xl p-4 flex flex-col md:flex-row gap-4 items-start justify-between border-blue-100">
               <div className="flex-1">
                 <p className="text-xs font-bold text-blue-800 mb-1">SUY LUẬN AI MỚI NHẤT</p>
-                <p className="text-sm font-medium text-blue-900 leading-relaxed whitespace-pre-line">
-                  {aiStatus.last_reasoning}
-                </p>
+                <div className="text-sm font-medium text-blue-900 leading-relaxed">
+                  <StreamingText 
+                    text={aiStatus.last_reasoning} 
+                    enabled={true} 
+                    streamMode={aiStatus.is_processing}
+                    className="whitespace-pre-line"
+                  />
+                </div>
+                {actionLogs.length > 0 && actionLogs[0].model_insights?.retrieval_output_preview && (
+                  <div className="mt-3 p-2 bg-blue-100/50 rounded-lg border border-blue-200/50">
+                    <p className="text-[10px] font-bold text-blue-700 mb-1 flex items-center gap-1">
+                      <RainIcon size={12} /> BẰNG CHỨNG TỪ TÀI LIỆU (PAPERS):
+                    </p>
+                    <p className="text-[11px] text-blue-800 italic leading-snug">
+                      "{actionLogs[0].model_insights.retrieval_output_preview}"
+                    </p>
+                  </div>
+                )}
               </div>
-              {actionLogs.length > 0 && formatActorLabel(actionLogs[0]?.actor) === 'TRỢ LÝ AI' && (
-                <div className="flex flex-col gap-2 min-w-[150px] bg-white p-2 rounded-lg shadow-sm border border-blue-50">
+              {latestActionLogId && !hiddenFeedbackLogIds.includes(latestActionLogId) && actionLogs.length > 0 && formatActorLabel(actionLogs[0]?.actor) === 'TRỢ LÝ AI' && (
+                <div className="flex flex-col gap-2 min-w-37.5 bg-white p-2 rounded-lg shadow-sm border border-blue-50">
                   <p className="text-[11px] font-bold text-center text-gray-500 uppercase">Bạn có đồng ý?</p>
                   <button 
-                    onClick={() => submitPositiveFeedback(actionLogs[0].id)}
+                    type="button"
+                    onClick={() => submitPositiveFeedback(latestActionLogId)}
                     className="px-3 py-2 bg-green-50 text-green-700 rounded-md text-xs font-bold hover:bg-green-100 transition-colors flex items-center justify-center gap-1 border border-green-100"
                   >👍 Chính xác</button>
                   <button 
-                    onClick={() => setFeedbackModal({ actionLogId: actionLogs[0].id })}
+                    type="button"
+                    onClick={() => {
+                      toast('Đã mở form góp ý cho AI.');
+                      setFeedbackModal({ actionLogId: latestActionLogId });
+                    }}
                     className="px-3 py-2 bg-red-50 text-red-700 rounded-md text-xs font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-1 border border-red-100"
                   >👎 Sai (Góp ý AI)</button>
                 </div>
@@ -791,16 +798,22 @@ export default function FarmerDashboard() {
                       Loại hành động: {formatActionLabel(log.action)}
                     </p>
 
-                    {formatActorLabel(log.actor) === 'TRỢ LÝ AI' && (
+                    {formatActorLabel(log.actor) === 'TRỢ LÝ AI' && !hiddenFeedbackLogIds.includes(log.id || log._id) && (
                       <div className="mt-3 flex items-center gap-2 pt-2 border-t" style={{ borderColor: '#1F6F5F10' }}>
                         <span className="text-[11px] font-semibold text-gray-500">Quyết định này có đúng không?</span>
                         <button 
-                          onClick={() => submitPositiveFeedback(log.id)}
+                          type="button"
+                          onClick={() => submitPositiveFeedback(log.id || log._id)}
 
                           className="px-2 py-1 bg-green-50 text-green-700 rounded text-[11px] font-bold hover:bg-green-100 transition-colors"
                         >👍 Đúng</button>
                         <button 
-                          onClick={() => setFeedbackModal({ actionLogId: log.id })}
+                          type="button"
+                          onClick={() => {
+                            const targetId = log.id || log._id;
+                            toast('Đã mở form góp ý cho AI.');
+                            setFeedbackModal({ actionLogId: targetId });
+                          }}
                           className="px-2 py-1 bg-red-50 text-red-700 rounded text-[11px] font-bold hover:bg-red-100 transition-colors"
                         >👎 Sai</button>
                       </div>
@@ -893,7 +906,7 @@ export default function FarmerDashboard() {
 
         {/* ── Feedback Modal (Epic 2) ─────────────────────────── */}
         {feedbackModal && createPortal(
-          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+          <div className="fixed inset-0 z-99999 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
               <div className="p-6 border-b border-gray-100">
                 <div className="flex items-center gap-3 mb-4">
@@ -924,7 +937,7 @@ export default function FarmerDashboard() {
                       value={feedbackReason}
                       onChange={e => setFeedbackReason(e.target.value)}
                       placeholder="Giải thích lý do thực tế tại ruộng để AI học hỏi..."
-                      className="w-full border border-gray-200 rounded-xl p-3 text-sm min-h-[100px] focus:ring-2 focus:ring-[#1F6F5F] outline-none bg-gray-50 resize-none font-medium"
+                      className="w-full border border-gray-200 rounded-xl p-3 text-sm min-h-25 focus:ring-2 focus:ring-[#1F6F5F] outline-none bg-gray-50 resize-none font-medium"
                     ></textarea>
                   </div>
                 </div>

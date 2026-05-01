@@ -6,7 +6,8 @@
  * bằng chứng (Evidence) cho các Agent.
  */
 
-const { GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI } = require("@langchain/google-genai");
+const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
+const { ChatOpenAI } = require("@langchain/openai");
 const { getDb } = require("../../config/mongodb");
 
 // --- Configuration ---
@@ -15,12 +16,27 @@ const embeddings = new GoogleGenerativeAIEmbeddings({
     apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
 });
 
+/**
+ * Factory for Query Rewriter LLM (SaoLa Small for speed)
+ */
 function createQueryRewriterLLM() {
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    return new ChatGoogleGenerativeAI({
-        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-        apiKey: apiKey,
-        temperature: 0.2,
+    const apiKey = process.env.SAOLA4_SMALL_API_KEY;
+    const baseURL = process.env.SAOLA4_SMALL_BASE_URL;
+    const model = process.env.SAOLA4_SMALL_MODEL || "saola4-small";
+
+    if (apiKey && baseURL) {
+        return new ChatOpenAI({
+            model,
+            apiKey,
+            temperature: 0.1,
+            configuration: { baseURL },
+        });
+    }
+
+    // Fallback if saola small is missing
+    return new ChatOpenAI({
+        model: "gpt-3.5-turbo", // placeholder fallback or use Gemini
+        apiKey: "none",
     });
 }
 
@@ -44,72 +60,83 @@ function compactSnippet(text, maxChars = 420) {
 /**
  * AI-powered Query Expansion
  */
-async function generateSearchQueries(context) {
+async function generateSearchQueries(sensorData) {
+    const { salinity, moisture, crop_stage, external_forecast, trend } = sensorData;
+    const llm = createQueryRewriterLLM();
+
+    const prompt = `Hãy viết ra 2 câu truy vấn tìm kiếm ngắn gọn bằng tiếng Việt để tra cứu guideline nông nghiệp cho tình huống: Lúa giai đoạn ${crop_stage}, độ mặn ${salinity}ppt, độ ẩm ${moisture}%. 
+Yêu cầu: Chỉ trả về các câu truy vấn, mỗi câu một dòng, không đánh số, không gạch đầu dòng.`;
+
     try {
-        const llm = createQueryRewriterLLM();
-        const prompt = `Bạn là một chuyên gia nông nghiệp lúa nước. Dựa vào tình huống môi trường hiện tại, hãy viết 2-3 câu truy vấn tìm kiếm ngắn bằng tiếng Việt để tìm tài liệu hướng dẫn trong DB.
-Tình huống: Mặn ${context.salinity}ppt, Ẩm ${context.moisture}%, Giai đoạn ${context.crop_stage}, Thời tiết ${context.external_forecast?.weather}.
-Chỉ trả về danh sách câu hỏi bắt đầu bằng dấu gạch ngang (-).`;
-        
         const response = await llm.invoke(prompt);
-        const text = typeof response.content === "string" ? response.content : "";
-        
+        const text = typeof response.content === 'string' ? response.content : response.content[0].text;
         return text.split("\n")
-            .map(line => line.trim())
-            .filter(line => line.startsWith("-"))
-            .map(line => line.replace(/^-/, "").trim())
-            .filter(Boolean);
+            .map(q => q.replace(/^\d+[\.\)]\s*/, "").replace(/^[\-\*]\s*/, "").trim())
+            .filter(q => q.length > 5);
     } catch (err) {
-        console.warn("[Retrieval] Query rewriter failed, using fallback.");
-        return [`Hướng dẫn xử lý cho lúa giai đoạn ${context.crop_stage}`];
+        console.error("[Query Rewriter] Error:", err.message);
+        return [`Hướng dẫn xử lý cho lúa giai đoạn ${crop_stage}`];
     }
 }
 
 /**
- * Unified Semantic RAG Execution
+ * Execute RAG (Vector Search)
  */
-async function executeRAGTool(queryText, mongoDb, variationParams = {}) {
-    const topK = parseInt(process.env.VECTOR_TOP_K || "3", 10);
-    const snippetChars = parseInt(process.env.RETRIEVAL_SNIPPET_MAX_CHARS || "420", 10);
-    const envMinScore = parseFloat(process.env.VECTOR_MIN_SCORE || "0.68");
+async function executeRAGTool(query, mongoDb, sensorData = {}) {
+    if (!mongoDb) return { context: "Lỗi kết nối cơ sở dữ liệu.", hitCount: 0, sourceIds: [] };
 
     try {
-        const queryVector = await embeddings.embedQuery(queryText);
-        const cursor = mongoDb.collection("guideline_documents").aggregate([
+        const normalizedQuery = sanitizeRetrievalText(query) || "Hướng dẫn xử lý lúa theo tình huống hiện tại";
+        const queryVector = await embeddings.embedQuery(normalizedQuery);
+        const collection = mongoDb.collection("guideline_documents");
+
+        // Atlas Vector Search
+        const results = await collection.aggregate([
             {
-                $vectorSearch: {
-                    index: "vector_index",
-                    path: "embedding",
-                    queryVector,
-                    numCandidates: topK * 10,
-                    limit: topK * 4,
-                },
+                "$vectorSearch": {
+                    "index": "vector_index",
+                    "path": "embedding",
+                    "queryVector": queryVector,
+                    "numCandidates": 50,
+                    "limit": 3
+                }
             },
-            { $project: { _id: 1, title: 1, content: 1, score: { $meta: "vectorSearchScore" } } },
-        ]);
+            {
+                "$project": {
+                    "content": 1,
+                    "metadata": 1,
+                    "score": { "$meta": "vectorSearchScore" }
+                }
+            }
+        ]).toArray();
 
-        const results = await cursor.toArray();
-        const validResults = results
-            .filter(r => r.score >= envMinScore)
-            .sort((a, b) => b.score - a.score)
-            .slice(0, topK);
-
-        if (validResults.length === 0) {
-            return { hitCount: 0, context: "Không tìm thấy tài liệu phù hợp.", docs: [] };
+        if (!results.length) {
+            return { context: "Không tìm thấy tài liệu phù hợp.", hitCount: 0, sourceIds: [] };
         }
 
-        const context = validResults.map((doc, i) => 
-            `${i+1}) Nguồn: ${doc._id}\n   Trích đoạn: ${compactSnippet(doc.content, snippetChars)}`
-        ).join("\n\n");
+        const context = results.map((res, i) => {
+            const source = res._id || res.source_ref || res.metadata?.source || "Unknown Source";
+            return `${i + 1}) Nguồn: ${source}\n   Trích đoạn: ${compactSnippet(res.content)}`;
+        }).join("\n\n");
 
-        return { hitCount: validResults.length, sourceIds: validResults.map(d => d._id), context, docs: validResults };
+        return {
+            context,
+            hitCount: results.length,
+            sourceIds: results.map((res) => String(res._id || res.source_ref || res.metadata?.source || "Unknown")),
+            docs: results.map((res) => ({
+                source: String(res._id || res.source_ref || res.metadata?.source || "Unknown"),
+                score: Number(res.score || 0),
+                content: res.content,
+            })),
+            query: normalizedQuery,
+        };
     } catch (err) {
-        console.error("Vector Retrieval Error:", err.message);
-        return { hitCount: 0, context: "Lỗi hệ thống truy xuất.", docs: [] };
+        console.error("[RAG Tool] Error:", err.message);
+        return { context: "Lỗi trong quá trình tìm kiếm kiến thức.", hitCount: 0, sourceIds: [] };
     }
 }
 
 module.exports = {
     generateSearchQueries,
-    executeRAGTool,
+    executeRAGTool
 };

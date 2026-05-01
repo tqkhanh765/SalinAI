@@ -20,7 +20,13 @@ function createOrchestrationLLM() {
         const baseURL = process.env.GLM4_BASE_URL;
         const model = process.env.GLM4_MODEL || "GLM-4.7";
         if (!apiKey || !baseURL) throw new Error("Missing GLM4 config: GLM4_API_KEY and GLM4_BASE_URL are required");
-        return new ChatOpenAI({ model, apiKey, temperature, configuration: { baseURL } });
+        return new ChatOpenAI({ 
+            model, 
+            apiKey, 
+            temperature, 
+            streaming: true,
+            configuration: { baseURL } 
+        });
     }
 
     // SAOLA4_MEDIUM — kept for backward compatibility (now used as Feedback/Evaluator Agent)
@@ -29,7 +35,13 @@ function createOrchestrationLLM() {
         const baseURL = process.env.SAOLA4_MEDIUM_BASE_URL;
         const model = process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium";
         if (!apiKey || !baseURL) throw new Error("Missing SAOLA4_MEDIUM config");
-        return new ChatOpenAI({ model, apiKey, temperature, configuration: { baseURL } });
+        return new ChatOpenAI({ 
+            model, 
+            apiKey, 
+            temperature, 
+            streaming: true,
+            configuration: { baseURL } 
+        });
     }
 
     // Gemini — fallback provider
@@ -38,6 +50,32 @@ function createOrchestrationLLM() {
         apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
         temperature,
     });
+}
+
+function getOrchestratorRuntimeInfo() {
+    const provider = normalizeOrchestratorProvider();
+
+    if (provider === "glm4") {
+        return {
+            provider,
+            model: process.env.GLM4_MODEL || "GLM-4.7",
+            streaming: true,
+        };
+    }
+
+    if (provider === "saola4_medium") {
+        return {
+            provider,
+            model: process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium",
+            streaming: true,
+        };
+    }
+
+    return {
+        provider: "gemini",
+        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+        streaming: false,
+    };
 }
 
 const llm = createOrchestrationLLM();
@@ -136,4 +174,4 @@ async function finalizeAction({
     }
 }
 
-module.exports = { orchestratorAgent, finalizeAction };
+module.exports = { orchestratorAgent, finalizeAction, getOrchestratorRuntimeInfo };

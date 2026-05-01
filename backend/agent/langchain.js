@@ -22,11 +22,13 @@ const { researcherAgent, createResearcherAgent, normalizeResearcherProvider } = 
 const {
     orchestratorAgent,
     finalizeAction,
+    getOrchestratorRuntimeInfo,
 } = require("./agentOrchestration");
 
 const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE, logActionWithPrediction } = require("../services/ai/outcomeService");
 const { buildPolicyPromptBlock } = require("../services/ai/policyLearningService");
 const { createAgentUtilsService } = require("../services/ai/agentUtilsService");
+const { emitToken, emitAiStatus } = require("../services/core/socketService");
 
 const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS || "2", 10));
 const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "3", 10));
@@ -175,7 +177,6 @@ async function runAgent(sensorData, triggerReason = "") {
     };
 
     try {
-        console.log("\n[Pipeline] 🚀 Bắt đầu pipeline nhiều tác tử...");
         addTrace("pipeline", "start", "Bắt đầu pipeline nhiều tác tử", {
             sensor: { salinity, moisture, crop_stage: crop_stage || "VEGETATIVE" },
         });
@@ -198,7 +199,7 @@ async function runAgent(sensorData, triggerReason = "") {
             const queryText = queries.join(" ");
             const retrieval = await executeRAGTool(queryText, mongoDb, { salinity, moisture });
             
-            const hasHighRelevance = retrieval.docs && retrieval.docs.some(d => Number(d.score || 0) >= 0.72);
+            const hasHighRelevance = Array.isArray(retrieval.docs) && retrieval.docs.some((d) => Number(d.score || 0) >= 0.72);
             
             if (retrieval.hitCount > 0 && hasHighRelevance) {
                 finalHitCount = retrieval.hitCount;
@@ -306,12 +307,14 @@ ${mandatoryRetrievalContext}`,
 
             for (const toolCall of response.tool_calls) {
                 if (toolCall.name === "search_agricultural_guidelines") {
-                    const ragData = await executeRAGTool(toolCall.args.salinity, toolCall.args.moisture, mongoDb, crop_stage);
+                    const ragQuery = String(toolCall.args?.query || "").trim() || queries.join(" ");
+                    const ragData = await executeRAGTool(ragQuery, mongoDb, { salinity, moisture, crop_stage });
                     finalHitCount = ragData.hitCount;
                     finalSourceIds = ragData.sourceIds;
                     retrievalOutputPreview = truncateText(ragData.context, MAX_RETRIEVAL_OUTPUT_CHARS);
                     addTrace("retrieval", "rag_result", `Đã truy xuất ${finalHitCount} đoạn guideline`, {
                         source_ids: finalSourceIds,
+                        query: ragQuery,
                     });
 
                     researcherMessages.push({
@@ -372,16 +375,45 @@ ${mandatoryRetrievalContext}`,
             },
         ];
 
+        console.log("[Orchestrator] Prompt sizes", {
+            system_chars: orchestratorMessages[0].content.length,
+            user_chars: orchestratorMessages[1].content.length,
+            policy_preview_chars: policyPromptBlock.length,
+            researcher_summary_chars: researcherSummary.length,
+        });
+
         let orchestrationLoop = 0;
+        const orchestratorRuntimeInfo = getOrchestratorRuntimeInfo();
         while (orchestrationLoop < MAX_ORCHESTRATION_LOOPS) {
             orchestrationLoop++;
-            addTrace("orchestrator", "iteration", `Vòng Orchestrator ${orchestrationLoop} bắt đầu`);
+            addTrace("orchestrator", "iteration", `Vòng Orchestrator ${orchestrationLoop} bắt đầu`, {
+                provider: orchestratorRuntimeInfo.provider,
+                model: orchestratorRuntimeInfo.model,
+                streaming: orchestratorRuntimeInfo.streaming,
+            });
+            console.log(
+                `[Orchestrator] Invoke start | provider=${orchestratorRuntimeInfo.provider} | model=${orchestratorRuntimeInfo.model} | loop=${orchestrationLoop}`
+            );
+            const orchestratorInvokeStartedAt = Date.now();
+            addTrace("orchestrator", "invoke_start", "Bắt đầu gọi model Orchestrator", {
+                provider: orchestratorRuntimeInfo.provider,
+                model: orchestratorRuntimeInfo.model,
+                system_chars: orchestratorMessages[0].content.length,
+                user_chars: orchestratorMessages[1].content.length,
+            });
             const response = await invokeWithPhaseTimeoutRetry({
                 phaseKey: "orchestrator",
-                label: "Orchestrator phase",
+                label: `Orchestrator phase (${orchestratorRuntimeInfo.provider}/${orchestratorRuntimeInfo.model})`,
                 timeoutMs: ORCHESTRATOR_PHASE_TIMEOUT_MS,
                 invokeFn: () => orchestratorAgent.invoke(orchestratorMessages),
                 iteration: orchestrationLoop,
+            });
+            addTrace("orchestrator", "latency_detail", "Orchestrator invoke xong", {
+                provider: orchestratorRuntimeInfo.provider,
+                model: orchestratorRuntimeInfo.model,
+                duration_ms: Date.now() - orchestratorInvokeStartedAt,
+                timeout_ms: ORCHESTRATOR_PHASE_TIMEOUT_MS,
+                loop: orchestrationLoop,
             });
             orchestratorMessages.push(response);
             const orchestratorContent = cleanModelArtifacts(stripThinkTags(toText(response?.content)));
@@ -574,4 +606,225 @@ ${mandatoryRetrievalContext}`,
         throw err;
     }
 }
-module.exports = { runAgent };
+/**
+ * runAgentStreaming
+ * Identical logic to runAgent but streams orchestrator tokens to Socket.io.
+ */
+async function runAgentStreaming(sensorData, triggerReason = "") {
+    const { salinity, moisture, crop_stage, external_forecast } = sensorData;
+    const mongoDb = getDb();
+    if (!mongoDb) {
+        emitAiStatus("error", { message: "MongoDB not connected" });
+        return runAgent(sensorData, triggerReason);
+    }
+
+    emitAiStatus("start", { phase: "pipeline" });
+
+    let finalHitCount = 0;
+    let finalSourceIds = [];
+    let researcherSummary = "";
+    let actionResult = null;
+    let researcherRawOutput = "";
+    let orchestratorRawOutput = "";
+    let orchestratorArgumentReason = "";
+    let retrievalOutputPreview = "";
+    const agentTrace = [];
+
+    const utils = createAgentUtilsService({
+        maxInsightChars: MAX_INSIGHT_CHARS,
+        maxFullOutputChars: MAX_FULL_OUTPUT_CHARS,
+        maxOrchestratorOutputPreviewChars: MAX_ORCHESTRATOR_OUTPUT_PREVIEW_CHARS,
+    });
+
+    const addTrace = (phase, event, message, meta = {}) => {
+        if (agentTrace.length >= MAX_TRACE_STEPS) return;
+        agentTrace.push({
+            timestamp: toVietnamISOString(),
+            phase,
+            event,
+            message,
+            meta,
+        });
+    };
+
+    try {
+        
+        // 1. Policy Memory
+        const policyPromptBlock = await buildPolicyPromptBlock();
+        
+        // 2. RAG
+        emitAiStatus("processing", { phase: "retrieval", message: "📚 Đang truy xuất kiến thức từ kho guideline..." });
+        const queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: triggerReason });
+        
+        // Use only the first (best) query for vector search to reduce noise
+        const bestQuery = queries[0] || `Hướng dẫn xử lý cho lúa giai đoạn ${crop_stage}`;
+        const retrieval = await executeRAGTool(bestQuery, mongoDb, { salinity, moisture });
+        finalHitCount = retrieval.hitCount;
+        finalSourceIds = retrieval.sourceIds;
+        const mandatoryRetrievalContext = retrieval.context || "Không tìm thấy dữ liệu liên quan.";
+        retrievalOutputPreview = truncateText(mandatoryRetrievalContext, MAX_RETRIEVAL_OUTPUT_CHARS);
+
+        // 3. Researcher
+        emitAiStatus("processing", { phase: "researcher", message: `🕵️ Researcher (SaoLa) đang phân tích ${finalHitCount} bằng chứng...` });
+        const researcherMessages = [
+            { role: "system", content: researcherPromptTemplate },
+            {
+                role: "user",
+                content: `Dữ liệu cảm biến hiện tại: độ mặn ${salinity} ppt, độ ẩm đất ${moisture}%, giai đoạn cây ${crop_stage || "VEGETATIVE"}.
+Dự báo thời tiết: ${external_forecast?.weather || "Không rõ"} (Lượng mưa 24h: ${external_forecast?.rainfall_24h || 0}mm).
+Thủy triều: ${external_forecast?.tide_status || "Không rõ"}.
+
+Hãy phân tích theo kiểu tự nhiên, có chiều sâu bằng tiếng Việt. Tập trung vào việc đối chiếu dữ liệu cảm biến trên với các guideline dưới đây để tìm bằng chứng hành động:
+${mandatoryRetrievalContext}`,
+            },
+        ];
+
+        let researchLoop = 0;
+        const MAX_RESEARCH_LOOPS = 3;
+        while (researchLoop < MAX_RESEARCH_LOOPS) {
+            researchLoop++;
+            const resResponse = await researcherAgent.invoke(researcherMessages);
+            researcherMessages.push(resResponse);
+            
+            const content = utils.stripThinkTags(utils.toText(resResponse?.content));
+            if (!resResponse.tool_calls || resResponse.tool_calls.length === 0) {
+                researcherRawOutput = content;
+                researcherSummary = utils.ensureResearcherCitations(content);
+                break;
+            }
+
+            // Handle researcher tool calls if any (e.g. RAG)
+            for (const toolCall of resResponse.tool_calls) {
+                const toolInstance = researcherTools.find((t) => t.name === toolCall.name);
+                if (toolInstance) {
+                    let toolResult;
+                    if (toolCall.name === "search_agricultural_guidelines") {
+                        const queryStr = toolCall.args.query || `Ngưỡng mặn lúa giai đoạn ${crop_stage}`;
+                        const ragData = await executeRAGTool(queryStr, mongoDb, { salinity, moisture });
+                        finalHitCount = ragData.hitCount;
+                        finalSourceIds = ragData.sourceIds;
+                        retrievalOutputPreview = truncateText(ragData.context, MAX_RETRIEVAL_OUTPUT_CHARS);
+                        toolResult = ragData.context;
+                    } else {
+                        toolResult = await toolInstance.invoke(toolCall.args);
+                    }
+
+                    researcherMessages.push({
+                        role: "tool",
+                        tool_call_id: toolCall.id,
+                        name: toolCall.name,
+                        content: toolResult,
+                    });
+                }
+            }
+        }
+
+        // 4. Orchestrator Phase 1: Detailed Analysis (Streaming)
+        emitAiStatus("processing", { phase: "orchestrator", message: "Orchestrator đang phân tích chi tiết..." });
+        
+        const { orchestratorDetailedPromptTemplate, orchestratorSummaryPromptTemplate } = require("./prompt");
+        
+        const detailedAnalysisMessages = [
+            { role: "system", content: `${orchestratorDetailedPromptTemplate}\n\n${policyPromptBlock}` },
+            {
+                role: "user",
+                content: `
+Báo cáo Researcher: ${researcherSummary}
+
+[Dữ Liệu Hiện Tại]
+- Độ mặn: ${salinity} ppt
+- Độ ẩm đất: ${moisture}%
+- Giai đoạn cây: ${crop_stage || "VEGETATIVE"}
+- Thời tiết: ${external_forecast?.weather || "Không rõ"}
+- Lượng mưa 24h: ${external_forecast?.rainfall_24h || 0} mm
+- Thủy triều: ${external_forecast?.tide_status || "Không rõ"}`,
+            },
+        ];
+
+        // STREAMING START (Phase 1)
+        const stream = await orchestratorAgent.stream(detailedAnalysisMessages);
+        let gatheredDetailedAnalysis = "";
+
+        try {
+            for await (const chunk of stream) {
+                if (chunk.content) {
+                    const token = typeof chunk.content === "string" ? chunk.content : utils.toText(chunk.content);
+                    gatheredDetailedAnalysis += token;
+                    emitToken(token, "orchestrator");
+                    fbdb.ref("SalinAI/ai_status").update({ last_reasoning: gatheredDetailedAnalysis }).catch(() => {});
+                }
+            }
+        } catch (streamErr) {
+            throw streamErr;
+        }
+
+        orchestratorRawOutput = gatheredDetailedAnalysis;
+
+        // 5. Orchestrator Phase 2: Final Summary & Tool Call (Decision)
+        emitAiStatus("processing", { phase: "orchestrator", message: "Đang chốt quyết định cuối cùng..." });
+        
+        const summaryDecisionMessages = [
+            { role: "system", content: orchestratorSummaryPromptTemplate },
+            {
+                role: "user",
+                content: `Phân tích chi tiết: ${gatheredDetailedAnalysis}\n\nBằng chứng từ Researcher: ${researcherSummary}`,
+            },
+        ];
+
+        const summaryResponse = await orchestratorAgent.invoke(summaryDecisionMessages);
+        
+        // Handle tool call for final decision
+        if (summaryResponse.tool_calls && summaryResponse.tool_calls.length > 0) {
+            const toolCall = summaryResponse.tool_calls[0];
+            const toolInstance = orchestratorTools.find((t) => t.name === toolCall.name);
+            if (toolInstance) {
+                const rawOutput = await toolInstance.invoke(toolCall.args);
+                actionResult = JSON.parse(rawOutput);
+            }
+        } else {
+            // Fallback parsing if no tool call
+            const content = utils.toText(summaryResponse.content);
+            const state = utils.parseDecisionFromText(content);
+            const toolInstance = orchestratorTools.find((t) => t.name === "execute_valve_control");
+            const rawOutput = await toolInstance.invoke({
+                state,
+                reason: content.slice(0, 150),
+                source_ids: (finalSourceIds || []).map((id) => String(id)),
+            });
+            actionResult = JSON.parse(rawOutput);
+        }
+        
+        actionResult.reason = utils.normalizeFarmerReason(actionResult.reason);
+
+        await finalizeAction({
+            actionResult,
+            sensorData,
+            finalHitCount,
+            finalSourceIds,
+            researcherSummary,
+            actor: "ORCHESTRATOR_AGENT",
+            mongoDb,
+            agentTrace,
+            modelInsights: {
+                orchestrator_output_preview: orchestratorRawOutput,
+                orchestrator_reasoning_summary: actionResult.reason,
+                researcher_output_preview: researcherRawOutput,
+                retrieval_output_preview: retrievalOutputPreview
+            }
+        });
+        
+        emitAiStatus("done", { phase: "pipeline" });
+        return {
+            action: actionResult.executed_state,
+            reason: actionResult.reason
+        };
+
+    } catch (err) {
+        console.error("[Streaming Pipeline] Error:", err.message);
+        emitAiStatus("error", { message: err.message });
+        // Safe fallback
+        return { action: "NO_ACTION", reason: `Lỗi streaming: ${err.message}` };
+    }
+}
+
+module.exports = { runAgent, runAgentStreaming };

@@ -6,9 +6,9 @@ const { getDb } = require("../config/mongodb");
 // ─── Researcher Subagent Tools ───────────────────────────────────────────
 const search_agricultural_guidelines = new DynamicStructuredTool({
   name: "search_agricultural_guidelines",
-  description: "Searches the MongoDB RAG database for agricultural safety rules. MUST be called first.",
-  schema: z.object({ salinity: z.number(), moisture: z.number() }),
-  func: async () => { return "Execute vector search"; } // Intercepted in loop
+  description: "Searches the MongoDB RAG database for agricultural safety rules based on a natural language query.",
+  schema: z.object({ query: z.string().describe("Câu truy vấn tự nhiên tiếng Việt") }),
+  func: async ({ query }) => { return "Execute vector search for: " + query; } // Intercepted in loop
 });
 
 const query_action_history = new DynamicStructuredTool({

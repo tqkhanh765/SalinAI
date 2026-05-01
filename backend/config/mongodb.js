@@ -1,6 +1,7 @@
+const path = require('path');
 const { MongoClient } = require('mongodb');
 
-require('dotenv').config({ path: '../.env' }); // Just in case, standard dotenv
+require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') }); // Resolve the repo root .env consistently
 
 const uri = process.env.MONGODB_URI;
 

@@ -29,9 +29,8 @@ $latestLogId = $null
 
 Header "1. CORE PIPELINE: Sensor Ingestion and AI Decision"
 try {
-    $null = node reset_system.ps1 # Assuming reset script is available or use reset_system.js
-    # Fallback to js if ps1 not found
-    if ($LASTEXITCODE -ne 0) { $null = node reset_system.js }
+    # Use the reset script in the tests directory
+    $null = node ./tests/reset_system.js
 
     $payload = @{
         salinity = 4.5

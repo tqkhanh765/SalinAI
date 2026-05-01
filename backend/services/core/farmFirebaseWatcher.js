@@ -1,7 +1,7 @@
 const db = require("../../config/firebase");
 const { getLatestSensorHistory, persistSensorHistoryPoint } = require("./farmHistoryService");
 const { decideAiTrigger } = require("./farmAiTriggerService");
-const { runAgent } = require("../../agent/langchain");
+const { runAgentStreaming } = require("../../agent/langchain");
 const { fetchWeatherData } = require("../external/weatherService");
 const { getTideData } = require("../external/tideService");
 
@@ -69,7 +69,7 @@ function startFirebaseWatcher() {
           last_reasoning: `Triggered: ${triggerReason}`,
         });
 
-        runAgent(enrichedData)
+        runAgentStreaming(enrichedData)
           .then(() => {
             setTimeout(() => { isAiTriggerLocked = false; }, TRIGGER_COOLDOWN_MS);
           })
