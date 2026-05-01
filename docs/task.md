@@ -65,24 +65,24 @@
 ## 🚀 Epic 1: Advanced RAG & Complex Scenario Intelligence
 
 ### Backend — AI/RAG
-- [ ] **[E1-B1]** Create `queryRewriterService.js` in `backend/services/ai/`
+- [x] **[E1-B1]** Create `queryRewriterService.js` in `backend/services/ai/`
   - Input: `{ salinity, moisture, crop_stage, external_forecast, trend }` context object
   - Output: 1–3 natural-language Vietnamese search queries
   - Use a lightweight LLM call (Gemini Flash) — not the full Researcher agent
-- [ ] **[E1-B2]** Refactor `retrievalService.js` — replace raw variable string queries with rewritten queries from `queryRewriterService`
-- [ ] **[E1-B3]** Implement **Self-RAG loop** in `langchain.js` Researcher phase:
+- [x] **[E1-B2]** Refactor `retrievalService.js` — replace raw variable string queries with rewritten queries from `queryRewriterService`
+- [x] **[E1-B3]** Implement **Self-RAG loop** in `langchain.js` Researcher phase:
   - After each retrieval, evaluate relevance: if `hitCount === 0` or all `score < 0.72`, call `queryRewriterService` again (max 2 retries)
   - Add trace events: `"rag_retry"`, `"rag_accepted"`, `"rag_fallback"`
-- [ ] **[E1-B4]** Add relevance score to each retrieved document in retrieval result payload
-- [ ] **[E1-B5]** Write complex scenario test prompts in `backend/tests/`:
+- [x] **[E1-B4]** Add relevance score to each retrieved document in retrieval result payload
+- [x] **[E1-B5]** Write complex scenario test prompts in `backend/tests/`:
   - `test_double_disaster.js` — Salinity >4 ppt + Moisture <35%
   - `test_sweet_water_trap.js` — Safe salinity now + `rainfall_24h > 20mm` forecast
 
 ### AI/Prompts
-- [ ] **[E1-P1]** Update `researcherPromptTemplate` in `agent/prompt.js`:
+- [x] **[E1-P1]** Update `researcherPromptTemplate` in `agent/prompt.js`:
   - Add instruction: *"Trước tiên hãy tạo một câu truy vấn tự nhiên bằng tiếng Việt mô tả tình huống, sau đó dùng câu đó để tìm kiếm guideline."*
   - Add Self-RAG self-critique step: *"Đánh giá xem các tài liệu được truy xuất có liên quan đến tình huống này không. Nếu không, hãy viết lại truy vấn."*
-- [ ] **[E1-P2]** Add complex scenario handling instructions to `orchestratorPromptTemplate`:
+- [x] **[E1-P2]** Add complex scenario handling instructions to `orchestratorPromptTemplate`:
   - "Double Disaster" priority rule: safety (close valve) overrides moisture needs
   - "Sweet Water Trap" rule: if forecasted rainfall > 20mm within 6h, defer OPEN decision
 
@@ -91,10 +91,10 @@
 ## 🚀 Epic 2: Human-in-the-Loop (RLHF) & Evaluator Agent
 
 ### Backend
-- [x] **[E2-B1]** Create `evaluatorAgentService.js` in `backend/services/ai/`:
+- [x] **[E2-B1]** Create `agentEvaluator.js` in `backend/agent/` (Unified Architecture):
   - Triggered by `POST /api/evaluate-feedback` with `{action_log_id, verdict: "incorrect", notes}`
   - Fetches the full `action_log` from Firebase + MongoDB for context
-  - Invokes LLM with: action taken, sensor conditions, farmer's reason for rejection
+  - Invokes LLM (SAOLA4_MEDIUM) with: action taken, sensor conditions, farmer's reason for rejection
   - Extracts structured lesson: `{ condition_pattern, action_taken, correct_action, lesson_text }`
   - Saves to MongoDB `lessons_learned` collection
 - [x] **[E2-B2]** Create new Express route `POST /api/evaluate-feedback` in `routes/farm.js`

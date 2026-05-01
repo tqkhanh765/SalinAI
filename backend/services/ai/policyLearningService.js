@@ -1,6 +1,8 @@
 /**
- * Feedback policy memory service.
- * Stores human feedback, builds a compact policy summary, and injects learned lessons into the AI prompts.
+ * POLICY LEARNING SERVICE
+ * 
+ * Tác dụng: Lưu trữ phản hồi từ người dùng, xây dựng tóm tắt chính sách (Policy)
+ * và quản lý các bài học kinh nghiệm để tiêm vào Prompt của Agent.
  */
 const { getDb } = require("../../config/mongodb");
 
@@ -229,7 +231,7 @@ async function buildPolicyPromptBlock() {
   // Append RLHF lessons extracted by the Evaluator Agent (SAOLA4_MEDIUM)
   let rlhfBlock = "";
   try {
-    const { buildRLHFMemoryBlock } = require("./evaluatorAgentService");
+    const { buildRLHFMemoryBlock } = require("../../agent/agentEvaluator");
     rlhfBlock = await buildRLHFMemoryBlock(5);
   } catch (_) {
     // Non-fatal: RLHF lessons are supplementary context

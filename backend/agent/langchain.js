@@ -16,7 +16,7 @@ const {
 } = require("../services/core/agentSafetyService");
 const { toVietnamISOString } = require("../utils/vietnamTime");
 
-const { executeRAGTool } = require("../services/ai/retrievalService");
+const { executeRAGTool, generateSearchQueries } = require("../services/ai/retrievalService");
 const { researcherAgent, createResearcherAgent, normalizeResearcherProvider } = require("./agentResearch");
 
 const {
@@ -26,8 +26,7 @@ const {
 
 const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE, logActionWithPrediction } = require("../services/ai/outcomeService");
 const { buildPolicyPromptBlock } = require("../services/ai/policyLearningService");
-const { createLangchainFormattingService } = require("../services/ai/langchainFormattingService");
-const { createLangchainResilienceService } = require("../services/ai/langchainResilienceService");
+const { createAgentUtilsService } = require("../services/ai/agentUtilsService");
 
 const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS || "2", 10));
 const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "3", 10));
@@ -66,16 +65,18 @@ const {
     toText,
     compactText,
     truncateText,
-    cleanModelArtifacts,
     stripThinkTags,
-    buildReasoningSummary,
-    buildPolicySummaryForOutput,
-    buildOrchestratorOutputPreview,
-    normalizeFarmerReason,
-    buildOrchestratorRetryPrompt,
-    ensureResearcherCitations,
     parseDecisionFromText,
-} = createLangchainFormattingService({
+    cleanModelArtifacts,
+    buildReasoningSummary,
+    buildOrchestratorOutputPreview,
+    buildPolicySummaryForOutput,
+    ensureResearcherCitations,
+    normalizeFarmerReason,
+    normalizePipelineError,
+    tryFinalizeFallback,
+    buildOrchestratorRetryPrompt,
+} = createAgentUtilsService({
     maxInsightChars: MAX_INSIGHT_CHARS,
     maxFullOutputChars: MAX_FULL_OUTPUT_CHARS,
     maxOrchestratorOutputPreviewChars: MAX_ORCHESTRATOR_OUTPUT_PREVIEW_CHARS,
@@ -85,23 +86,16 @@ const {
     isRetryableAttempt,
     queueRetryInstruction,
     createNoToolActionError,
-    normalizePipelineError,
-    tryFinalizeFallback,
-} = createLangchainResilienceService({
-    maxOrchestrationLoops: MAX_ORCHESTRATION_LOOPS,
-    maxFullOutputChars: MAX_FULL_OUTPUT_CHARS,
-    isQuotaError,
-    parseRetrySeconds,
-    buildFallbackAction,
-    finalizeAction,
-    buildOrchestratorOutputPreview,
-    buildReasoningSummary,
-    truncateText,
-});
+} = {
+    // Basic logic for loop control if needed, but mostly managed in try/catch now
+    isRetryableAttempt: (loop) => loop < MAX_ORCHESTRATION_LOOPS,
+    queueRetryInstruction: (trace, msg) => trace.push({ role: 'retry', content: msg }),
+    createNoToolActionError: () => new Error("Model failed to call a tool.")
+};
 
 // ─── Pipeline Execution ──────────────────────────────────────────────────────
-async function runAgent(sensorData) {
-    const { salinity, moisture, crop_stage } = sensorData;
+async function runAgent(sensorData, triggerReason = "") {
+    const { salinity, moisture, crop_stage, external_forecast } = sensorData;
     const mongoDb = getDb();
     if (!mongoDb) {
         console.error("[Orchestrator] MongoDB chưa được kết nối.");
@@ -110,7 +104,7 @@ async function runAgent(sensorData) {
             last_reasoning: "MongoDB chưa được kết nối. Quy trình AI không thể chạy.",
         };
         await fbdb.ref("SalinAI/ai_status").update(statusPayload);
-        return;
+        return { action: "NO_ACTION", reason: "MongoDB chưa được kết nối." };
     }
 
     let finalHitCount = 0;
@@ -194,10 +188,47 @@ async function runAgent(sensorData) {
             preview: compactText(policyPromptBlock, 220),
         });
 
-        const mandatoryRetrieval = await executeRAGTool(salinity, moisture, mongoDb, crop_stage);
-        finalHitCount = mandatoryRetrieval.hitCount;
-        finalSourceIds = mandatoryRetrieval.sourceIds;
-        retrievalOutputPreview = truncateText(mandatoryRetrieval.context, MAX_RETRIEVAL_OUTPUT_CHARS);
+        let mandatoryRetrievalContext = "";
+        let queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: triggerReason });
+        
+        let ragRetryCount = 0;
+        const maxRagRetries = 2;
+
+        while (ragRetryCount <= maxRagRetries) {
+            const queryText = queries.join(" ");
+            const retrieval = await executeRAGTool(queryText, mongoDb, { salinity, moisture });
+            
+            const hasHighRelevance = retrieval.docs && retrieval.docs.some(d => Number(d.score || 0) >= 0.72);
+            
+            if (retrieval.hitCount > 0 && hasHighRelevance) {
+                finalHitCount = retrieval.hitCount;
+                finalSourceIds = retrieval.sourceIds;
+                mandatoryRetrievalContext = retrieval.context;
+                addTrace("retrieval", "rag_accepted", `RAG chấp nhận ở lần thử ${ragRetryCount + 1}`, {
+                    hit_count: finalHitCount,
+                    queries,
+                });
+                break;
+            } else {
+                addTrace("retrieval", "rag_retry", `RAG không đạt (hit=${retrieval.hitCount}, maxScore < 0.72), thử lại`, {
+                    attempt: ragRetryCount + 1,
+                    queries,
+                });
+                ragRetryCount++;
+                if (ragRetryCount <= maxRagRetries) {
+                    queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: `Cần mở rộng ngữ cảnh, không tìm thấy tài liệu liên quan cho (lần thử ${ragRetryCount})` });
+                } else {
+                    finalHitCount = retrieval.hitCount;
+                    finalSourceIds = retrieval.sourceIds;
+                    mandatoryRetrievalContext = retrieval.context || "Không tìm thấy dữ liệu liên quan.";
+                    addTrace("retrieval", "rag_fallback", "RAG cạn kiệt lượt thử, dùng kết quả cuối", {
+                        hit_count: finalHitCount,
+                    });
+                }
+            }
+        }
+
+        retrievalOutputPreview = truncateText(mandatoryRetrievalContext, MAX_RETRIEVAL_OUTPUT_CHARS);
         addTrace("retrieval", "mandatory_rag_result", `Đã nạp sẵn ${finalHitCount} đoạn guideline cho Researcher`, {
             source_ids: finalSourceIds,
         });
@@ -207,8 +238,12 @@ async function runAgent(sensorData) {
             { role: "system", content: researcherPromptTemplate },
             {
                 role: "user",
-                content: `Dữ liệu cảm biến hiện tại: độ mặn ${salinity} ppt, độ ẩm đất ${moisture}%, giai đoạn cây ${crop_stage || "VEGETATIVE"}. Hãy phân tích theo kiểu tự nhiên, có chiều sâu hơn, bằng tiếng Việt. Viết như đang giải thích cho một đồng nghiệp nghe, không dùng gạch đầu dòng. Nếu có nhiều nguồn thì hãy so sánh chúng và nói nguồn nào đáng tin hơn trong tình huống này. Đừng chốt kết luận quá sớm; hãy đi từ bối cảnh, đến bằng chứng, đến nhận xét về xu hướng rồi mới kết luận. Mỗi đoạn phải nêu rõ nguồn nào đang được dùng làm bằng chứng, ví dụ guideline ID, lịch sử hành động gần đây, hoặc bài học outcome. Dưới đây là evidence retrieval bắt buộc đã được nạp sẵn:
-${mandatoryRetrieval.context}`,
+                content: `Dữ liệu cảm biến hiện tại: độ mặn ${salinity} ppt, độ ẩm đất ${moisture}%, giai đoạn cây ${crop_stage || "VEGETATIVE"}.
+Dự báo thời tiết: ${external_forecast?.weather || "Không rõ"} (Lượng mưa 24h: ${external_forecast?.rainfall_24h || 0}mm).
+Thủy triều: ${external_forecast?.tide_status || "Không rõ"}.
+
+Hãy phân tích theo kiểu tự nhiên, có chiều sâu hơn, bằng tiếng Việt. Viết như đang giải thích cho một đồng nghiệp nghe, không dùng gạch đầu dòng. Nếu có nhiều nguồn thì hãy so sánh chúng và nói nguồn nào đáng tin hơn trong tình huống này. Đừng chốt kết luận quá sớm; hãy đi từ bối cảnh, đến bằng chứng, đến nhận xét về xu hướng rồi mới kết luận. Mỗi đoạn phải nêu rõ nguồn nào đang được dùng làm bằng chứng, ví dụ guideline ID, lịch sử hành động gần đây, hoặc bài học outcome. Dưới đây là evidence retrieval bắt buộc đã được nạp sẵn:
+${mandatoryRetrievalContext}`,
             },
         ];
 
@@ -398,7 +433,16 @@ ${mandatoryRetrieval.context}`,
 
             for (const toolCall of response.tool_calls) {
                 if (toolCall.name === "execute_valve_control") {
-                    console.log("[Orchestrator] 🛠️ TOOL CALL ARGS:", JSON.stringify(toolCall.args, null, 2));
+                    // Sanitize args to handle LLM artifacts (like extra quotes or backslashes)
+                    if (toolCall.args) {
+                        for (const key in toolCall.args) {
+                            if (typeof toolCall.args[key] === "string") {
+                                toolCall.args[key] = toolCall.args[key].replace(/^["']|["']$/g, "").trim();
+                            }
+                        }
+                    }
+
+                    console.log("[Orchestrator] 🛠️ TOOL CALL ARGS (Sanitized):", JSON.stringify(toolCall.args, null, 2));
 
                     const toolInstance = orchestratorTools.find((tool) => tool.name === toolCall.name);
                     orchestratorArgumentReason = stripThinkTags(toText(toolCall.args?.reason || ""));
@@ -481,6 +525,12 @@ ${mandatoryRetrieval.context}`,
         });
 
         // Log moved to finalizeAction for better consolidation.
+        return {
+            action: actionResult.executed_state,
+            reason: actionResult.reason,
+            suggested_thresholds: actionResult.suggested_thresholds,
+            source_ids: actionResult.source_ids
+        };
 
     } catch (err) {
         normalizePipelineError(err);
@@ -506,7 +556,11 @@ ${mandatoryRetrieval.context}`,
             });
 
             console.warn(`[Orchestrator] ⚠️ Dùng fallback action do lỗi pipeline: ${err.message}`);
-            return;
+            return {
+                action: fallbackAction.executed_state,
+                reason: fallbackAction.reason,
+                is_fallback: true
+            };
         } catch (fallbackErr) {
             console.error("[Orchestrator] Fallback action failed:", fallbackErr.message);
         }

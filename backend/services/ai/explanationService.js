@@ -1,7 +1,11 @@
 /**
- * Decision explanation service.
- * Converts technical AI output into dashboard-friendly summaries and metric cards for users.
+ * DECISION EXPLANATION SERVICE
+ * 
+ * Tác dụng: Chuyển đổi các kết quả phân tích kỹ thuật của AI thành ngôn ngữ
+ * dễ hiểu cho nông dân trên Dashboard. Xử lý định dạng hiển thị cho các 
+ * chỉ số và bằng chứng guideline.
  */
+const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE } = require("../../config/crops");
 
 /**
  * Build a user-friendly explanation of the final decision.
@@ -11,7 +15,9 @@ function buildDetailedExplanation(sensorData, weatherData, tideData, guidelines,
 
     // ─── Factor 1: Salinity ──────────────────────────────────────────────
     const salinity = sensorData?.salinity || 0;
-    const salinityThreshold = getSalinityThreshold(sensorData?.crop_stage);
+    const stage = String(sensorData?.crop_stage || "").toUpperCase();
+    const profile = CROP_STAGE_PROFILES[stage] || DEFAULT_STAGE_PROFILE;
+    const salinityThreshold = profile.salinityMaxSafe;
 
     if (salinity > salinityThreshold) {
         factors.push({
@@ -123,14 +129,9 @@ function buildDetailedExplanation(sensorData, weatherData, tideData, guidelines,
  * Get salinity threshold based on crop stage
  */
 function getSalinityThreshold(cropStage) {
-    const thresholds = {
-        "SEEDLING": 1.5,
-        "VEGETATIVE": 2.0,
-        "FLOWERING": 2.0,
-        "FRUITING": 2.5,
-        "HARVEST": 3.0
-    };
-    return thresholds[cropStage] || 2.0;
+    const key = String(cropStage || "").trim().toUpperCase();
+    const profile = CROP_STAGE_PROFILES[key] || DEFAULT_STAGE_PROFILE;
+    return profile.salinityMaxSafe;
 }
 
 /**

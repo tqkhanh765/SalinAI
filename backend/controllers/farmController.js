@@ -13,7 +13,7 @@ const { decideAiTrigger } = require("../services/core/farmAiTriggerService");
 const { CROP_STAGES } = require("../services/core/farmPayloadMapper");
 const { runAgent } = require("../agent/langchain");
 const { saveDecisionFeedback, getPolicySummary } = require("../services/ai/policyLearningService");
-const { runEvaluatorAgent, buildRLHFMemoryBlock } = require("../services/ai/evaluatorAgentService");
+const { runEvaluatorAgent, buildRLHFMemoryBlock } = require("../agent/agentEvaluator");
 const { getDb } = require("../config/mongodb");
 
 async function buildStatePayload(root, limit) {

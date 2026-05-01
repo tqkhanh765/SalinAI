@@ -1,8 +1,10 @@
 /**
- * Sensor payload mapper.
- * Normalizes raw ingest data into the shared farm-state shape used by Firebase, the dashboard, and the AI pipeline.
+ * SENSOR PAYLOAD MAPPER
+ * 
+ * Tác dụng: Chuẩn hóa dữ liệu thô từ cảm biến thành định dạng chung mà Dashboard
+ * và AI có thể hiểu được. Đảm bảo tính nhất quán về giai đoạn cây trồng.
  */
-const CROP_STAGES = ["GERMINATION", "SEEDLING", "VEGETATIVE", "FLOWERING", "FRUITING", "HARVEST"];
+const { CROP_STAGES } = require("../../config/crops");
 const CONTROL_MODES = ["AUTO", "MANUAL"];
 const VALVE_STATES = ["OPEN", "CLOSED"];
 
