@@ -119,7 +119,7 @@ export default function FarmerDashboard() {
   const [feedbackCategory, setFeedbackCategory] = useState('Sai ngưỡng mặn');
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
   const [lessonsLearned, setLessonsLearned] = useState([]);
-  const [isLessonsExpanded, setIsLessonsExpanded] = useState(false);
+  const [isLessonsExpanded, setIsLessonsExpanded] = useState(true);
 
   const CROP_STAGE_OPTIONS = [
     { value: 'GERMINATION', label: 'Nảy mầm' },
@@ -392,7 +392,7 @@ export default function FarmerDashboard() {
   const formatActorLabel = (actor) => {
     const normalized = String(actor || '').toUpperCase();
     if (!normalized) return 'HỆ THỐNG';
-    if (normalized.includes('AI')) return 'TRỢ LÝ AI';
+    if (normalized.includes('AI') || normalized.includes('AGENT')) return 'TRỢ LÝ AI';
     if (normalized.includes('MANUAL') || normalized.includes('USER')) return 'NGƯỜI DÙNG';
     return 'HỆ THỐNG';
   };
@@ -709,6 +709,32 @@ export default function FarmerDashboard() {
             </div>
           </div>
 
+
+          {/* AI Decision & Feedback Panel */}
+          {aiStatus.last_reasoning && (
+            <div className="mb-4 bg-blue-50 border rounded-xl p-4 flex flex-col md:flex-row gap-4 items-start justify-between border-blue-100">
+              <div className="flex-1">
+                <p className="text-xs font-bold text-blue-800 mb-1">SUY LUẬN AI MỚI NHẤT</p>
+                <p className="text-sm font-medium text-blue-900 leading-relaxed whitespace-pre-line">
+                  {aiStatus.last_reasoning}
+                </p>
+              </div>
+              {actionLogs.length > 0 && formatActorLabel(actionLogs[0]?.actor) === 'TRỢ LÝ AI' && (
+                <div className="flex flex-col gap-2 min-w-[150px] bg-white p-2 rounded-lg shadow-sm border border-blue-50">
+                  <p className="text-[11px] font-bold text-center text-gray-500 uppercase">Bạn có đồng ý?</p>
+                  <button 
+                    onClick={() => submitPositiveFeedback(actionLogs[0].id)}
+                    className="px-3 py-2 bg-green-50 text-green-700 rounded-md text-xs font-bold hover:bg-green-100 transition-colors flex items-center justify-center gap-1 border border-green-100"
+                  >👍 Chính xác</button>
+                  <button 
+                    onClick={() => setFeedbackModal({ actionLogId: actionLogs[0].id })}
+                    className="px-3 py-2 bg-red-50 text-red-700 rounded-md text-xs font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-1 border border-red-100"
+                  >👎 Sai (Góp ý AI)</button>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="rounded-xl border p-3" style={{ borderColor: '#1F6F5F20' }}>
               <p className="text-xs text-gray-400 mb-2">BIỂU ĐỒ DỮ LIỆU CẢM BIẾN</p>
@@ -761,11 +787,12 @@ export default function FarmerDashboard() {
                       Loại hành động: {formatActionLabel(log.action)}
                     </p>
 
-                    {String(log.actor).toUpperCase().includes('AI') && (
+                    {formatActorLabel(log.actor) === 'TRỢ LÝ AI' && (
                       <div className="mt-3 flex items-center gap-2 pt-2 border-t" style={{ borderColor: '#1F6F5F10' }}>
                         <span className="text-[11px] font-semibold text-gray-500">Quyết định này có đúng không?</span>
                         <button 
                           onClick={() => submitPositiveFeedback(log.id)}
+
                           className="px-2 py-1 bg-green-50 text-green-700 rounded text-[11px] font-bold hover:bg-green-100 transition-colors"
                         >👍 Đúng</button>
                         <button 
@@ -824,66 +851,6 @@ export default function FarmerDashboard() {
           )}
         </div>
 
-        {/* ── Field Map Section ─────────────────────────────────────────── */}
-        {/* <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
-          <div className="flex flex-col md:flex-row md:items-center justify-between mb-5 gap-3">
-            <div>
-              <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>Bản Đồ Cấp Nước</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Giám sát vị trí các van trên thửa ruộng</p>
-            </div>
-
-            <div className="flex bg-gray-100 p-1.5 rounded-xl">
-              <button
-                onClick={() => setControlScope('all')}
-                className={`flex-1 px-4 py-2 text-sm font-bold rounded-lg transition-all ${controlScope === 'all' ? 'bg-white shadow border border-gray-200/50 text-[#1F6F5F]' : 'text-gray-500 hover:bg-gray-200/50'
-                  }`}
-              >
-                Điều Khiển Tất Cả Van
-              </button>
-              <button
-                onClick={() => setControlScope('single')}
-                className={`flex-1 px-4 py-2 text-sm font-bold rounded-lg transition-all ${controlScope === 'single' ? 'bg-white shadow border border-gray-200/50 text-[#1F6F5F]' : 'text-gray-500 hover:bg-gray-200/50'
-                  }`}
-              >
-                Điều Khiển Từng Van
-              </button>
-            </div>
-          </div>
-
-          <div className="rounded-xl overflow-hidden border border-gray-200 relative z-0" style={{ height: '360px' }}>
-            <MapContainer center={[10.7625, 106.660]} zoom={16} style={{ height: '100%', width: '100%' }} zoomControl={false} scrollWheelZoom={false}>
-              <TileLayer
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                attribution='&copy; OpenStreetMap contributors'
-              />
-              <Polygon positions={FIELD_BOUNDARY} pathOptions={{ color: '#2FA084', fillColor: '#2FA084', fillOpacity: 0.15, weight: 2 }} />
-
-              {INITIAL_VALVES.map(v => (
-                <Marker
-                  key={v.id}
-                  position={[v.lat, v.lng]}
-                  icon={createCustomIcon(realtimeValveOpen, controlScope === 'single' && activeValveId === v.id)}
-                  eventHandlers={{
-                    click: () => {
-                      setControlScope('single');
-                      setActiveValveId(v.id);
-                    }
-                  }}
-                >
-                  <Popup>
-                    <div className="text-center">
-                      <strong style={{ color: '#1F6F5F' }}>{v.id}</strong><br />
-                      <span className="text-xs text-gray-600">{v.name}</span><br />
-                      <span className={`text-xs font-bold mt-1 inline-block ${realtimeValveOpen ? 'text-[#2FA084]' : 'text-gray-500'}`}>
-                        {realtimeValveOpen ? 'TRẠNG THÁI: ĐANG MỞ' : 'TRẠNG THÁI: ĐANG ĐÓNG'}
-                      </span>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
-            </MapContainer>
-          </div>
-        </div> */}
 
         {/* ── Salinity Trend Chart ───────────────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>

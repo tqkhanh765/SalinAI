@@ -110,9 +110,7 @@ void writeToFirebase(float sal, float mois, float flow, String triggerType) {
   json += "\"salinity\":" + String(sal, 2) + ",";
   json += "\"moisture\":" + String(mois, 1) + ",";
   json += "\"water_flow\":" + String(flow, 1) + ",";
-  json += "\"crop_stage\":\"VEGETATIVE\",";
-  json += "\"trigger\":\"" + triggerType + "\",";
-  json += "\"timestamp\":" + String(millis());
+  json += "\"trigger\":\"" + triggerType + "\"";
   json += "}";
 
   int code = http.PUT(json);

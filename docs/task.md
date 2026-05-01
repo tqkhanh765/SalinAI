@@ -43,22 +43,22 @@
 > Fix these BEFORE implementing v6.0 Epics. They affect core data integrity.
 
 ### Backend
-- [ ] **[C1]** Fix ESP32 timestamp: remove `millis()` from firmware JSON payload; let `normalizeNestedSensorPayload()` use `new Date().toISOString()` server-side
-- [ ] **[C2]** Add `GERMINATION` to `CROP_STAGES` list in `farmPayloadMapper.js`
-- [ ] **[C2]** Add `GERMINATION` profile to `CROP_STAGE_PROFILES` in `outcomeService.js` (use SEEDLING values as reference)
-- [ ] **[C3]** Fix `success_rate` computation in `updateGuidelineSuccessRate()`: calculate `successful_uses / total_uses` and persist it, or use MongoDB `$avg` aggregation in retrieval query
-- [ ] **[M1]** Fix null-check bug: `farmAiTriggerService.js:42` — change `recoverySal !== undefined` to `recoverySal != null`
-- [ ] **[M2]** Hoist `require('../services/ai/outcomeService')` to module top in `langchain.js:321`
+- [x] **[C1]** Fix ESP32 timestamp: remove `millis()` from firmware JSON payload; let `normalizeNestedSensorPayload()` use `new Date().toISOString()` server-side
+- [x] **[C2]** Add `GERMINATION` to `CROP_STAGES` list in `farmPayloadMapper.js`
+- [x] **[C2]** Add `GERMINATION` profile to `CROP_STAGE_PROFILES` in `outcomeService.js` (use SEEDLING values as reference)
+- [x] **[C3]** Fix `success_rate` computation in `updateGuidelineSuccessRate()`: calculate `successful_uses / total_uses` and persist it, or use MongoDB `$avg` aggregation in retrieval query
+- [x] **[M1]** Fix null-check bug: `farmAiTriggerService.js:42` — change `recoverySal !== undefined` to `recoverySal != null`
+- [x] **[M2]** Hoist `require('../services/ai/outcomeService')` to module top in `langchain.js:321`
 
 ### Hardware
-- [ ] **[M3]** Remove `"crop_stage":"VEGETATIVE"` hardcode from `sketch.ino:113`; firmware should NOT send `crop_stage` field at all (let backend/dashboard control it)
+- [x] **[M3]** Remove `"crop_stage":"VEGETATIVE"` hardcode from `sketch.ino:113`; firmware should NOT send `crop_stage` field at all (let backend/dashboard control it)
 
 ### Frontend
-- [ ] **[M4]** Add SSE reconnection with exponential backoff in `useRealtimeFarmState.js`
+- [x] **[M4]** Add SSE reconnection with exponential backoff in `useRealtimeFarmState.js`
   ```js
   // Pattern: on 'error', wait 1s → 2s → 4s then reconnect EventSource
   ```
-- [ ] **[M5]** Remove commented-out Leaflet map block from `FarmerDashboard.jsx:700–758` (or move to a separate lazy-loaded route)
+- [x] **[M5]** Remove commented-out Leaflet map block from `FarmerDashboard.jsx:700–758` (or move to a separate lazy-loaded route)
 
 ---
 

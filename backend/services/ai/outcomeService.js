@@ -23,6 +23,12 @@ const DEFAULT_STAGE_PROFILE = {
 };
 
 const CROP_STAGE_PROFILES = {
+    GERMINATION: {
+        moistureTarget: { min: 60, max: 90, ideal: 75 },
+        salinityMaxSafe: 1.5,
+        salinityDeltaTolerance: 0.2,
+        weights: { moisture: 0.8, salinity: 0.2 },
+    },
     SEEDLING: {
         moistureTarget: { min: 55, max: 85, ideal: 70 },
         salinityMaxSafe: 2.0,
@@ -422,13 +428,20 @@ async function updateGuidelineSuccessRate(sourceId, reward) {
                     successful_uses: increment,
                 },
                 $set: {
-                    success_rate: 0, // Will be calculated in query
                     last_evaluated: new Date(),
                 }
             }
         );
 
-        console.log(`[Outcome] Updated ${sourceId}: reward=${reward}`);
+        const doc = await mongoDb.collection("guideline_documents").findOne({ _id: sourceId });
+        if (doc && doc.total_uses > 0) {
+            await mongoDb.collection("guideline_documents").updateOne(
+                { _id: sourceId },
+                { $set: { success_rate: Number((doc.successful_uses / doc.total_uses).toFixed(2)) } }
+            );
+        }
+
+        console.log(`[Outcome] Updated ${sourceId}: reward=${reward}, success_rate=${doc ? (doc.successful_uses / doc.total_uses).toFixed(2) : 0}`);
 
     } catch (err) {
         console.error(`[Outcome] Failed to update guideline ${sourceId}:`, err.message);

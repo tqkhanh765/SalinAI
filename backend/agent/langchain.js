@@ -23,6 +23,8 @@ const {
     orchestratorAgent,
     finalizeAction,
 } = require("./agentOrchestration");
+
+const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE, logActionWithPrediction } = require("../services/ai/outcomeService");
 const { buildPolicyPromptBlock } = require("../services/ai/policyLearningService");
 const { createLangchainFormattingService } = require("../services/ai/langchainFormattingService");
 const { createLangchainResilienceService } = require("../services/ai/langchainResilienceService");
@@ -318,7 +320,6 @@ ${mandatoryRetrieval.context}`,
         }
 
 
-        const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE } = require("../services/ai/outcomeService");
         const currentStageUpper = String(crop_stage || "VEGETATIVE").toUpperCase();
         const stageProfile = CROP_STAGE_PROFILES[currentStageUpper] || DEFAULT_STAGE_PROFILE;
         
