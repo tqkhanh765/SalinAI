@@ -48,7 +48,7 @@ SalinAI v6.0 is a **4-layer Proactive Intelligence System** that evolves from re
 │                          │                                  │
 │                          ▼                                  │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │           ORCHESTRATOR AGENT (SaoLa4-Medium)         │   │
+│  │           ORCHESTRATOR AGENT (GLM-4.7)               │   │
 │  │                                                      │   │
 │  │  Inputs: Researcher Summary + Policy Memory          │   │
 │  │          + RLHF Lessons + Crop Stage Profile         │   │
@@ -59,25 +59,25 @@ SalinAI v6.0 is a **4-layer Proactive Intelligence System** that evolves from re
 │                          │                                  │
 │                          ▼                                  │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │              EVALUATOR AGENT (NEW — v6.0)            │   │
+│  │         EVALUATOR AGENT / FEEDBACK LOOP (v6.0)       │   │
 │  │                                                      │   │
 │  │  Triggered by: Farmer 👎 feedback with reason        │   │
 │  │  Task: Analyze mistake → Extract lesson →            │   │
 │  │         Save to MongoDB `lessons_learned`            │   │
-│  │  Model: SaoLa4-Small or Gemini Flash                 │   │
+│  │  Model: SaoLa4-Medium (FPT Cloud)                    │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 | Component | Role | Model |
 |---|---|---|
-| **Researcher Agent** | Query rewriting + Self-RAG evidence synthesis | SaoLa4-Small (FPT Cloud) |
-| **Orchestrator Agent** | Final decision + valve execution | SaoLa4-Medium (FPT Cloud) |
-| **Evaluator Agent** *(new)* | Mistake analysis + lesson extraction from RLHF | SaoLa4-Small / Gemini Flash |
-| **Embedding Engine** | Vector embedding for RAG | Gemini `text-embedding-004` |
-| **Retrieval Module** | MongoDB Atlas Vector Search | Atlas Search Index |
-| **Policy Memory** | Feedback → Lesson injection into Orchestrator prompt | MongoDB `agent_policy_memory` |
-| **RLHF Lessons Store** *(new)* | Structured lessons from Evaluator Agent | MongoDB `lessons_learned` |
+| **Researcher Agent** | RAG evidence synthesis → natural-language summary | SaoLa4-Small (FPT Cloud) |
+| **Orchestrator Agent** | Final decision + valve execution | **GLM-4.7 (FPT Cloud)** |
+| **Evaluator Agent** *(Feedback Loop)* | 👎 mistake analysis + lesson extraction (RLHF) | **SaoLa4-Medium (FPT Cloud)** |
+| **Embedding Engine** | Vector embedding for RAG | Gemini `gemini-embedding-001` |
+| **Retrieval Module** | MongoDB Atlas Vector Search (algorithm-based) | Atlas Vector Search |
+| **Policy Memory** | Compact feedback summary injected into Orchestrator | MongoDB `agent_policy_memory` |
+| **RLHF Lessons Store** | Structured lessons from Evaluator Agent | MongoDB `lessons_learned` |
 
 ### Layer C: Proactive Intelligence (NEW — v6.0)
 

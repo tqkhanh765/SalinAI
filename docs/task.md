@@ -91,18 +91,18 @@
 ## 🚀 Epic 2: Human-in-the-Loop (RLHF) & Evaluator Agent
 
 ### Backend
-- [ ] **[E2-B1]** Create `evaluatorAgentService.js` in `backend/services/ai/`:
+- [x] **[E2-B1]** Create `evaluatorAgentService.js` in `backend/services/ai/`:
   - Triggered by `POST /api/evaluate-feedback` with `{action_log_id, verdict: "incorrect", notes}`
   - Fetches the full `action_log` from Firebase + MongoDB for context
   - Invokes LLM with: action taken, sensor conditions, farmer's reason for rejection
   - Extracts structured lesson: `{ condition_pattern, action_taken, correct_action, lesson_text }`
   - Saves to MongoDB `lessons_learned` collection
-- [ ] **[E2-B2]** Create new Express route `POST /api/evaluate-feedback` in `routes/farm.js`
-- [ ] **[E2-B3]** Create new Express route `GET /api/lessons-learned` — returns top-10 latest lessons
-- [ ] **[E2-B4]** Update `policyLearningService.js` — `buildPolicyPromptBlock()`:
+- [x] **[E2-B2]** Create new Express route `POST /api/evaluate-feedback` in `routes/farm.js`
+- [x] **[E2-B3]** Create new Express route `GET /api/lessons-learned` — returns top-10 latest lessons
+- [x] **[E2-B4]** Update `policyLearningService.js` — `buildPolicyPromptBlock()`:
   - Fetch latest lessons from `lessons_learned` collection
   - Append as `[RLHF_MEMORY]` block below existing `[POLICY_MEMORY]` in the prompt
-- [ ] **[E2-B5]** Define MongoDB schema for `lessons_learned`:
+- [x] **[E2-B5]** Define MongoDB schema for `lessons_learned`:
   ```js
   {
     action_log_id: String,
@@ -116,13 +116,13 @@
   ```
 
 ### Frontend
-- [ ] **[E2-F1]** Add 👍 / 👎 icon buttons to each Action Log card in `FarmerDashboard.jsx`
-- [ ] **[E2-F2]** On 👎 click, open a modal:
+- [x] **[E2-F1]** Add 👍 / 👎 icon buttons to each Action Log card in `FarmerDashboard.jsx`
+- [x] **[E2-F2]** On 👎 click, open a modal:
   - Textarea: *"Tại sao quyết định này không đúng?"*
   - Dropdown: reason category (Sai thông tin thời tiết / Sai ngưỡng mặn / Sai giai đoạn cây / Khác)
   - Submit → `POST /api/evaluate-feedback`
-- [ ] **[E2-F3]** Show a toast: *"Cảm ơn! AI sẽ học từ phản hồi này."* after successful submission
-- [ ] **[E2-F4]** Add a "💡 Bài học gần đây" collapsible section at the bottom of the AI panel, fetching from `GET /api/lessons-learned`
+- [x] **[E2-F3]** Show a toast: *"Cảm ơn! AI sẽ học từ phản hồi này."* after successful submission
+- [x] **[E2-F4]** Add a "💡 Bài học gần đây" collapsible section at the bottom of the AI panel, fetching from `GET /api/lessons-learned`
 
 ---
 

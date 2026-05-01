@@ -470,10 +470,12 @@ ${mandatoryRetrieval.context}`,
                         ? (process.env.SAOLA4_SMALL_MODEL || "saola4-small")
                         : (process.env.RESEARCHER_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash"),
                 orchestrator_provider: String(process.env.AI_PROVIDER || "gemini").toLowerCase(),
-                orchestrator_model:
-                    String(process.env.AI_PROVIDER || "gemini").toLowerCase() === "saola4_medium"
-                        ? (process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium")
-                        : (process.env.GEMINI_MODEL || "gemini-2.5-flash"),
+                orchestrator_model: (() => {
+                    const p = String(process.env.AI_PROVIDER || "gemini").toLowerCase();
+                    if (p === "glm4")         return process.env.GLM4_MODEL || "GLM-4.7";
+                    if (p === "saola4_medium") return process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium";
+                    return process.env.GEMINI_MODEL || "gemini-2.5-flash";
+                })(),
             },
         });
 

@@ -217,7 +217,7 @@ async function buildPolicyPromptBlock() {
     })
     .join("\n");
 
-  return [
+  const policyBlock = [
     "\n\n[POLICY_MEMORY]",
     `SUMMARY: ${policy.summary}`,
     `STATS: reviewed=${stats.reviewed ?? 0}, correct=${stats.correct ?? 0}, incorrect=${stats.incorrect ?? 0}, accuracy=${stats.accuracy ?? "N/A"}%`,
@@ -225,7 +225,19 @@ async function buildPolicyPromptBlock() {
     "RECENT_FEEDBACK_CASES:",
     caseLines || "none",
   ].join("\n");
+
+  // Append RLHF lessons extracted by the Evaluator Agent (SAOLA4_MEDIUM)
+  let rlhfBlock = "";
+  try {
+    const { buildRLHFMemoryBlock } = require("./evaluatorAgentService");
+    rlhfBlock = await buildRLHFMemoryBlock(5);
+  } catch (_) {
+    // Non-fatal: RLHF lessons are supplementary context
+  }
+
+  return rlhfBlock ? `${policyBlock}\n\n${rlhfBlock}` : policyBlock;
 }
+
 
 module.exports = {
   normalizeVerdict,

@@ -15,6 +15,13 @@ router.patch("/api/crop-stage", farmController.updateCropStage);
 router.get("/api/ping-test", (req, res) => res.json({ message: "Active backend is here!", timestamp: new Date().toISOString() }));
 router.post("/api/override", farmController.overrideActuator);
 
+// ─── RLHF & Evaluator Agent (Epic 2) ─────────────────────────────────────────
+// Triggers SAOLA4_MEDIUM Evaluator Agent on negative feedback → saves lesson to MongoDB
+router.post("/api/evaluate-feedback", farmController.evaluateFeedback);
+// Returns top-N lessons extracted by Evaluator Agent (for Dashboard "💡 Bài học gần đây")
+router.get("/api/lessons-learned", farmController.getLessonsLearned);
+
+
 /**
  * GET /api/decision-details
  * Return formatted decision data for Dashboard

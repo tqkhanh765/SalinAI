@@ -113,6 +113,14 @@ export default function FarmerDashboard() {
   const [cropStageDraft, setCropStageDraft] = useState('VEGETATIVE');
   const [isCropStageUpdating, setIsCropStageUpdating] = useState(false);
 
+  // Epic 2 states
+  const [feedbackModal, setFeedbackModal] = useState(null); // { actionLogId: string }
+  const [feedbackReason, setFeedbackReason] = useState('');
+  const [feedbackCategory, setFeedbackCategory] = useState('Sai ngưỡng mặn');
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+  const [lessonsLearned, setLessonsLearned] = useState([]);
+  const [isLessonsExpanded, setIsLessonsExpanded] = useState(false);
+
   const CROP_STAGE_OPTIONS = [
     { value: 'GERMINATION', label: 'Nảy mầm' },
     { value: 'SEEDLING', label: 'Cây con' },
@@ -196,13 +204,79 @@ export default function FarmerDashboard() {
       }
     };
 
+    const fetchLessons = async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/lessons-learned`);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (mounted && json?.lessons) {
+          setLessonsLearned(json.lessons);
+        }
+      } catch {}
+    };
+
     fetchDecisionDetails();
+    fetchLessons();
     const interval = setInterval(fetchDecisionDetails, 5000);
+    const intervalLessons = setInterval(fetchLessons, 15000);
     return () => {
       mounted = false;
       clearInterval(interval);
+      clearInterval(intervalLessons);
     };
   }, []);
+
+  const submitPositiveFeedback = async (actionLogId) => {
+    try {
+      await fetch(`${API_BASE_URL}/api/decision-feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action_log_id: actionLogId, verdict: 'correct' }),
+      });
+      setNotification({ type: 'success', text: 'Cảm ơn! Phản hồi tích cực đã được ghi nhận.' });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const submitNegativeFeedback = async () => {
+    if (!feedbackModal?.actionLogId) return;
+    setIsSubmittingFeedback(true);
+    try {
+      // 1. Triggers Evaluator Agent
+      await fetch(`${API_BASE_URL}/api/evaluate-feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action_log_id: feedbackModal.actionLogId, 
+          verdict: 'incorrect', 
+          notes: `[${feedbackCategory}] ${feedbackReason}` 
+        }),
+      });
+      
+      // 2. Refreshes policy memory (metrics)
+      await fetch(`${API_BASE_URL}/api/decision-feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          action_log_id: feedbackModal.actionLogId, 
+          verdict: 'incorrect', 
+          notes: `[${feedbackCategory}] ${feedbackReason}` 
+        }),
+      });
+
+      setFeedbackModal(null);
+      setFeedbackReason('');
+      setNotification({ type: 'success', text: 'Cảm ơn! AI sẽ học từ phản hồi này.' });
+      setTimeout(() => setNotification(null), 3000);
+    } catch (error) {
+      setNotification({ type: 'warning', text: 'Không thể gửi phản hồi: ' + error.message });
+      setTimeout(() => setNotification(null), 3000);
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  };
 
   const handleControlModeChange = async (nextMode) => {
     setUiControlMode(nextMode);
@@ -686,6 +760,20 @@ export default function FarmerDashboard() {
                     <p className="mt-2 text-[11px] text-gray-500">
                       Loại hành động: {formatActionLabel(log.action)}
                     </p>
+
+                    {String(log.actor).toUpperCase().includes('AI') && (
+                      <div className="mt-3 flex items-center gap-2 pt-2 border-t" style={{ borderColor: '#1F6F5F10' }}>
+                        <span className="text-[11px] font-semibold text-gray-500">Quyết định này có đúng không?</span>
+                        <button 
+                          onClick={() => submitPositiveFeedback(log.id)}
+                          className="px-2 py-1 bg-green-50 text-green-700 rounded text-[11px] font-bold hover:bg-green-100 transition-colors"
+                        >👍 Đúng</button>
+                        <button 
+                          onClick={() => setFeedbackModal({ actionLogId: log.id })}
+                          className="px-2 py-1 bg-red-50 text-red-700 rounded text-[11px] font-bold hover:bg-red-100 transition-colors"
+                        >👎 Sai</button>
+                      </div>
+                    )}
                   </div>
                 ))}
                 {!actionLogs.length && (
@@ -694,6 +782,46 @@ export default function FarmerDashboard() {
               </div>
             </div>
           </div>
+
+          {/* 💡 Bài học gần đây Panel */}
+          {lessonsLearned.length > 0 && (
+            <div className="mt-4 border-t pt-4" style={{ borderColor: '#1F6F5F10' }}>
+              <button 
+                onClick={() => setIsLessonsExpanded(!isLessonsExpanded)}
+                className="flex items-center justify-between w-full text-left"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">💡</span>
+                  <span className="font-bold text-sm" style={{ color: '#1F6F5F' }}>BÀI HỌC AI ĐÃ HỌC TỪ PHẢN HỒI NÔNG DÂN</span>
+                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">{lessonsLearned.length} bài học</span>
+                </div>
+                <svg className={`w-5 h-5 text-gray-500 transition-transform ${isLessonsExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+              </button>
+              
+              {isLessonsExpanded && (
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {lessonsLearned.map((lesson, idx) => (
+                    <div key={idx} className="bg-gray-50 border border-gray-100 p-3 rounded-xl shadow-sm">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs font-medium text-gray-500">{lesson.created_at_vn}</span>
+                        <span className="text-[10px] bg-[#1F6F5F15] text-[#1F6F5F] px-1.5 py-0.5 rounded font-bold uppercase">{lesson.feedback_source || 'AI'}</span>
+                      </div>
+                      <p className="text-sm font-semibold text-gray-800 mb-2 leading-relaxed">{lesson.lesson_text}</p>
+                      <div className="flex items-center gap-2 text-[11px] mb-2">
+                        <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">Thực tế: {lesson.action_taken}</span>
+                        <span className="text-gray-400">→</span>
+                        <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">Nên là: {lesson.correct_action}</span>
+                      </div>
+                      <div className="bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
+                        <p className="text-[11px] text-gray-600 font-medium">🗣️ Lý do từ nông dân:</p>
+                        <p className="text-[11px] text-gray-800 mt-0.5 italic">"{lesson.farmer_notes}"</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Field Map Section ─────────────────────────────────────────── */}
@@ -792,6 +920,64 @@ export default function FarmerDashboard() {
           </div>
         </div>
 
+        {/* ── Feedback Modal (Epic 2) ─────────────────────────── */}
+        {feedbackModal && createPortal(
+          <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+              <div className="p-6 border-b border-gray-100">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center bg-red-50">
+                    <span className="text-lg">👎</span>
+                  </div>
+                  <h3 className="text-lg font-bold text-gray-900">Phản hồi quyết định sai</h3>
+                </div>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Phân loại lỗi</label>
+                    <select 
+                      value={feedbackCategory}
+                      onChange={e => setFeedbackCategory(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-[#1F6F5F] outline-none bg-gray-50 font-medium"
+                    >
+                      <option value="Sai ngưỡng mặn">Sai ngưỡng mặn</option>
+                      <option value="Sai thông tin thời tiết">Sai thông tin thời tiết</option>
+                      <option value="Sai giai đoạn cây">Sai giai đoạn cây</option>
+                      <option value="Khác">Lý do khác</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-1">Tại sao quyết định này không đúng?</label>
+                    <textarea 
+                      value={feedbackReason}
+                      onChange={e => setFeedbackReason(e.target.value)}
+                      placeholder="Giải thích lý do thực tế tại ruộng để AI học hỏi..."
+                      className="w-full border border-gray-200 rounded-xl p-3 text-sm min-h-[100px] focus:ring-2 focus:ring-[#1F6F5F] outline-none bg-gray-50 resize-none font-medium"
+                    ></textarea>
+                  </div>
+                </div>
+              </div>
+              <div className="flex bg-gray-50">
+                <button
+                  onClick={() => { setFeedbackModal(null); setFeedbackReason(''); }}
+                  className="flex-1 py-4 text-sm font-bold text-gray-500 hover:bg-gray-100 transition-colors border-r border-gray-100"
+                >
+                  Hủy
+                </button>
+                <button
+                  onClick={submitNegativeFeedback}
+                  disabled={isSubmittingFeedback || !feedbackReason.trim()}
+                  className="flex-1 py-4 text-sm font-bold text-white transition-colors disabled:opacity-50"
+                  style={{ background: '#EB5757' }}
+                >
+                  {isSubmittingFeedback ? 'Đang gửi...' : 'Gửi phản hồi'}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
       </div>
     </div>
   );

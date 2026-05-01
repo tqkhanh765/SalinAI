@@ -14,6 +14,16 @@ function createOrchestrationLLM() {
     const provider = normalizeOrchestratorProvider();
     const temperature = Number(process.env.LLM_TEMPERATURE || "0.2");
 
+    // GLM-4.7 / FPT Cloud — primary Orchestration Agent
+    if (provider === "glm4") {
+        const apiKey = process.env.GLM4_API_KEY;
+        const baseURL = process.env.GLM4_BASE_URL;
+        const model = process.env.GLM4_MODEL || "GLM-4.7";
+        if (!apiKey || !baseURL) throw new Error("Missing GLM4 config: GLM4_API_KEY and GLM4_BASE_URL are required");
+        return new ChatOpenAI({ model, apiKey, temperature, configuration: { baseURL } });
+    }
+
+    // SAOLA4_MEDIUM — kept for backward compatibility (now used as Feedback/Evaluator Agent)
     if (provider === "saola4_medium") {
         const apiKey = process.env.SAOLA4_MEDIUM_API_KEY;
         const baseURL = process.env.SAOLA4_MEDIUM_BASE_URL;
@@ -22,6 +32,7 @@ function createOrchestrationLLM() {
         return new ChatOpenAI({ model, apiKey, temperature, configuration: { baseURL } });
     }
 
+    // Gemini — fallback provider
     return new ChatGoogleGenerativeAI({
         model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
         apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,

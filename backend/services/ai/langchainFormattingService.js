@@ -1,3 +1,5 @@
+const { buildOrchestratorRetryPrompt } = require("../../agent/prompt");
+
 function createLangchainFormattingService(config = {}) {
     const maxInsightChars = Math.max(50, parseInt(config.maxInsightChars || "800", 10));
     const maxFullOutputChars = Math.max(200, parseInt(config.maxFullOutputChars || "12000", 10));
@@ -161,21 +163,6 @@ function createLangchainFormattingService(config = {}) {
         return "Điều kiện chưa yêu cầu thay đổi trạng thái van ở thời điểm này.";
     };
 
-    const buildOrchestratorRetryPrompt = ({ attempt, maxAttempts, issue, lastOutput }) => {
-        const outputPreview = compactText(lastOutput || "", 500);
-        return `Lượt ${attempt}/${maxAttempts} chưa tạo được hành động thực thi (${issue}). Hãy thử lại ngay và BẮT BUỘC đưa ra quyết định cuối cùng.
-        
-Yêu cầu nghiêm ngặt:
-1. GỌI TOOL: Hãy gọi tool 'execute_valve_control' với các tham số đúng.
-2. HOẶC NÊU RÕ QUYẾT ĐỊNH: Nếu không gọi được tool, bạn PHẢI viết rõ "Quyết định: MỞ" hoặc "Quyết định: ĐÓNG" trong văn bản trả lời.
-
-Quy tắc tham số tool:
-- state: "OPEN" | "CLOSED" | "NO_ACTION".
-- reason: 1 câu ngắn gọn bằng tiếng Việt.
-- source_ids: danh sách nguồn đã tham khảo.
-
-Nội dung bạn vừa trả lời bị lỗi: "${outputPreview}"`;
-    };
 
     const ensureResearcherCitations = (text, sourceIds = []) => {
         const normalized = String(text || "").trim();
