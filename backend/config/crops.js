@@ -10,8 +10,9 @@ const CROP_STAGES = [
     "GERMINATION",
     "SEEDLING",
     "VEGETATIVE",
-    "FLOWERING", // Added matching outcomeService
-    "HARVEST",   // Added matching outcomeService
+    "FLOWERING",
+    "FRUITING",
+    "HARVEST",
 ];
 
 const DEFAULT_STAGE_PROFILE = {
@@ -48,6 +49,12 @@ const CROP_STAGE_PROFILES = {
         salinityMaxSafe: 1.5,
         salinityDeltaTolerance: 0.3,
         weights: { moisture: 0.78, salinity: 0.22 },
+    },
+    FRUITING: {
+        moistureTarget: { min: 45, max: 80, ideal: 64 },
+        salinityMaxSafe: 2.0,
+        salinityDeltaTolerance: 0.3,
+        weights: { moisture: 0.75, salinity: 0.25 },
     },
     HARVEST: {
         moistureTarget: { min: 35, max: 70, ideal: 52 },

@@ -3,6 +3,7 @@ import { useRealtimeFarmState } from '../hooks/useRealtimeFarmState';
 import { API_BASE_URL } from '../lib/apiClient';
 import StreamingText from '../components/StreamingText';
 import { initSocket } from '../services/socket';
+import CropStageIllustration from '../components/visuals/CropStageIllustration';
 
 // ─── Helper sub-components ─────────────────────────────────────────────────────
 
@@ -382,6 +383,11 @@ export default function SimulatorPage() {
                   </span>
                 </span>
               </div>
+            </div>
+
+            {/* Epic 5: Crop Stage Illustration */}
+            <div className="mt-2">
+              <CropStageIllustration stage={liveCropStage} />
             </div>
           </div>
 

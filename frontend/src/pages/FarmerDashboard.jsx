@@ -20,6 +20,9 @@ import IrrigationPlanPanel from '../components/IrrigationPlanPanel';
 import StreamingText from '../components/StreamingText';
 import { initSocket } from '../services/socket';
 import toast from 'react-hot-toast';
+import WeatherAmbience from '../components/visuals/WeatherAmbience';
+import WaterFlowSVG from '../components/visuals/WaterFlowSVG';
+import CropStageIllustration from '../components/visuals/CropStageIllustration';
 
 // Fix leaflet default icon
 const DefaultIcon = L.icon({
@@ -437,8 +440,11 @@ export default function FarmerDashboard() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8" style={{ background: '#EEEEEE' }}>
-      <div className="max-w-5xl mx-auto space-y-5">
+    <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8 relative" style={{ background: '#EEEEEE' }}>
+      {/* Epic 5: Dynamic Weather Background */}
+      <WeatherAmbience weatherCode={sensorData.weather_code || 0} />
+
+      <div className="max-w-5xl mx-auto space-y-5 relative z-10">
 
         {/* ── Header ────────────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
@@ -472,34 +478,41 @@ export default function FarmerDashboard() {
             <StatCard icon={WeatherIcon} label="Điều Kiện Trời" value={readings.weather} unit="" color="#1F6F5F" bg="#1F6F5F20" />
           </div>
 
-        <div className="mt-4 bg-white rounded-2xl p-4 shadow-sm border" style={{ borderColor: '#1F6F5F20' }}>
-            <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
-              <div className="md:flex-1">
-                <p className="text-sm font-bold" style={{ color: '#1F6F5F' }}> CHỌN GIAI ĐOẠN PHÁT TRIỂN CỦA CÂY</p>
-                <p className="text-xs text-gray-500 mt-1">Chọn giai đoạn sinh trưởng để AI đánh giá ngưỡng mục tiêu phù hợp hơn.</p>
+        <div className="mt-4 bg-white rounded-2xl p-4 shadow-sm border overflow-hidden" style={{ borderColor: '#1F6F5F20' }}>
+            <div className="flex flex-col md:flex-row md:items-center gap-5">
+              {/* Epic 5: Visual Crop Illustration on Dashboard */}
+              <div className="w-full md:w-48 shrink-0">
+                <CropStageIllustration stage={readings.cropStage} />
               </div>
 
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <select
-                  value={cropStageDraft}
-                  onChange={(e) => setCropStageDraft(String(e.target.value || 'VEGETATIVE').toUpperCase())}
-                  disabled={isCropStageUpdating}
-                  className="h-10 rounded-xl border px-3 text-sm font-semibold text-[#1F6F5F] bg-white min-w-45"
-                  style={{ borderColor: '#1F6F5F33', fontFamily: 'var(--font-vn)' }}
-                >
-                  {CROP_STAGE_OPTIONS.map((stage) => (
-                    <option key={stage.value} value={stage.value}>{stage.label}</option>
-                  ))}
-                </select>
+              <div className="flex-1 flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+                <div className="md:flex-1">
+                  <p className="text-sm font-bold" style={{ color: '#1F6F5F' }}> CHỌN GIAI ĐOẠN PHÁT TRIỂN CỦA CÂY</p>
+                  <p className="text-xs text-gray-500 mt-1">Chọn giai đoạn sinh trưởng để AI đánh giá ngưỡng mục tiêu phù hợp hơn.</p>
+                </div>
 
-                <button
-                  onClick={handleCropStageUpdate}
-                  disabled={isCropStageUpdating || cropStageDraft === String(readings.cropStage || '').toUpperCase()}
-                  className="h-10 px-4 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                  style={{ background: '#1F6F5F', fontFamily: 'var(--font-vn)' }}
-                >
-                  {isCropStageUpdating ? 'Đang lưu...' : 'Lưu Giai Đoạn'}
-                </button>
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <select
+                    value={cropStageDraft}
+                    onChange={(e) => setCropStageDraft(String(e.target.value || 'VEGETATIVE').toUpperCase())}
+                    disabled={isCropStageUpdating}
+                    className="h-10 rounded-xl border px-3 text-sm font-semibold text-[#1F6F5F] bg-white min-w-45"
+                    style={{ borderColor: '#1F6F5F33', fontFamily: 'var(--font-vn)' }}
+                  >
+                    {CROP_STAGE_OPTIONS.map((stage) => (
+                      <option key={stage.value} value={stage.value}>{stage.label}</option>
+                    ))}
+                  </select>
+
+                  <button
+                    onClick={handleCropStageUpdate}
+                    disabled={isCropStageUpdating || cropStageDraft === String(readings.cropStage || '').toUpperCase()}
+                    className="h-10 px-4 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    style={{ background: '#1F6F5F', fontFamily: 'var(--font-vn)' }}
+                  >
+                    {isCropStageUpdating ? 'Đang lưu...' : 'Lưu Giai Đoạn'}
+                  </button>
+                </div>
               </div>
             </div>
         </div>
@@ -591,6 +604,11 @@ export default function FarmerDashboard() {
                 </p>
               </div>
             </button>
+
+            {/* Epic 5: Water Flow Visualization */}
+            <div className="shrink-0 w-full md:w-32">
+              <WaterFlowSVG isOpen={valveOpen} />
+            </div>
 
             {/* Options Panel (Right Side) */}
             <div className="flex-1 w-full space-y-4">
