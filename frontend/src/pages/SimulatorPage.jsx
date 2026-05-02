@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useRealtimeFarmState } from '../hooks/useRealtimeFarmState';
 import { API_BASE_URL } from '../lib/apiClient';
 import StreamingText from '../components/StreamingText';
+import { initSocket } from '../services/socket';
 
 // ─── Helper sub-components ─────────────────────────────────────────────────────
 
@@ -68,7 +69,7 @@ const WeatherIcon = ({ condition }) => {
   return icons[condition] || icons.Sunny;
 };
 
-const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading }) => {
+const ValveStatusCard = ({ valveOpen, isLoading }) => {
   return (
     <div
       className="relative flex flex-col items-center justify-center rounded-2xl p-6 md:p-8 overflow-hidden transition-all duration-700"
@@ -144,15 +145,21 @@ const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading
 
 export default function SimulatorPage() {
   const { actuator, aiStatus, actionLogs, sensorData } = useRealtimeFarmState();
-  const [decisionDetails, setDecisionDetails] = useState(null);
+  const [_decisionDetails, setDecisionDetails] = useState(null);
   const [typingPhase, setTypingPhase] = useState(0);
 
+  useEffect(() => {
+    initSocket();
+  }, []);
+
   // Reset typing phase when a new log appears
+  const latestActionId = actionLogs.length > 0 ? actionLogs[0].id : null;
   useEffect(() => {
     if (actionLogs.length > 0) {
-      setTypingPhase(0);
+      // Defer to avoid synchronous state update inside effect
+      setTimeout(() => setTypingPhase(0), 0);
     }
-  }, [actionLogs.length > 0 ? actionLogs[0].id : null]);
+  }, [latestActionId]);
 
   // Fetch decision details for display
   useEffect(() => {
@@ -252,32 +259,7 @@ export default function SimulatorPage() {
 
   const isStepActive = (trace = [], phase) => Array.isArray(trace) && trace.some((t) => t?.phase === phase);
 
-  const formatTracePhase = (phase) => {
-    const map = {
-      pipeline: 'Pipeline',
-      researcher: 'Researcher',
-      retrieval: 'Retrieval',
-      orchestrator: 'Orchestrator',
-    };
-    return map[phase] || 'Agent';
-  };
-
-  const formatTraceEvent = (event) => {
-    const map = {
-      start: 'Bắt đầu pipeline',
-      policy_memory: 'Nạp policy memory',
-      iteration: 'Bước suy luận',
-      tool_calls: 'Gọi tool',
-      rag_result: 'Kết quả truy xuất',
-      history_lookup: 'Đọc lịch sử hành động',
-      summary: 'Tạo tóm tắt',
-      parsed_text_decision: 'Đọc quyết định từ text',
-      no_tool_call: 'Không có tool_call',
-      decision: 'Thực thi quyết định',
-      error: 'Lỗi',
-    };
-    return map[event] || event || 'event';
-  };
+  // Removed unused trace formatting helpers to satisfy lint
 
   const buildReasoningSummary = (log = {}) => {
     const action = String(log?.action || 'NO_ACTION').toUpperCase();
@@ -672,6 +654,7 @@ export default function SimulatorPage() {
                       startTrigger={idx === 0 ? typingPhase >= 2 : true}
                       onComplete={() => setTypingPhase(3)}
                       speed={10}
+                      streamMode={isProcessing && idx === 0}
                     />
                   </div>
                 </div>
@@ -686,6 +669,7 @@ export default function SimulatorPage() {
                       startTrigger={idx === 0 ? typingPhase >= 3 : true}
                       onComplete={() => setTypingPhase(4)}
                       speed={20} 
+                      streamMode={isProcessing && idx === 0}
                     />
                   </div>
                 </div>

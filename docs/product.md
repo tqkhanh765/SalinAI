@@ -61,7 +61,7 @@ SalinAI is an **Agentic, Proactive, and Self-Learning irrigation intelligence sy
 
 **v6 Solution:**
 - **SSE Token Streaming:** The backend streams LangChain output tokens via Server-Sent Events (SSE) to the frontend as they are generated.
-- **Typewriter UI:** The `BehindTheScenes.jsx` panel renders the `[LUẬN GIẢI CỦA AI]` text character-by-character, exactly like ChatGPT — creating a sense of live, transparent reasoning.
+- **Typewriter UI:** The streaming reasoning panel renders the `[LUẬN GIẢI CỦA AI]` text character-by-character, exactly like ChatGPT — creating a sense of live, transparent reasoning.
 - **Phase Indicators:** Stream is divided into labeled phases: `[🔍 Researcher đang phân tích...]` → `[📋 Tổng hợp bằng chứng...]` → `[⚙️ Orchestrator đang quyết định...]` → `[✅ Hoàn tất]`.
 
 ---

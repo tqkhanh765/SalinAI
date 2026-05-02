@@ -3,6 +3,7 @@ const router = express.Router();
 const farmController = require("../controllers/farmController");
 const { formatDecisionDisplay } = require("../services/ai/explanationService");
 const db = require("../config/firebase");
+const { subscribeAiStream, getCurrentAiStream } = require("../services/core/aiStreamService");
 
 router.get("/api/farm-state", farmController.getFarmState);
 router.get("/api/farm-stream", farmController.streamFarmState);
@@ -14,6 +15,51 @@ router.patch("/api/control-mode", farmController.updateControlMode);
 router.patch("/api/crop-stage", farmController.updateCropStage);
 router.get("/api/ping-test", (req, res) => res.json({ message: "Active backend is here!", timestamp: new Date().toISOString() }));
 router.post("/api/override", farmController.overrideActuator);
+
+router.get("/api/ai-stream", (req, res) => {
+    res.status(200);
+    res.set({
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+    });
+
+    if (typeof res.flushHeaders === "function") {
+        res.flushHeaders();
+    }
+
+    const writeEvent = (eventName, payload) => {
+        res.write(`event: ${eventName}\n`);
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    writeEvent("snapshot", getCurrentAiStream() || { status: "idle" });
+
+    const keepAlive = setInterval(() => {
+        res.write(": ping\n\n");
+    }, 15000);
+
+    const unsubscribe = subscribeAiStream((event) => {
+        if (!event || !event.type) return;
+
+        if (event.type === "done") {
+            writeEvent("done", event.payload || {});
+            res.write("data: [DONE]\n\n");
+            clearInterval(keepAlive);
+            unsubscribe();
+            res.end();
+            return;
+        }
+
+        writeEvent(event.type, event.payload || {});
+    }, { replay: false });
+
+    req.on("close", () => {
+        clearInterval(keepAlive);
+        unsubscribe();
+    });
+});
 
 // ─── RLHF & Evaluator Agent (Epic 2) ─────────────────────────────────────────
 // Triggers SAOLA4_MEDIUM Evaluator Agent on negative feedback → saves lesson to MongoDB

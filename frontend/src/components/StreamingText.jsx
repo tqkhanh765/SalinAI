@@ -33,9 +33,12 @@ const StreamingText = ({
   useEffect(() => {
     if (!streamMode || !enabled) return;
 
-    setDisplayedText("");
-    setCurrentStatus("Đang khởi động pipeline...");
-    setIsTyping(true);
+    // Defer initial state updates to avoid synchronous setState-in-effect warnings
+    const initHandle = setTimeout(() => {
+      setDisplayedText("");
+      setCurrentStatus("Đang khởi động pipeline...");
+      setIsTyping(true);
+    }, 0);
 
     const unsubscribeToken = onAiToken(({ token }) => {
       // Once we get real tokens, clear the status placeholder
@@ -58,6 +61,7 @@ const StreamingText = ({
     return () => {
       unsubscribeToken();
       unsubscribeStatus();
+      clearTimeout(initHandle);
     };
   }, [streamMode, enabled]);
 
@@ -66,21 +70,27 @@ const StreamingText = ({
     if (streamMode) return; // Skip if in streaming mode
 
     if (!enabled) {
-      setDisplayedText(text || "");
-      setIsTyping(false);
+      setTimeout(() => {
+        setDisplayedText(text || "");
+        setIsTyping(false);
+      }, 0);
       return;
     }
 
     if (!startTrigger) {
-      setDisplayedText("");
-      setIsTyping(false);
+      setTimeout(() => {
+        setDisplayedText("");
+        setIsTyping(false);
+      }, 0);
       return;
     }
 
-    setDisplayedText("");
-    setIsTyping(true);
-    indexRef.current = 0;
-    
+    // Defer initial typing start to avoid cascading renders
+    setTimeout(() => {
+      setDisplayedText("");
+      setIsTyping(true);
+      indexRef.current = 0;
+    }, 0);
     if (timerRef.current) clearInterval(timerRef.current);
 
     const fullText = text || "";

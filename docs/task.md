@@ -156,17 +156,17 @@
 ## 🚀 Epic 4: AI Streaming UX (Server-Sent Events)
 
 ### Backend
-- [ ] **[E4-B1]** Create `runAgentStreaming()` function in `backend/agent/langchain.js`:
+- [x] **[E4-B1]** Create `runAgentStreaming()` function in `backend/agent/langchain.js`:
   - Accepts `(sensorData, res)` where `res` is the Express response object
   - Uses LangChain's `stream()` method instead of `invoke()`
   - Writes SSE events: `data: {"phase": "researcher", "token": "..."}\n\n`
   - Sends phase markers: `data: {"phase": "start"}\n\n`, `data: {"phase": "done"}\n\n`
-- [ ] **[E4-B2]** Add `GET /api/ai-stream` endpoint to `routes/farm.js`:
+- [x] **[E4-B2]** Add `GET /api/ai-stream` endpoint to `routes/farm.js`:
   - Sets headers: `Content-Type: text/event-stream`, `Cache-Control: no-cache`
   - Only streams the LAST triggered reasoning session (or queues if busy)
   - On complete, sends `data: [DONE]\n\n`
-- [ ] **[E4-B3]** Ensure `farmFirebaseWatcher.js` stores streaming state so `/api/ai-stream` can tap into the active run
-- [ ] **[E4-B4]** Define SSE event schema:
+- [x] **[E4-B3]** Ensure `farmFirebaseWatcher.js` stores streaming state so `/api/ai-stream` can tap into the active run
+- [x] **[E4-B4]** Define SSE event schema:
   ```
   data: {"phase": "researcher", "event": "thinking", "token": "Đang phân tích bằng chứng..."}
   data: {"phase": "retrieval", "event": "rag_hit", "count": 3}
@@ -175,11 +175,11 @@
   ```
 
 ### Frontend
-- [ ] **[E4-F1]** Create `useAIStream.js` hook:
+- [x] **[E4-F1]** Create `useAIStream.js` hook:
   - Opens `EventSource('/api/ai-stream')` when `aiStatus.is_processing === true`
   - Accumulates tokens per phase into state
   - Closes stream on `[DONE]` event
-- [ ] **[E4-F2]** Refactor `BehindTheScenes.jsx` (or equivalent reasoning panel):
+- [x] **[E4-F2]** Implement streaming reasoning panel (typewriter UI):
   - Render accumulated tokens with typewriter effect (`StreamingText.jsx` component already exists — reuse it)
   - Show phase label above streaming text: `🔍 Researcher` → `📋 Tổng hợp` → `⚙️ Orchestrator` → `✅ Hoàn tất`
   - Phase label animates with a pulsing dot while active

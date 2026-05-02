@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, Suspense, lazy } from 'react';
 import Navbar from './components/Navbar';
-import FarmerDashboard from './pages/FarmerDashboard';
-import SimulatorPage from './pages/SimulatorPage';
+const FarmerDashboard = lazy(() => import('./pages/FarmerDashboard'));
+const SimulatorPage = lazy(() => import('./pages/SimulatorPage'));
 import './index.css';
 import { Toaster } from 'react-hot-toast';
 
@@ -26,10 +26,14 @@ function App() {
       <Navbar activePage={activePage} setActivePage={setActivePage} />
       <main>
         <div style={{ display: activePage === 'dashboard' ? 'block' : 'none' }}>
-          <FarmerDashboard />
+          <Suspense fallback={<div>Đang tải trang...</div>}>
+            <FarmerDashboard />
+          </Suspense>
         </div>
         <div style={{ display: activePage === 'simulator' ? 'block' : 'none' }}>
-          <SimulatorPage />
+          <Suspense fallback={<div>Đang tải trang...</div>}>
+            <SimulatorPage />
+          </Suspense>
         </div>
       </main>
     </div>

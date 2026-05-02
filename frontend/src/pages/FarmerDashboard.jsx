@@ -32,21 +32,7 @@ const DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-// Custom Icons for valves
-const createCustomIcon = (isOpen, isActive) => {
-  return L.divIcon({
-    className: 'custom-valve-icon',
-    html: `<div style="
-      background-color: ${isOpen ? '#2FA084' : '#1F6F5F'}; 
-      border: ${isActive ? '3px solid #F2C94C' : '2px solid white'}; 
-      width: 20px; 
-      height: 20px; 
-      border-radius: 50%; 
-      box-shadow: 0 0 10px rgba(0,0,0,0.5);
-    "></div>`,
-    iconAnchor: [10, 10],
-  });
-};
+// (removed unused createCustomIcon) — kept Leaflet DefaultIcon only
 
 const INITIAL_VALVES = [
   { id: 'VAN_CHINH_01', name: 'Van Chính Đầu Nguồn', lat: 10.7618, lng: 106.660, open: true },
@@ -104,13 +90,13 @@ export default function FarmerDashboard() {
     setValveState: setRemoteValveState,
     setCropStage: setRemoteCropStage,
   } = useRealtimeFarmState();
-  const [controlScope, setControlScope] = useState('single'); // 'all' | 'single'
-  const [activeValveId, setActiveValveId] = useState(INITIAL_VALVES[0].id);
+  const [controlScope, _setControlScope] = useState('single'); // 'all' | 'single'
+  const [activeValveId, _setActiveValveId] = useState(INITIAL_VALVES[0].id);
 
   const [isToggling, setIsToggling] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [uiControlMode, setUiControlMode] = useState('manual');
-  const [isModeUpdating, setIsModeUpdating] = useState(false);
+  const [_isModeUpdating, setIsModeUpdating] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [decisionDetails, setDecisionDetails] = useState(null);
   const [cropStageDraft, setCropStageDraft] = useState('VEGETATIVE');
@@ -153,7 +139,7 @@ export default function FarmerDashboard() {
 
   // Derived logical states based on Scope
   const valveOpen = realtimeValveOpen;
-  const controlledValveCount = controlScope === 'all' ? INITIAL_VALVES.length : 1;
+  const _controlledValveCount = controlScope === 'all' ? INITIAL_VALVES.length : 1;
   // Use the real water_flow value from the Wokwi ESP32 sensor (via Firebase → wokwi-poller → SSE)
   const currentFlowRate = valveOpen
     ? (Number(sensorData.water_flow ?? 0)).toFixed(1)
@@ -203,15 +189,16 @@ export default function FarmerDashboard() {
 
     const fetchDecisionDetails = async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/decision-details`);
-        if (!res.ok) return;
-        const json = await res.json();
-        if (mounted && json?.data) {
-          setDecisionDetails(json.data);
+          const res = await fetch(`${API_BASE_URL}/api/decision-details`);
+          if (!res.ok) return;
+          const json = await res.json();
+          if (mounted && json?.data) {
+            setDecisionDetails(json.data);
+          }
+        } catch (err) {
+          // Keep dashboard usable when the details endpoint is temporarily unavailable.
+          console.debug('[Dashboard] decision-details fetch failed:', err?.message || err);
         }
-      } catch {
-        // Keep dashboard usable when the details endpoint is temporarily unavailable.
-      }
     };
 
     const fetchLessons = async () => {
@@ -222,7 +209,9 @@ export default function FarmerDashboard() {
         if (mounted && json?.lessons) {
           setLessonsLearned(json.lessons);
         }
-      } catch {}
+      } catch (err) {
+        console.debug('[Dashboard] lessons fetch failed:', err?.message || err);
+      }
     };
 
     fetchDecisionDetails();
@@ -745,6 +734,8 @@ export default function FarmerDashboard() {
               )}
             </div>
           )}
+
+          {/* BehindTheScenes panel removed per user request */}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="rounded-xl border p-3" style={{ borderColor: '#1F6F5F20' }}>

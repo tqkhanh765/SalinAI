@@ -93,7 +93,7 @@ SalinAI v6.0 is a **4-layer Proactive Intelligence System** that evolves from re
 |---|---|---|
 | **SSE Token Stream** | `EventSource` / `res.write()` | Streams LangChain tokens from backend → frontend in real-time |
 | **Farmer Dashboard** | React (Vite) | Realtime sensor cards, valve control, 3-day forecast panel |
-| **Streaming Reasoning Panel** | `BehindTheScenes.jsx` | Typewriter rendering of AI reasoning phases |
+| **Streaming Reasoning Panel** | SSE + React (streaming reasoning panel) | Typewriter rendering of AI reasoning phases |
 | **Nature Animations** | CSS/SVG | Water flow, weather ambience, crop stage transitions |
 | **Actuator Control** | Firebase RTDB | `SalinAI/actuator/valve_state` polled by ESP32 (Eager Poll) |
 

@@ -29,6 +29,11 @@ const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE, logActionWithPrediction } = 
 const { buildPolicyPromptBlock } = require("../services/ai/policyLearningService");
 const { createAgentUtilsService } = require("../services/ai/agentUtilsService");
 const { emitToken, emitAiStatus } = require("../services/core/socketService");
+const {
+    startAiStreamSession,
+    completeAiStreamSession,
+    failAiStreamSession,
+} = require("../services/core/aiStreamService");
 
 const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS || "2", 10));
 const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "3", 10));
@@ -614,9 +619,12 @@ async function runAgentStreaming(sensorData, triggerReason = "") {
     const { salinity, moisture, crop_stage, external_forecast } = sensorData;
     const mongoDb = getDb();
     if (!mongoDb) {
+        failAiStreamSession("MongoDB not connected");
         emitAiStatus("error", { message: "MongoDB not connected" });
         return runAgent(sensorData, triggerReason);
     }
+
+    startAiStreamSession({ sensorData, triggerReason });
 
     emitAiStatus("start", { phase: "pipeline" });
 
@@ -746,14 +754,22 @@ Báo cáo Researcher: ${researcherSummary}
         let gatheredDetailedAnalysis = "";
 
         try {
+            let tokenCount = 0;
             for await (const chunk of stream) {
                 if (chunk.content) {
                     const token = typeof chunk.content === "string" ? chunk.content : utils.toText(chunk.content);
                     gatheredDetailedAnalysis += token;
                     emitToken(token, "orchestrator");
-                    fbdb.ref("SalinAI/ai_status").update({ last_reasoning: gatheredDetailedAnalysis }).catch(() => {});
+                    
+                    tokenCount++;
+                    // Chỉ update Firebase mỗi 15 tokens để tránh spam database gây rate-limit hoặc nghẽn cổ chai
+                    if (tokenCount % 15 === 0) {
+                        fbdb.ref("SalinAI/ai_status").update({ last_reasoning: gatheredDetailedAnalysis }).catch(() => {});
+                    }
                 }
             }
+            // Đảm bảo update lần cuối khi stream kết thúc
+            fbdb.ref("SalinAI/ai_status").update({ last_reasoning: gatheredDetailedAnalysis }).catch(() => {});
         } catch (streamErr) {
             throw streamErr;
         }
@@ -814,6 +830,7 @@ Báo cáo Researcher: ${researcherSummary}
         });
         
         emitAiStatus("done", { phase: "pipeline" });
+        completeAiStreamSession({ action: actionResult.executed_state, reason: actionResult.reason });
         return {
             action: actionResult.executed_state,
             reason: actionResult.reason
@@ -822,6 +839,7 @@ Báo cáo Researcher: ${researcherSummary}
     } catch (err) {
         console.error("[Streaming Pipeline] Error:", err.message);
         emitAiStatus("error", { message: err.message });
+        failAiStreamSession(err.message);
         // Safe fallback
         return { action: "NO_ACTION", reason: `Lỗi streaming: ${err.message}` };
     }

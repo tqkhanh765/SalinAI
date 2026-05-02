@@ -69,7 +69,7 @@ function startFirebaseWatcher() {
           last_reasoning: `Triggered: ${triggerReason}`,
         });
 
-        runAgentStreaming(enrichedData)
+        runAgentStreaming(enrichedData, triggerReason)
           .then(() => {
             setTimeout(() => { isAiTriggerLocked = false; }, TRIGGER_COOLDOWN_MS);
           })
