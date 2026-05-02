@@ -50,6 +50,16 @@ const FIELD_BOUNDARY = [
   [10.761, 106.663],
 ];
 
+const CROP_STAGE_CHART_THRESHOLDS = {
+  GERMINATION: { salinitySafe: 1.5, salinityDanger: 2.0, moistureSafe: 60, moistureDanger: 30 },
+  SEEDLING: { salinitySafe: 2.0, salinityDanger: 2.5, moistureSafe: 55, moistureDanger: 30 },
+  VEGETATIVE: { salinitySafe: 2.5, salinityDanger: 2.9, moistureSafe: 45, moistureDanger: 30 },
+  FLOWERING: { salinitySafe: 1.5, salinityDanger: 1.8, moistureSafe: 50, moistureDanger: 30 },
+  FRUITING: { salinitySafe: 2.0, salinityDanger: 2.3, moistureSafe: 45, moistureDanger: 30 },
+  HARVEST: { salinitySafe: 3.0, salinityDanger: 3.5, moistureSafe: 35, moistureDanger: 30 },
+  DEFAULT: { salinitySafe: 2.5, salinityDanger: 3.0, moistureSafe: 40, moistureDanger: 30 },
+};
+
 // ─── Stat Card ─────────────────────────────────────────────────────────────────
 
 const StatCard = ({ icon: IconComponent, label, value, unit, color, bg }) => (
@@ -70,12 +80,29 @@ const StatCard = ({ icon: IconComponent, label, value, unit, color, bg }) => (
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
-  const val = payload[0].value;
-  const color = val <= 4 ? '#6FCF97' : val <= 6 ? '#F2C94C' : '#EB5757';
+
+  const seriesMeta = {
+    salinity: { label: 'Độ mặn', unit: '‰ PSU' },
+    moisture: { label: 'Độ ẩm', unit: '%' },
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-lg px-3 py-2 border" style={{ borderColor: '#1F6F5F20' }}>
       <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-      <p className="font-extrabold text-sm" style={{ color }}>{val} ‰</p>
+      <div className="space-y-1">
+        {payload
+          .filter((item) => item && item.value != null)
+          .map((item) => {
+            const meta = seriesMeta[item.dataKey] || { label: String(item.name || item.dataKey || '--'), unit: '' };
+            return (
+              <p key={item.dataKey} className="text-sm font-semibold flex items-center gap-2" style={{ color: item.color || '#1F6F5F' }}>
+                <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: item.color || '#1F6F5F' }} />
+                <span>{meta.label}:</span>
+                <span className="font-extrabold tabular-nums">{Number(item.value).toFixed(1)} {meta.unit}</span>
+              </p>
+            );
+          })}
+      </div>
     </div>
   );
 };
@@ -171,6 +198,8 @@ export default function FarmerDashboard() {
     ph: sensorData.ph ?? null,
     weather: sensorData.weather || '--',
   };
+
+  const chartThresholds = CROP_STAGE_CHART_THRESHOLDS[String(readings.cropStage || '').toUpperCase()] || CROP_STAGE_CHART_THRESHOLDS.DEFAULT;
 
   useEffect(() => {
     const mode = (actuator.control_mode || 'AUTO').toLowerCase();
@@ -386,10 +415,10 @@ export default function FarmerDashboard() {
 
   const formatActorLabel = (actor) => {
     const normalized = String(actor || '').toUpperCase();
-    if (!normalized) return 'HỆ THỐNG';
-    if (normalized.includes('AI') || normalized.includes('AGENT')) return 'TRỢ LÝ AI';
-    if (normalized.includes('MANUAL') || normalized.includes('USER')) return 'NGƯỜI DÙNG';
-    return 'HỆ THỐNG';
+    if (!normalized) return 'SalinAI';
+    if (normalized.includes('AI') || normalized.includes('AGENT')) return 'SalinAI';
+    if (normalized.includes('MANUAL') || normalized.includes('USER')) return 'Người dùng';
+    return 'SalinAI';
   };
 
   const buildLogSummary = (log) => {
@@ -419,6 +448,63 @@ export default function FarmerDashboard() {
       headline: 'Hệ thống ghi nhận một hành động mới',
       impact: reason,
     };
+  };
+
+  const getLogReasoning = (log) => {
+    let reasoning = log?.model_insights?.orchestrator_reasoning_summary
+      || log?.model_insights?.orchestrator_tool_reason
+      || log?.reason
+      || buildLogSummary(log).impact;
+
+    reasoning = String(reasoning || 'Chưa có lý do được ghi nhận.').trim();
+    
+    // Localize manual override message
+    if (reasoning.includes('Manual override from frontend dashboard')) {
+      reasoning = 'Người dùng điều chỉnh thủ công từ bảng điều khiển';
+    }
+
+    return reasoning;
+  };
+
+  const getLogMetrics = (log, liveData = sensorData) => {
+    const sensor = log?.sensor_snapshot || {};
+    // Fall back to live sensorData for weather fields if not in snapshot
+    const temp = sensor.temperature ?? liveData?.temperature ?? null;
+    const weather = sensor.weather ?? liveData?.weather ?? '--';
+    const rainfall = sensor.rainfall_24h ?? liveData?.rainfall_24h ?? null;
+
+    return [
+      {
+        label: 'Độ mặn',
+        value: sensor.salinity != null ? `${Number(sensor.salinity).toFixed(1)} ppt` : '--',
+        tone: '#2FA084',
+      },
+      {
+        label: 'Độ ẩm đất',
+        value: sensor.moisture != null ? `${Number(sensor.moisture).toFixed(0)}%` : '--',
+        tone: '#1F6F5F',
+      },
+      {
+        label: 'Nhiệt độ',
+        value: temp != null ? `${Number(temp).toFixed(1)}°C` : '--',
+        tone: '#F2994A',
+      },
+      {
+        label: 'Thời tiết',
+        value: weather ? String(weather) : '--',
+        tone: '#2D9CDB',
+      },
+      {
+        label: 'Mưa 24h',
+        value: rainfall != null ? `${Number(rainfall).toFixed(1)} mm` : '--',
+        tone: '#2D9CDB',
+      },
+      {
+        label: 'Giai đoạn cây',
+        value: sensor.crop_stage ? getCropStageLabel(sensor.crop_stage) : '--',
+        tone: '#6FCF97',
+      },
+    ];
   };
 
   const formatTideStatusVi = (status) => {
@@ -478,7 +564,7 @@ export default function FarmerDashboard() {
             <StatCard icon={WeatherIcon} label="Điều Kiện Trời" value={readings.weather} unit="" color="#1F6F5F" bg="#1F6F5F20" />
           </div>
 
-        <div className="mt-4 bg-white rounded-2xl p-4 shadow-sm border overflow-hidden" style={{ borderColor: '#1F6F5F20' }}>
+        <div className="mt-4 mb-5 bg-white rounded-2xl p-4 shadow-sm border overflow-hidden" style={{ borderColor: '#1F6F5F20' }}>
             <div className="flex flex-col md:flex-row md:items-center gap-5">
               {/* Epic 5: Visual Crop Illustration on Dashboard */}
               <div className="w-full md:w-48 shrink-0">
@@ -691,228 +777,178 @@ export default function FarmerDashboard() {
           document.body
         )}
 
-        {/* ── Theo Doi AI Theo Thoi Gian Thuc ────────────────────── */}
+        {/* ── 1. BIỂU ĐỒ DỮ LIỆU CẢM BIẾN ────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-4">
-            <div>
-              <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>DỮ LIỆU THEO THỜI GIAN THỰC</h2>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: '#1F6F5F10', color: '#1F6F5F' }}>
-                Chế độ: {controlModeVi}
-              </span>
-              <span className="text-xs font-semibold px-2.5 py-1 rounded-full" style={{ background: aiStatus.is_processing ? '#F2C94C20' : '#6FCF9720', color: aiStatus.is_processing ? '#B45309' : '#1F6F5F' }}>
-                {aiStatus.is_processing ? 'AI đang xử lý...' : 'AI đang chờ'}
-              </span>
-            </div>
+          <div>
+            <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>BIỂU ĐỒ DỮ LIỆU CẢM BIẾN</h2>
           </div>
 
-
-          {/* AI Decision & Feedback Panel */}
-          {(aiStatus.last_reasoning || aiStatus.is_processing) && (
-            <div className="mb-4 bg-blue-50 border rounded-xl p-4 flex flex-col md:flex-row gap-4 items-start justify-between border-blue-100">
-              <div className="flex-1">
-                <p className="text-xs font-bold text-blue-800 mb-1">SUY LUẬN AI MỚI NHẤT</p>
-                <div className="text-sm font-medium text-blue-900 leading-relaxed">
-                  <StreamingText 
-                    text={aiStatus.last_reasoning} 
-                    enabled={true} 
-                    streamMode={aiStatus.is_processing}
-                    className="whitespace-pre-line"
-                  />
-                </div>
-                {actionLogs.length > 0 && actionLogs[0].model_insights?.retrieval_output_preview && (
-                  <div className="mt-3 p-2 bg-blue-100/50 rounded-lg border border-blue-200/50">
-                    <p className="text-[10px] font-bold text-blue-700 mb-1 flex items-center gap-1">
-                      <RainIcon size={12} /> BẰNG CHỨNG TỪ TÀI LIỆU (PAPERS):
-                    </p>
-                    <p className="text-[11px] text-blue-800 italic leading-snug">
-                      "{actionLogs[0].model_insights.retrieval_output_preview}"
-                    </p>
-                  </div>
-                )}
-              </div>
-              {latestActionLogId && !hiddenFeedbackLogIds.includes(latestActionLogId) && actionLogs.length > 0 && formatActorLabel(actionLogs[0]?.actor) === 'TRỢ LÝ AI' && (
-                <div className="flex flex-col gap-2 min-w-37.5 bg-white p-2 rounded-lg shadow-sm border border-blue-50">
-                  <p className="text-[11px] font-bold text-center text-gray-500 uppercase">Bạn có đồng ý?</p>
-                  <button 
-                    type="button"
-                    onClick={() => submitPositiveFeedback(latestActionLogId)}
-                    className="px-3 py-2 bg-green-50 text-green-700 rounded-md text-xs font-bold hover:bg-green-100 transition-colors flex items-center justify-center gap-1 border border-green-100"
-                  >👍 Chính xác</button>
-                  <button 
-                    type="button"
-                    onClick={() => {
-                      toast('Đã mở form góp ý cho AI.');
-                      setFeedbackModal({ actionLogId: latestActionLogId });
-                    }}
-                    className="px-3 py-2 bg-red-50 text-red-700 rounded-md text-xs font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-1 border border-red-100"
-                  >👎 Sai (Góp ý AI)</button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* BehindTheScenes panel removed per user request */}
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="rounded-xl border p-3" style={{ borderColor: '#1F6F5F20' }}>
-              <p className="text-xs text-gray-400 mb-2">BIỂU ĐỒ DỮ LIỆU CẢM BIẾN</p>
-              <div style={{ width: '100%', height: 180 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={historyChartData} margin={{ top: 5, right: 8, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                    <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} interval="preserveEnd" />
-                    <YAxis tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                    <Tooltip />
-                    <Line type="monotone" dataKey="salinity" stroke="#2FA084" strokeWidth={2.2} dot={false} />
-                    <Line type="monotone" dataKey="moisture" stroke="#1F6F5F" strokeWidth={2.2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="rounded-xl border p-3" style={{ borderColor: '#1F6F5F20' }}>
-              <p className="text-xs text-gray-400 mb-2">NHẬT KÝ HÀNH ĐỘNG</p>
-              <div className="space-y-3 max-h-60 overflow-auto pr-1">
-                {actionLogs.slice(0, 8).map((log) => (
-                  <div key={log.id} className="rounded-xl p-3 border" style={{ background: '#f8faf9', borderColor: '#1F6F5F1A' }}>
-                    <div className="flex items-start justify-between gap-2 mb-1.5">
-                      <p className="text-sm font-bold" style={{ color: '#1F6F5F' }}>
-                        {buildLogSummary(log).headline}
-                      </p>
-                      <span className="text-[11px] text-gray-500 whitespace-nowrap">
-                        {log.timestamp ? formatVnTime(log.timestamp, { hour: '2-digit', minute: '2-digit' }) : '--:--'}
-                      </span>
+          <div className="overflow-x-auto">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ minWidth: '720px' }}>
+              <div className="rounded-xl border p-4" style={{ borderColor: '#1F6F5F14', background: '#fbfefe' }}>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: '#1F6F5F' }}>ĐỘ MẶN</p>
+                    <div className="flex flex-wrap gap-3 text-[11px] font-semibold mt-1">
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#6FCF97' }} />An toàn</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#EB5757' }} />Nguy hiểm</span>
                     </div>
-
-                    <p className="text-xs text-gray-600 mb-2">
-                      Người thực hiện: <strong>{formatActorLabel(log.actor)}</strong>
-                    </p>
-
-                    <p className="text-xs leading-relaxed text-gray-700 mb-2" style={{ whiteSpace: 'pre-line' }}>
-                      {log.reason || 'Không có mô tả chi tiết.'}
-                    </p>
-
-                    <div className="rounded-lg px-2.5 py-2" style={{ background: '#2FA08412' }}>
-                      <p className="text-[11px] font-semibold" style={{ color: '#1F6F5F' }}>
-                        Ảnh hưởng:
-                      </p>
-                      <p className="text-[11px] text-gray-700 leading-relaxed" style={{ whiteSpace: 'pre-line' }}>
-                        {buildLogSummary(log).impact}
-                      </p>
-                    </div>
-
-                    <p className="mt-2 text-[11px] text-gray-500">
-                      Loại hành động: {formatActionLabel(log.action)}
-                    </p>
-
-                    {formatActorLabel(log.actor) === 'TRỢ LÝ AI' && !hiddenFeedbackLogIds.includes(log.id || log._id) && (
-                      <div className="mt-3 flex items-center gap-2 pt-2 border-t" style={{ borderColor: '#1F6F5F10' }}>
-                        <span className="text-[11px] font-semibold text-gray-500">Quyết định này có đúng không?</span>
-                        <button 
-                          type="button"
-                          onClick={() => submitPositiveFeedback(log.id || log._id)}
-
-                          className="px-2 py-1 bg-green-50 text-green-700 rounded text-[11px] font-bold hover:bg-green-100 transition-colors"
-                        >👍 Đúng</button>
-                        <button 
-                          type="button"
-                          onClick={() => {
-                            const targetId = log.id || log._id;
-                            toast('Đã mở form góp ý cho AI.');
-                            setFeedbackModal({ actionLogId: targetId });
-                          }}
-                          className="px-2 py-1 bg-red-50 text-red-700 rounded text-[11px] font-bold hover:bg-red-100 transition-colors"
-                        >👎 Sai</button>
-                      </div>
-                    )}
                   </div>
-                ))}
-                {!actionLogs.length && (
-                  <p className="text-xs text-gray-400">Chưa có nhật ký hành động từ máy chủ.</p>
-                )}
+                </div>
+                <div style={{ height: '220px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={historyChartData} margin={{ top: 6, right: 10, left: -10, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="salinGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#2FA084" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="#2FA084" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={3} />
+                      <YAxis domain={[0, 10]} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <ReferenceLine y={chartThresholds.salinitySafe} stroke="#6FCF97" strokeDasharray="4 4" strokeWidth={1.5} />
+                      <ReferenceLine y={chartThresholds.salinityDanger} stroke="#EB5757" strokeDasharray="4 4" strokeWidth={1.5} />
+                      <Area type="monotone" dataKey="salinity" stroke="#2FA084" strokeWidth={2.5} fill="url(#salinGrad)" dot={false} activeDot={{ r: 5, fill: '#2FA084' }} name="Độ mặn" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              <div className="rounded-xl border p-4" style={{ borderColor: '#1F6F5F14', background: '#fbfefe' }}>
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <div>
+                    <p className="text-sm font-bold" style={{ color: '#1F6F5F' }}>ĐỘ ẨM</p>
+                    <div className="flex flex-wrap gap-3 text-[11px] font-semibold mt-1">
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#6FCF97' }} />An toàn</span>
+                      <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#EB5757' }} />Nguy hiểm</span>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ height: '220px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={historyChartData} margin={{ top: 6, right: 10, left: -10, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={3} />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <ReferenceLine y={chartThresholds.moistureSafe} stroke="#6FCF97" strokeDasharray="4 4" strokeWidth={1.5} />
+                      <ReferenceLine y={chartThresholds.moistureDanger} stroke="#EB5757" strokeDasharray="4 4" strokeWidth={1.5} />
+                      <Line type="monotone" dataKey="moisture" stroke="#1F6F5F" strokeWidth={2.2} dot={false} activeDot={{ r: 4, fill: '#1F6F5F' }} name="Độ ẩm" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* 💡 Bài học gần đây Panel */}
-          {lessonsLearned.length > 0 && (
-            <div className="mt-4 border-t pt-4" style={{ borderColor: '#1F6F5F10' }}>
-              <button 
-                onClick={() => setIsLessonsExpanded(!isLessonsExpanded)}
-                className="flex items-center justify-between w-full text-left"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-lg">💡</span>
-                  <span className="font-bold text-sm" style={{ color: '#1F6F5F' }}>BÀI HỌC AI ĐÃ HỌC TỪ PHẢN HỒI NÔNG DÂN</span>
-                  <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-bold">{lessonsLearned.length} bài học</span>
+        {/* ── 2. NHẬT KÝ HÀNH ĐỘNG ────────────────────── */}
+        <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
+          <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>NHẬT KÝ HÀNH ĐỘNG</h2>
+          <div className="space-y-5 overflow-auto pr-2 mt-4" style={{ maxHeight: '750px' }}>
+            {actionLogs.slice(0, 8).map((log) => (
+              <div key={log.id} className="rounded-2xl p-5 md:p-6 border shadow-sm" style={{ background: '#f8faf9', borderColor: '#1F6F5F1A' }}>
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <div>
+                    <p className="text-base font-bold" style={{ color: '#1F6F5F' }}>
+                      {formatActionLabel(log.action)}
+                    </p>
+                  </div>
+                  <span className="text-xs text-gray-500 whitespace-nowrap">
+                    {log.timestamp ? formatVnTime(log.timestamp, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '--:--'}
+                  </span>
                 </div>
-                <svg className={`w-5 h-5 text-gray-500 transition-transform ${isLessonsExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-              </button>
-              
-              {isLessonsExpanded && (
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {lessonsLearned.map((lesson, idx) => (
-                    <div key={idx} className="bg-gray-50 border border-gray-100 p-3 rounded-xl shadow-sm">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-medium text-gray-500">{lesson.created_at_vn}</span>
-                        <span className="text-[10px] bg-[#1F6F5F15] text-[#1F6F5F] px-1.5 py-0.5 rounded font-bold uppercase">{lesson.feedback_source || 'AI'}</span>
-                      </div>
-                      <p className="text-sm font-semibold text-gray-800 mb-2 leading-relaxed">{lesson.lesson_text}</p>
-                      <div className="flex items-center gap-2 text-[11px] mb-2">
-                        <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">Thực tế: {lesson.action_taken}</span>
-                        <span className="text-gray-400">→</span>
-                        <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">Nên là: {lesson.correct_action}</span>
-                      </div>
-                      <div className="bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
-                        <p className="text-[11px] text-gray-600 font-medium">🗣️ Lý do từ nông dân:</p>
-                        <p className="text-[11px] text-gray-800 mt-0.5 italic">"{lesson.farmer_notes}"</p>
-                      </div>
+
+                <div className="rounded-xl px-4 py-4 mb-5" style={{ background: '#2FA08412', borderLeft: '4px solid #2FA084' }}>
+                  <p className="text-[11px] font-semibold text-gray-500 mb-1">SUY LUẬN CỦA SALINAI</p>
+                  <p className="text-[15px] leading-relaxed text-gray-800" style={{ whiteSpace: 'pre-line' }}>
+                    {getLogReasoning(log)}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-5">
+                  {getLogMetrics(log, sensorData).map((metric) => (
+                    <div key={`${log.id}-${metric.label}`} className="rounded-xl px-3 py-2.5 border" style={{ background: '#ffffff', borderColor: '#1F6F5F14' }}>
+                      <p className="text-[10px] uppercase tracking-wide text-gray-400 mb-0.5">{metric.label}</p>
+                      <p className="text-sm font-semibold" style={{ color: metric.tone }}>
+                        {metric.value}
+                      </p>
                     </div>
                   ))}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
 
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-1 text-xs text-gray-500">
+                  <span>Người thực hiện: <strong>{formatActorLabel(log.actor)}</strong></span>
+                </div>
 
-        {/* ── Salinity Trend Chart ───────────────────────────────────── */}
-        <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="font-bold text-base" style={{ color: '#1F6F5F' }}>LỊCH SỬ ĐỘ MẶN</h2>
-              <p className="text-xs text-gray-400">Đơn vị: ‰ PSU</p>
-            </div>
-            <div className="flex gap-3 text-xs font-semibold">
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#6FCF97' }} />An toàn</span>
-              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full inline-block" style={{ background: '#EB5757' }} />Nguy hiểm</span>
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <div style={{ minWidth: '400px', height: '200px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={historyChartData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="salinGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#2FA084" stopOpacity={0.25} />
-                      <stop offset="95%" stopColor="#2FA084" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={3} />
-                  <YAxis domain={[0, 10]} tick={{ fontSize: 10, fill: '#9ca3af' }} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <ReferenceLine y={4} stroke="#6FCF97" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: 'Giới hạn an toàn', position: 'right', fontSize: 9, fill: '#6FCF97' }} />
-                  <ReferenceLine y={6} stroke="#EB5757" strokeDasharray="4 4" strokeWidth={1.5} label={{ value: 'Ngưỡng nguy hiểm', position: 'right', fontSize: 9, fill: '#EB5757' }} />
-                  <Area type="monotone" dataKey="salinity" stroke="#2FA084" strokeWidth={2.5} fill="url(#salinGrad)" dot={false} activeDot={{ r: 5, fill: '#2FA084' }} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+                {formatActorLabel(log.actor) === 'SalinAI' && !hiddenFeedbackLogIds.includes(log.id || log._id) && (
+                  <div className="mt-4 flex items-center gap-2 pt-3 border-t" style={{ borderColor: '#1F6F5F10' }}>
+                    <span className="text-xs font-semibold text-gray-500">Quyết định này có đúng không?</span>
+                    <button 
+                      type="button"
+                      onClick={() => submitPositiveFeedback(log.id || log._id)}
+
+                      className="px-3 py-1.5 bg-green-50 text-green-700 rounded-md text-xs font-bold hover:bg-green-100 transition-colors"
+                    >👍 Đúng</button>
+                    <button 
+                      type="button"
+                      onClick={() => {
+                        const targetId = log.id || log._id;
+                        toast('Đã mở form góp ý cho AI.');
+                        setFeedbackModal({ actionLogId: targetId });
+                      }}
+                      className="px-3 py-1.5 bg-red-50 text-red-700 rounded-md text-xs font-bold hover:bg-red-100 transition-colors"
+                    >👎 Sai</button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {!actionLogs.length && (
+              <p className="text-xs text-gray-400">Chưa có nhật ký hành động từ máy chủ.</p>
+            )}
           </div>
         </div>
 
+        {/* ── 3. BÀI HỌC AI ────────────────────── */}
+        {lessonsLearned.length > 0 && (
+          <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
+            <button 
+              onClick={() => setIsLessonsExpanded(!isLessonsExpanded)}
+              className="flex items-center justify-between w-full text-left"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">💡</span>
+                <span className="font-bold text-sm" style={{ color: '#1F6F5F' }}>BÀI HỌC AI ĐÃ HỌC TỪ PHẢN HỒI NÔNG DÂN</span>
+              </div>
+              <svg className={`w-5 h-5 text-gray-500 transition-transform ${isLessonsExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+            </button>
+            
+            {isLessonsExpanded && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                {lessonsLearned.slice(0, 4).map((lesson, idx) => (
+                  <div key={idx} className="bg-gray-50 border border-gray-100 p-3 rounded-xl shadow-sm">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-medium text-gray-500">{formatVnTime(lesson.created_at_vn, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="text-[10px] bg-[#1F6F5F15] text-[#1F6F5F] px-1.5 py-0.5 rounded font-bold uppercase">{lesson.feedback_source || 'AI'}</span>
+                    </div>
+                    <p className="text-sm font-semibold text-gray-800 mb-2 leading-relaxed">{lesson.lesson_text}</p>
+                    <div className="flex items-center gap-2 text-[11px] mb-2">
+                      <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">Thực tế: {lesson.action_taken}</span>
+                      <span className="text-gray-400">→</span>
+                      <span className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-bold">Nên là: {lesson.correct_action}</span>
+                    </div>
+                    <div className="bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
+                      <p className="text-[11px] text-gray-600 font-medium">🗣️ Lý do từ nông dân:</p>
+                      <p className="text-[11px] text-gray-800 mt-0.5 italic">"{lesson.farmer_notes}"</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {/* ── Feedback Modal (Epic 2) ─────────────────────────── */}
         {feedbackModal && createPortal(
           <div className="fixed inset-0 z-99999 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">

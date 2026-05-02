@@ -145,12 +145,24 @@ async function finalizeAction({
     });
 
     const actionTimestamp = toVietnamISOString();
+    
+    // Flatten external_forecast fields into sensor_snapshot for frontend access
+    const weatherContext = sensorData?.external_forecast || {};
+    const sensor_snapshot = {
+        ...sensorData,
+        temperature: sensorData.temperature ?? weatherContext.temperature ?? null,
+        humidity: sensorData.humidity ?? weatherContext.humidity ?? null,
+        rainfall_24h: sensorData.rainfall_24h ?? weatherContext.rainfall_24h ?? null,
+        weather: sensorData.weather ?? weatherContext.weather ?? null,
+        tide_status: sensorData.tide_status ?? weatherContext.tide_status ?? null,
+    };
+    
     const actionLogPayload = {
         timestamp: actionTimestamp,
         actor,
         action: finalState,
         reason: fullReason,
-        sensor_snapshot: sensorData,
+        sensor_snapshot,
         subagent_summary: researcherSummary,
         retrieval: {
             hit_count: finalHitCount || 0,

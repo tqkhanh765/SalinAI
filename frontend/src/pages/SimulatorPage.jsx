@@ -232,7 +232,7 @@ export default function SimulatorPage() {
   };
 
   const researcherAgentName = 'SaoLa4-small';
-  const orchestratorAgentName = 'SaoLa4-medium';
+  const orchestratorAgentName = 'GLM-4.7';
 
   // Helper: format nullable number
   const fmt = (v, digits = 1, suffix = '') =>
@@ -513,25 +513,19 @@ export default function SimulatorPage() {
                   </span>
                 </div>
 
-                {/* Mini pipeline map (non-tech friendly) */}
+                {/* Mini pipeline map (hardcoded fixed sequence) */}
                 <div className="mb-3">
                   <span style={{ color: '#8b949e', display: 'block', marginBottom: '6px' }}>&gt; SƠ ĐỒ PIPELINE:</span>
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span className="px-2 py-1 rounded-md" style={{ background: '#79c0ff22', color: '#79c0ff' }}>📡 Cảm biến</span>
                     <span style={{ color: '#8b949e' }}>→</span>
-                    <span className="px-2 py-1 rounded-md" style={{ background: isStepActive(log.agent_trace, 'researcher') ? '#d2a8ff33' : '#30363d', color: isStepActive(log.agent_trace, 'researcher') ? '#d2a8ff' : '#8b949e' }}>
-                      🔎 Researcher ({researcherAgentName})
-                    </span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: '#30363d', color: '#8b949e' }}>🔎 Researcher ({researcherAgentName})</span>
                     <span style={{ color: '#8b949e' }}>→</span>
-                    <span className="px-2 py-1 rounded-md" style={{ background: isStepActive(log.agent_trace, 'retrieval') ? '#58a6ff33' : '#30363d', color: isStepActive(log.agent_trace, 'retrieval') ? '#58a6ff' : '#8b949e' }}>
-                      📚 Retrieval ({log.retrieval?.hit_count ?? 0} hits)
-                    </span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: '#58a6ff33', color: '#58a6ff' }}>📚 Retrieval (0 hits)</span>
                     <span style={{ color: '#8b949e' }}>→</span>
-                    <span className="px-2 py-1 rounded-md" style={{ background: isStepActive(log.agent_trace, 'orchestrator') ? '#ffa65733' : '#30363d', color: isStepActive(log.agent_trace, 'orchestrator') ? '#ffa657' : '#8b949e' }}>
-                      🧠 Orchestrator ({orchestratorAgentName})
-                    </span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: '#ffa65733', color: '#ffa657' }}>🧠 Orchestrator ({orchestratorAgentName})</span>
                     <span style={{ color: '#8b949e' }}>→</span>
-                    <span className="px-2 py-1 rounded-md" style={{ background: '#3fb95033', color: '#3fb950' }}>🤖 Van {log.action || 'NO_ACTION'}</span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: valveOpen ? '#3fb95033' : '#da363333', color: valveOpen ? '#3fb950' : '#da3633' }}>🤖 Van {valveOpen ? 'OPEN' : 'CLOSED'}</span>
                   </div>
                 </div>
 
