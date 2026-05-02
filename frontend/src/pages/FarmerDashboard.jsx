@@ -50,15 +50,7 @@ const FIELD_BOUNDARY = [
   [10.761, 106.663],
 ];
 
-const CROP_STAGE_CHART_THRESHOLDS = {
-  GERMINATION: { salinitySafe: 1.5, salinityDanger: 2.0, moistureSafe: 60, moistureDanger: 30 },
-  SEEDLING: { salinitySafe: 2.0, salinityDanger: 2.5, moistureSafe: 55, moistureDanger: 30 },
-  VEGETATIVE: { salinitySafe: 2.5, salinityDanger: 2.9, moistureSafe: 45, moistureDanger: 30 },
-  FLOWERING: { salinitySafe: 1.5, salinityDanger: 1.8, moistureSafe: 50, moistureDanger: 30 },
-  FRUITING: { salinitySafe: 2.0, salinityDanger: 2.3, moistureSafe: 45, moistureDanger: 30 },
-  HARVEST: { salinitySafe: 3.0, salinityDanger: 3.5, moistureSafe: 35, moistureDanger: 30 },
-  DEFAULT: { salinitySafe: 2.5, salinityDanger: 3.0, moistureSafe: 40, moistureDanger: 30 },
-};
+// CROP_STAGE_CHART_THRESHOLDS removed - now using CROP_STAGE_PROFILES from backend
 
 // ─── Stat Card ─────────────────────────────────────────────────────────────────
 
@@ -116,6 +108,7 @@ export default function FarmerDashboard() {
     aiStatus,
     actionLogs,
     sensorHistory,
+    cropProfiles,
     setControlMode: setRemoteControlMode,
     setValveState: setRemoteValveState,
     setCropStage: setRemoteCropStage,
@@ -199,7 +192,18 @@ export default function FarmerDashboard() {
     weather: sensorData.weather || '--',
   };
 
-  const chartThresholds = CROP_STAGE_CHART_THRESHOLDS[String(readings.cropStage || '').toUpperCase()] || CROP_STAGE_CHART_THRESHOLDS.DEFAULT;
+  const activeProfile = cropProfiles?.[String(readings.cropStage || '').toUpperCase()] || {
+    salinityMaxSafe: 2.5,
+    salinityDeltaTolerance: 0.5,
+    moistureTarget: { min: 40 }
+  };
+
+  const chartThresholds = {
+    salinitySafe: activeProfile.salinityMaxSafe,
+    salinityDanger: activeProfile.salinityMaxSafe + (activeProfile.salinityDeltaTolerance || 0.5),
+    moistureSafe: activeProfile.moistureTarget?.min ?? 40,
+    moistureDanger: Math.max(10, (activeProfile.moistureTarget?.min ?? 40) - 15)
+  };
 
   useEffect(() => {
     const mode = (actuator.control_mode || 'AUTO').toLowerCase();
