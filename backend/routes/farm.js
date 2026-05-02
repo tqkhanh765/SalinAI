@@ -1,14 +1,28 @@
 const express = require("express");
 const router = express.Router();
+const rateLimit = require("express-rate-limit");
 const farmController = require("../controllers/farmController");
 const { formatDecisionDisplay } = require("../services/ai/explanationService");
 const db = require("../config/firebase");
 const { subscribeAiStream, getCurrentAiStream } = require("../services/core/aiStreamService");
 
+// Rate limiters
+const ingestLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 60, // max 60 requests per window
+    message: { error: "Too many requests from this IP, please try again later." }
+});
+
+const streamLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 30, // max 30 connection attempts per minute
+    message: { error: "Too many stream connection attempts." }
+});
+
 router.get("/api/farm-state", farmController.getFarmState);
 router.get("/api/farm-stream", farmController.streamFarmState);
-router.post("/api/ingest", farmController.ingestData);
-router.post("/api/sensor-data", farmController.ingestData);
+router.post("/api/ingest", ingestLimiter, farmController.ingestData);
+router.post("/api/sensor-data", ingestLimiter, farmController.ingestData);
 router.post("/api/decision-feedback", farmController.submitDecisionFeedback);
 router.get("/api/policy-summary", farmController.getAgentPolicySummary);
 router.patch("/api/control-mode", farmController.updateControlMode);
@@ -16,7 +30,7 @@ router.patch("/api/crop-stage", farmController.updateCropStage);
 router.get("/api/ping-test", (req, res) => res.json({ message: "Active backend is here!", timestamp: new Date().toISOString() }));
 router.post("/api/override", farmController.overrideActuator);
 
-router.get("/api/ai-stream", (req, res) => {
+router.get("/api/ai-stream", streamLimiter, (req, res) => {
     res.status(200);
     res.set({
         "Content-Type": "text/event-stream",

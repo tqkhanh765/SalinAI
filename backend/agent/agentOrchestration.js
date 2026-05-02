@@ -20,12 +20,12 @@ function createOrchestrationLLM() {
         const baseURL = process.env.GLM4_BASE_URL;
         const model = process.env.GLM4_MODEL || "GLM-4.7";
         if (!apiKey || !baseURL) throw new Error("Missing GLM4 config: GLM4_API_KEY and GLM4_BASE_URL are required");
-        return new ChatOpenAI({ 
-            model, 
-            apiKey, 
-            temperature, 
+        return new ChatOpenAI({
+            model,
+            apiKey,
+            temperature,
             streaming: true,
-            configuration: { baseURL } 
+            configuration: { baseURL }
         });
     }
 
@@ -35,12 +35,12 @@ function createOrchestrationLLM() {
         const baseURL = process.env.SAOLA4_MEDIUM_BASE_URL;
         const model = process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium";
         if (!apiKey || !baseURL) throw new Error("Missing SAOLA4_MEDIUM config");
-        return new ChatOpenAI({ 
-            model, 
-            apiKey, 
-            temperature, 
+        return new ChatOpenAI({
+            model,
+            apiKey,
+            temperature,
             streaming: true,
-            configuration: { baseURL } 
+            configuration: { baseURL }
         });
     }
 
@@ -123,13 +123,13 @@ async function finalizeAction({
     await fbdb.ref("SalinAI/control/action").set(finalState);
 
 
-    const thresholds = actionResult.suggested_thresholds || { 
-        salinity_delta: 0.1, 
-        moisture_delta: 1.0, 
+    const thresholds = actionResult.suggested_thresholds || {
+        salinity_delta: 0.1,
+        moisture_delta: 1.0,
         recovery_salinity: 0.8,
         urgent_moisture: 30
     };
-    
+
     // Đánh dấu nếu AI không tự đưa ra ngưỡng (để mình biết mà nhắc AI)
     const isAiManaged = !!actionResult.suggested_thresholds;
     const thresholdSummary = `${isAiManaged ? "⚙️ AI đề xuất ngưỡng" : "⚠️ Ngưỡng mặc định"}: Mặn > ${thresholds.salinity_delta}ppt | Ẩm > ${thresholds.moisture_delta}%`;
@@ -169,8 +169,8 @@ async function finalizeAction({
     console.log(`+-----------------------------------------------------------+\n`);
 
     if (mongoDb) {
-        await logActionWithPrediction(actionLogPayload).catch(() => {});
-        runAutonomousLearningCycle({ minActionAgeHours: FEEDBACK_LOOP_DELAY_HOURS }).catch(() => {});
+        await logActionWithPrediction(actionLogPayload).catch(() => { });
+        runAutonomousLearningCycle({ minActionAgeHours: FEEDBACK_LOOP_DELAY_HOURS }).catch(() => { });
     }
 }
 

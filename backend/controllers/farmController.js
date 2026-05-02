@@ -11,7 +11,6 @@ const { setControlMode, overrideActuatorFields } = require("../services/core/far
 const { validateIngestPayload } = require("../services/core/farmIngestValidationService");
 const { decideAiTrigger } = require("../services/core/farmAiTriggerService");
 const { CROP_STAGES } = require("../services/core/farmPayloadMapper");
-const { runAgent } = require("../agent/langchain");
 const { getDb } = require("../config/mongodb");
 const { getLatestPlan } = require("../services/ai/proactivePlanningService");
 const { runDailyProactivePlanning } = require("../services/ai/proactivePlanningService");
@@ -337,14 +336,6 @@ async function getIrrigationPlan(req, res) {
   }
 }
 
-async function getAgentPolicySummary(req, res) {
-  try {
-    const summary = await getPolicySummary();
-    return res.status(200).json({ status: "OK", summary });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
-}
 
 async function triggerProactivePlanning(req, res) {
   try {
@@ -352,67 +343,6 @@ async function triggerProactivePlanning(req, res) {
     return res.status(200).json({ message: "Proactive planning triggered successfully." });
   } catch (err) {
     return res.status(500).json({ error: err.message });
-  }
-}
-
-async function evaluateFeedback(req, res) {
-  try {
-    const { action_log_id, verdict, notes } = req.body;
-    if (!action_log_id || !verdict) {
-      return res.status(400).json({ error: "Missing action_log_id or verdict" });
-    }
-
-    const actionLogSnapshot = await db.ref(`SalinAI/action_logs/${action_log_id}`).once("value");
-    const actionLog = actionLogSnapshot.val();
-
-    if (!actionLog) {
-      return res.status(404).json({ error: "Action log not found" });
-    }
-
-    const lesson = await runEvaluatorAgent({
-      action_log_id,
-      action_log: actionLog,
-      verdict,
-      notes,
-    });
-
-    return res.status(200).json({ status: "OK", lesson });
-  } catch (error) {
-    console.error("[Evaluator API] Error:", error.message);
-    return res.status(500).json({ error: "Evaluation failed", details: error.message });
-  }
-}
-
-async function getLessonsLearned(req, res) {
-  try {
-    const mongoDb = getDb();
-    if (!mongoDb) throw new Error("MongoDB not connected");
-
-    const limit = Math.min(Number(req.query.limit || 5), 20);
-    const lessons = await mongoDb
-      .collection("lessons_learned")
-      .find({})
-      .sort({ created_at: -1 })
-      .limit(limit)
-      .project({
-        action_taken: 1,
-        correct_action: 1,
-        lesson_text: 1,
-        root_cause: 1,
-        farmer_notes: 1,
-        created_at_vn: 1,
-        feedback_source: 1,
-      })
-      .toArray();
-
-    return res.status(200).json({
-      status: "OK",
-      count: lessons.length,
-      lessons,
-    });
-  } catch (error) {
-    console.error("[Lessons API] Error:", error.message);
-    return res.status(500).json({ error: "Failed to fetch lessons", details: error.message });
   }
 }
 

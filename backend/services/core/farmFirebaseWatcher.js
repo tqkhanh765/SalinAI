@@ -71,6 +71,7 @@ function startFirebaseWatcher() {
 
         runAgentStreaming(enrichedData, triggerReason)
           .then(() => {
+            db.ref("SalinAI/ai_status").update({ is_processing: false });
             setTimeout(() => { isAiTriggerLocked = false; }, TRIGGER_COOLDOWN_MS);
           })
           .catch(() => {

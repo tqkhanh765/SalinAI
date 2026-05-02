@@ -14,7 +14,7 @@ async function runE2ESimulation() {
     console.log("======================================================");
 
     const sensorRef = db.ref("SalinAI/sensor_data");
-    const actuatorRef = db.ref("SalinAI/actuator_state");
+    const actuatorRef = db.ref("SalinAI/actuator");
     const aiStatusRef = db.ref("SalinAI/ai_status");
 
     // Đẩy dữ liệu NGUY CẤP cực mạnh

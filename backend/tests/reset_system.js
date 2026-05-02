@@ -10,12 +10,6 @@ async function resetSystem() {
         last_reasoning: "Hệ thống đã được reset thủ công."
     });
 
-    await db.ref("SalinAI/actuator_state").set({
-        valve_state: "CLOSED",
-        pump_state: "OFF",
-        control_mode: "AUTO"
-    });
-
     console.log("✅ Đã reset thành công. Hệ thống sẵn sàng cho bài test mới.");
     process.exit(0);
 }

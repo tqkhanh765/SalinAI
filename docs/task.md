@@ -221,16 +221,16 @@
 
 ## 📋 Milestone 6: Polish & Production Readiness (Post-Epic Sprint)
 
-- [ ] Add `node-cron` to `backend/package.json` dependencies
-- [ ] Add `GET /api/health` extended check: MongoDB ping + Firebase ping + last AI run timestamp
-- [ ] Write Jest integration tests for:
+- [x] Add `node-cron` to `backend/package.json` dependencies
+- [x] Add `GET /api/health` extended check: MongoDB ping + Firebase ping + last AI run timestamp
+- [x] Write Jest integration tests for:
   - Self-RAG retry logic
   - Evaluator Agent lesson extraction
   - Proactive plan generation (mocked LLM)
-- [ ] Add rate limiting middleware (`express-rate-limit`) on `/api/ingest` and `/api/ai-stream`
-- [ ] Audit `serviceAccountKey.json` — confirm not in `.gitignore` exclusion
-- [ ] Document all v6.0 API endpoints in `ai/api-contract.md`
-- [ ] Load test SSE streaming with 5 concurrent browser clients
+- [x] Add rate limiting middleware (`express-rate-limit`) on `/api/ingest` and `/api/ai-stream`
+- [x] Audit `serviceAccountKey.json` — confirm not in `.gitignore` exclusion
+- [x] Document all v6.0 API endpoints in `ai/api-contract.md`
+- [x] Load test SSE streaming with 5 concurrent browser clients
 
 ---
 
