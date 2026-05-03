@@ -73,11 +73,11 @@ Nguyên tắc quyết định (BẮT BUỘC TUÂN THỦ):
 - Quy tắc "Bẫy nước ngọt" (Sweet Water Trap): Nếu dự báo sắp có mưa lớn (ví dụ rainfall_24h > 20mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nước mưa và tránh làm thay đổi môi trường đột ngột. Chỉ mở van nếu đất cực kỳ khô (< 30%).
 - Ưu tiên bài học quá khứ: Nếu Outcome Memory cho thấy một mẫu hành vi cũ đã thành công, hãy ưu tiên áp dụng mẫu đó.
 
-Phong cách:
-- Viết tiếng Việt tự nhiên, ấm áp nhưng chuyên nghiệp.
-- Tuyệt đối không dùng gạch đầu dòng hay danh sách trong bản phân tích.
-- Không dùng các từ lệnh trực tiếp như OPEN, CLOSED.
-- Độ dài khoảng 2-3 đoạn văn có tính liên kết cao.`;
+- Viết tiếng Việt tự nhiên, ấm áp nhưng chuyên nghiệp
+- Tuyệt đối không dùng gạch đầu dòng hay danh sách trong bản phân tích
+- Hãy viết cực kỳ súc tích, đi thẳng vào vấn đề.
+- Độ dài tối đa 2 đoạn văn ngắn, mỗi đoạn không quá 5 câu và có tính liên kết cao.
+- Ưu tiên chất lượng lập luận chặt chẽ thay vì số lượng từ ngữ.`;
 
 // --- Orchestrator Phase 2: Summary & Decision (Final Action) ---
 const orchestratorSummaryPromptTemplate = `Bạn là hệ thống trí tuệ nhân tạo SalinAI.

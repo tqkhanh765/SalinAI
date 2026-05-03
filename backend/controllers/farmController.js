@@ -204,8 +204,8 @@ async function getAgentPolicySummary(req, res) {
 async function evaluateFeedback(req, res) {
   try {
     const actionLogId = String(req.body?.action_log_id || "").trim();
-    const verdict     = String(req.body?.verdict || "").toLowerCase().trim();
-    const notes       = String(req.body?.notes || "").trim();
+    const verdict = String(req.body?.verdict || "").toLowerCase().trim();
+    const notes = String(req.body?.notes || "").trim();
 
     if (!actionLogId) {
       return res.status(400).json({ error: "action_log_id is required" });

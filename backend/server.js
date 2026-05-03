@@ -1,4 +1,4 @@
-/**
+/** SALINAI_RESTART_TRIGGER: 2026-05-04 00:30
  * Backend application entrypoint.
  * Bootstraps Express, connects shared services, and mounts routes that power the farm APIs and AI pipeline.
  * Now includes Socket.io for real-time AI streaming.
@@ -57,7 +57,7 @@ const healthRoute = require("./routes/health");
 const farmRoute = require("./routes/farm");
 const { startAutoLearningScheduler } = require("./services/ai/autoLearningScheduler");
 const { startFirebaseWatcher } = require("./services/core/farmFirebaseWatcher");
-const { startProactivePlanningScheduler } = require("./services/ai/proactivePlanningService");
+const { startProactivePlanningScheduler, checkAndTriggerStartupPlanning } = require("./services/ai/proactivePlanningService");
 
 app.use(healthRoute);
 app.use(farmRoute);
@@ -73,4 +73,5 @@ server.listen(PORT, () => {
   startAutoLearningScheduler();
   startFirebaseWatcher();
   startProactivePlanningScheduler();
+  checkAndTriggerStartupPlanning();
 });

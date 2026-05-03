@@ -196,16 +196,16 @@ async function runAgent(sensorData, triggerReason = "") {
 
         let mandatoryRetrievalContext = "";
         let queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: triggerReason });
-        
+
         let ragRetryCount = 0;
         const maxRagRetries = 2;
 
         while (ragRetryCount <= maxRagRetries) {
             const queryText = queries.join(" ");
             const retrieval = await executeRAGTool(queryText, mongoDb, { salinity, moisture });
-            
+
             const hasHighRelevance = Array.isArray(retrieval.docs) && retrieval.docs.some((d) => Number(d.score || 0) >= 0.72);
-            
+
             if (retrieval.hitCount > 0 && hasHighRelevance) {
                 finalHitCount = retrieval.hitCount;
                 finalSourceIds = retrieval.sourceIds;
@@ -234,10 +234,8 @@ async function runAgent(sensorData, triggerReason = "") {
             }
         }
 
-        retrievalOutputPreview = truncateText(mandatoryRetrievalContext, MAX_RETRIEVAL_OUTPUT_CHARS);
-        addTrace("retrieval", "mandatory_rag_result", `Đã nạp sẵn ${finalHitCount} đoạn guideline cho Researcher`, {
-            source_ids: finalSourceIds,
-        });
+        // Optimization: Prepare the final context for the Researcher
+        retrievalOutputPreview = mandatoryRetrievalContext;
 
         console.log("[Subagent] 🕵️ Researcher đang phân tích bằng chứng guideline...");
         const researcherMessages = [
@@ -248,7 +246,7 @@ async function runAgent(sensorData, triggerReason = "") {
 Dự báo thời tiết: ${external_forecast?.weather || "Không rõ"} (Lượng mưa 24h: ${external_forecast?.rainfall_24h || 0}mm).
 Thủy triều: ${external_forecast?.tide_status || "Không rõ"}.
 
-Hãy phân tích theo kiểu tự nhiên, có chiều sâu hơn, bằng tiếng Việt. Viết như đang giải thích cho một đồng nghiệp nghe, không dùng gạch đầu dòng. Nếu có nhiều nguồn thì hãy so sánh chúng và nói nguồn nào đáng tin hơn trong tình huống này. Đừng chốt kết luận quá sớm; hãy đi từ bối cảnh, đến bằng chứng, đến nhận xét về xu hướng rồi mới kết luận. Mỗi đoạn phải nêu rõ nguồn nào đang được dùng làm bằng chứng, ví dụ guideline ID, lịch sử hành động gần đây, hoặc bài học outcome. Dưới đây là evidence retrieval bắt buộc đã được nạp sẵn:
+Hãy phân tích theo kiểu tự nhiên, có chiều sâu hơn, bằng tiếng Việt. Dưới đây là evidence retrieval bắt buộc:
 ${mandatoryRetrievalContext}`,
             },
         ];
@@ -365,7 +363,7 @@ ${mandatoryRetrievalContext}`,
 
         const currentStageUpper = String(crop_stage || "VEGETATIVE").toUpperCase();
         const stageProfile = CROP_STAGE_PROFILES[currentStageUpper] || DEFAULT_STAGE_PROFILE;
-        
+
         const constraintsBlock = `
 [THÔNG TIN THAM KHẢO NỘI BỘ - GIAI ĐOẠN ${currentStageUpper}]:
 - Ngưỡng mặn khuyến nghị: < ${stageProfile.salinityMaxSafe} ppt.
@@ -554,7 +552,7 @@ ${mandatoryRetrievalContext}`,
                 orchestrator_provider: String(process.env.AI_PROVIDER || "gemini").toLowerCase(),
                 orchestrator_model: (() => {
                     const p = String(process.env.AI_PROVIDER || "gemini").toLowerCase();
-                    if (p === "glm4")         return process.env.GLM4_MODEL || "GLM-4.7";
+                    if (p === "glm4") return process.env.GLM4_MODEL || "GLM-4.7";
                     if (p === "saola4_medium") return process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium";
                     return process.env.GEMINI_MODEL || "gemini-2.5-flash";
                 })(),
@@ -656,14 +654,15 @@ async function runAgentStreaming(sensorData, triggerReason = "") {
     };
 
     try {
-        
+
         // 1. Policy Memory
+        emitAiStatus("processing", { phase: "pipeline", message: "🧠 Đang nạp trí nhớ bài học (Policy Memory)..." });
         const policyPromptBlock = await buildPolicyPromptBlock();
-        
+
         // 2. RAG
         emitAiStatus("processing", { phase: "retrieval", message: "📚 Đang truy xuất kiến thức từ kho guideline..." });
         const queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: triggerReason });
-        
+
         // Use only the first (best) query for vector search to reduce noise
         const bestQuery = queries[0] || `Hướng dẫn xử lý cho lúa giai đoạn ${crop_stage}`;
         const retrieval = await executeRAGTool(bestQuery, mongoDb, { salinity, moisture });
@@ -673,7 +672,7 @@ async function runAgentStreaming(sensorData, triggerReason = "") {
         retrievalOutputPreview = truncateText(mandatoryRetrievalContext, MAX_RETRIEVAL_OUTPUT_CHARS);
 
         // 3. Researcher
-        emitAiStatus("processing", { phase: "researcher", message: `🕵️ Researcher (SaoLa) đang phân tích ${finalHitCount} bằng chứng...` });
+        emitAiStatus("processing", { phase: "researcher", message: `🕵️ Researcher đang đối soát dữ liệu với ${finalSourceIds.length} tài liệu hướng dẫn...` });
         const researcherMessages = [
             { role: "system", content: researcherPromptTemplate },
             {
@@ -693,11 +692,11 @@ ${mandatoryRetrievalContext}`,
             researchLoop++;
             const resResponse = await researcherAgent.invoke(researcherMessages);
             researcherMessages.push(resResponse);
-            
+
             const content = utils.stripThinkTags(utils.toText(resResponse?.content));
             if (!resResponse.tool_calls || resResponse.tool_calls.length === 0) {
                 researcherRawOutput = content;
-                researcherSummary = utils.ensureResearcherCitations(content);
+                researcherSummary = utils.ensureResearcherCitations(content, finalSourceIds);
                 break;
             }
 
@@ -726,12 +725,14 @@ ${mandatoryRetrievalContext}`,
                 }
             }
         }
+        console.log(`[Pipeline] 🔍 Researcher đã hoàn thành với ${finalHitCount} nguồn.`);
 
         // 4. Orchestrator Phase 1: Detailed Analysis (Streaming)
-        emitAiStatus("processing", { phase: "orchestrator", message: "Orchestrator đang phân tích chi tiết..." });
-        
+        console.log("[Pipeline] 🤖 Bắt đầu phase Orchestrator (Detailed Analysis)...");
+        emitAiStatus("processing", { phase: "orchestrator", message: "🤖 Orchestrator bắt đầu lập luận chuyên sâu..." });
+
         const { orchestratorDetailedPromptTemplate, orchestratorSummaryPromptTemplate } = require("./prompt");
-        
+
         const detailedAnalysisMessages = [
             { role: "system", content: `${orchestratorDetailedPromptTemplate}\n\n${policyPromptBlock}` },
             {
@@ -760,25 +761,27 @@ Báo cáo Researcher: ${researcherSummary}
                     const token = typeof chunk.content === "string" ? chunk.content : utils.toText(chunk.content);
                     gatheredDetailedAnalysis += token;
                     emitToken(token, "orchestrator");
-                    
+
                     tokenCount++;
                     // Chỉ update Firebase mỗi 15 tokens để tránh spam database gây rate-limit hoặc nghẽn cổ chai
                     if (tokenCount % 15 === 0) {
-                        fbdb.ref("SalinAI/ai_status").update({ last_reasoning: gatheredDetailedAnalysis }).catch(() => {});
+                        fbdb.ref("SalinAI/ai_status").update({ last_reasoning: gatheredDetailedAnalysis }).catch(() => { });
                     }
                 }
             }
             // Đảm bảo update lần cuối khi stream kết thúc
-            fbdb.ref("SalinAI/ai_status").update({ last_reasoning: gatheredDetailedAnalysis }).catch(() => {});
+            fbdb.ref("SalinAI/ai_status").update({ last_reasoning: gatheredDetailedAnalysis }).catch(() => { });
         } catch (streamErr) {
             throw streamErr;
         }
 
         orchestratorRawOutput = gatheredDetailedAnalysis;
+        console.log("[Pipeline] 🤖 Orchestrator đã hoàn thành phân tích chi tiết.");
 
         // 5. Orchestrator Phase 2: Final Summary & Tool Call (Decision)
+        console.log("[Pipeline] 🎯 Bắt đầu phase Orchestrator (Decision)...");
         emitAiStatus("processing", { phase: "orchestrator", message: "Đang chốt quyết định cuối cùng..." });
-        
+
         const summaryDecisionMessages = [
             { role: "system", content: orchestratorSummaryPromptTemplate },
             {
@@ -788,7 +791,7 @@ Báo cáo Researcher: ${researcherSummary}
         ];
 
         const summaryResponse = await orchestratorAgent.invoke(summaryDecisionMessages);
-        
+
         // Handle tool call for final decision
         if (summaryResponse.tool_calls && summaryResponse.tool_calls.length > 0) {
             const toolCall = summaryResponse.tool_calls[0];
@@ -809,7 +812,7 @@ Báo cáo Researcher: ${researcherSummary}
             });
             actionResult = JSON.parse(rawOutput);
         }
-        
+
         actionResult.reason = utils.normalizeFarmerReason(actionResult.reason);
 
         await finalizeAction({
@@ -828,7 +831,8 @@ Báo cáo Researcher: ${researcherSummary}
                 retrieval_output_preview: retrievalOutputPreview
             }
         });
-        
+
+        console.log(`[Pipeline] ✅ Quyết định cuối cùng: ${actionResult.executed_state}`);
         emitAiStatus("done", { phase: "pipeline" });
         completeAiStreamSession({ action: actionResult.executed_state, reason: actionResult.reason });
         return {

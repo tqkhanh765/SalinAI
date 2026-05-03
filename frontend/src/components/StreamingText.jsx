@@ -10,10 +10,12 @@ import { onAiToken, onAiStatus } from '../services/socket';
  */
 const StreamingText = ({ 
   text = "", 
-  speed = 15, 
+  speed = 10, 
   enabled = true, 
   startTrigger = true, 
   streamMode = false,
+  // streamKey: optional string to correlate socket streaming events to a specific session/log
+  streamKey = null,
   onComplete, 
   className = "" 
 }) => {
@@ -40,14 +42,23 @@ const StreamingText = ({
       setIsTyping(true);
     }, 0);
 
-    const unsubscribeToken = onAiToken(({ token }) => {
+    const unsubscribeToken = onAiToken((payload) => {
+      // payload may include sessionId and sensorTimestamp (added server-side)
+      const token = payload?.token || payload;
+      const sensorTimestamp = payload?.sensorTimestamp || null;
+      if (streamKey && sensorTimestamp && sensorTimestamp !== streamKey) return; // ignore tokens for other sessions
       // Once we get real tokens, clear the status placeholder
       setCurrentStatus("");
       setDisplayedText((prev) => prev + token);
       setIsTyping(true);
     });
 
-    const unsubscribeStatus = onAiStatus(({ status, message }) => {
+    const unsubscribeStatus = onAiStatus((payload) => {
+      // payload may include sessionId / sensorTimestamp
+      const status = payload?.status || payload?.status === 0 ? payload.status : payload;
+      const message = payload?.message || payload?.currentMessage || null;
+      const sensorTimestamp = payload?.sensorTimestamp || null;
+      if (streamKey && sensorTimestamp && sensorTimestamp !== streamKey) return; // ignore status for other sessions
       if (status === "processing" && message) {
         setCurrentStatus(message);
       }

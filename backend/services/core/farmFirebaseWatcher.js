@@ -67,14 +67,30 @@ function startFirebaseWatcher() {
         await db.ref("SalinAI/ai_status").update({
           is_processing: true,
           last_reasoning: `Triggered: ${triggerReason}`,
+          sensor_timestamp: sensorData.timestamp,
         });
+        
+        // Đánh dấu trạng thái van là đang xử lý để phần cứng tạm dừng cập nhật dữ liệu cũ
+        await db.ref("SalinAI/actuator/valve_state").set("PROCESSING");
+
+        // Safety Timeout: Ensure processing flag is cleared even if AI hangs
+        const safetyTimeout = setTimeout(() => {
+          if (isAiTriggerLocked) {
+            console.warn("[Firebase Watcher] ⚠️ AI taking too long (>45s). Clearing status flag for UI safety.");
+            db.ref("SalinAI/ai_status").update({ is_processing: false });
+            isAiTriggerLocked = false;
+          }
+        }, 60000);
 
         runAgentStreaming(enrichedData, triggerReason)
           .then(() => {
+            clearTimeout(safetyTimeout);
             db.ref("SalinAI/ai_status").update({ is_processing: false });
             setTimeout(() => { isAiTriggerLocked = false; }, TRIGGER_COOLDOWN_MS);
           })
-          .catch(() => {
+          .catch((err) => {
+            clearTimeout(safetyTimeout);
+            console.error("[Firebase Watcher] AI Error:", err.message);
             db.ref("SalinAI/ai_status").update({ is_processing: false });
             isAiTriggerLocked = false;
           });

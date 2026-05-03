@@ -5,6 +5,17 @@ const IrrigationPlanPanel = () => {
     const [planData, setPlanData] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    const isToday = (dateStr) => {
+        if (!dateStr) return false;
+        const d = new Date(dateStr);
+        const today = new Date();
+        return (
+            d.getDate() === today.getDate() &&
+            d.getMonth() === today.getMonth() &&
+            d.getFullYear() === today.getFullYear()
+        );
+    };
+
     const fetchPlan = async () => {
         try {
             const response = await axios.get('http://localhost:3001/api/irrigation-plan');
@@ -18,9 +29,16 @@ const IrrigationPlanPanel = () => {
 
     useEffect(() => {
         fetchPlan();
-        const interval = setInterval(fetchPlan, 600000); // 10 minutes
+        
+        // Tối ưu hóa tần suất gọi API:
+        // - Nếu là ngày cũ: gọi mỗi 10 giây để chờ AI lập kế hoạch mới.
+        // - Nếu đã là ngày mới: chỉ gọi lại sau mỗi 4 tiếng (14,400,000ms).
+        const isStale = !planData || !isToday(planData.created_at);
+        const pollInterval = isStale ? 10000 : 14400000;
+        
+        const interval = setInterval(fetchPlan, pollInterval);
         return () => clearInterval(interval);
-    }, []);
+    }, [planData?.created_at]);
 
     if (loading) return (
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-[#1F6F5F15] animate-pulse">
@@ -49,9 +67,12 @@ const IrrigationPlanPanel = () => {
         return { day, weekday };
     };
 
+    const planDateObj = new Date(planData.created_at);
+    const planStale = !isToday(planData.created_at);
+
     return (
         <div className="bg-white rounded-2xl p-5 md:p-6 shadow-sm border border-[#1F6F5F15] transition-all">
-            <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-3">
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-inner" 
                          style={{ background: 'linear-gradient(135deg, #1F6F5F 0%, #2FA084 100%)' }}>
@@ -67,9 +88,14 @@ const IrrigationPlanPanel = () => {
                         <p className="text-xs text-gray-400 font-medium uppercase tracking-widest mt-0.5">Dự báo 5 ngày tới bởi SalinAI Brain</p>
                     </div>
                 </div>
-                <div className="px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100">
-                    <p className="text-[10px] text-gray-400 font-bold uppercase text-right">Lần cập nhật cuối</p>
-                    <p className="text-sm font-extrabold text-[#1F6F5F]">{new Date(planData.created_at).toLocaleTimeString('vi-VN')}</p>
+
+                <div className="flex items-center gap-3">
+                    <div className="px-3 py-1.5 bg-gray-50 rounded-xl border border-gray-100">
+                        <p className="text-[10px] text-gray-400 font-bold uppercase text-right">Thời điểm lập kế hoạch</p>
+                        <p className="text-sm font-extrabold text-[#1F6F5F]">
+                            {planDateObj.toLocaleDateString('vi-VN')} - {planDateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                    </div>
                 </div>
             </div>
 
@@ -77,12 +103,13 @@ const IrrigationPlanPanel = () => {
                 {planData.plan.map((day, idx) => {
                     const { day: dNum, weekday } = formatDate(day.date);
                     const styles = getRiskStyles(day.risk_level);
+                    const isDayToday = isToday(day.date);
                     
                     return (
                         <div 
                             key={idx}
                             className="relative overflow-hidden rounded-2xl border transition-all duration-300 hover:shadow-md hover:-translate-y-1 group"
-                            style={{ borderColor: idx === 0 ? '#1F6F5F30' : '#1F6F5F10', background: idx === 0 ? '#F8FBFA' : '#FFFFFF' }}
+                            style={{ borderColor: isDayToday ? '#1F6F5F30' : '#1F6F5F10', background: isDayToday ? '#F8FBFA' : '#FFFFFF' }}
                         >
                             {/* Header Day */}
                             <div className="p-4 pb-2 flex justify-between items-start">
@@ -107,9 +134,14 @@ const IrrigationPlanPanel = () => {
                                 </p>
                             </div>
                             
-                            {idx === 0 && (
+                            {isDayToday && (
                                 <div className="absolute top-0 right-0">
-                                    <div className="bg-[#1F6F5F] text-white text-[8px] font-bold px-2 py-0.5 rounded-bl-lg">HÔM NAY</div>
+                                    <div className="bg-[#1F6F5F] text-white text-[8px] font-bold px-2 py-0.5 rounded-bl-lg uppercase">Hôm nay</div>
+                                </div>
+                            )}
+                            {idx === 0 && !isDayToday && (
+                                <div className="absolute top-0 right-0">
+                                    <div className="bg-[#EB5757] text-white text-[8px] font-bold px-2 py-0.5 rounded-bl-lg uppercase">Ngày cũ</div>
                                 </div>
                             )}
                         </div>

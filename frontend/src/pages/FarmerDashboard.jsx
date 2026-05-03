@@ -17,7 +17,6 @@ import {
   WeatherIcon, ValveIcon, ControlModeIcon, AiStatusIcon, ControlScopeIcon,
 } from '../components/icons/SensorIcons';
 import IrrigationPlanPanel from '../components/IrrigationPlanPanel';
-import StreamingText from '../components/StreamingText';
 import { initSocket } from '../services/socket';
 import toast from 'react-hot-toast';
 import WeatherAmbience from '../components/visuals/WeatherAmbience';
@@ -35,8 +34,6 @@ const DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-// (removed unused createCustomIcon) — kept Leaflet DefaultIcon only
-
 const INITIAL_VALVES = [
   { id: 'VAN_CHINH_01', name: 'Van Chính Đầu Nguồn', lat: 10.7618, lng: 106.660, open: true },
   { id: 'VAN_PHU_02', name: 'Van Cạnh Tây', lat: 10.7630, lng: 106.6585, open: false },
@@ -49,8 +46,6 @@ const FIELD_BOUNDARY = [
   [10.764, 106.663],
   [10.761, 106.663],
 ];
-
-// CROP_STAGE_CHART_THRESHOLDS removed - now using CROP_STAGE_PROFILES from backend
 
 // ─── Stat Card ─────────────────────────────────────────────────────────────────
 
@@ -138,6 +133,7 @@ export default function FarmerDashboard() {
   const [hiddenFeedbackLogIds, setHiddenFeedbackLogIds] = useState([]);
   const [lessonsLearned, setLessonsLearned] = useState([]);
   const [isLessonsExpanded, setIsLessonsExpanded] = useState(true);
+  const [debugWeatherCode, setDebugWeatherCode] = useState(null);
 
   const CROP_STAGE_OPTIONS = [
     { value: 'GERMINATION', label: 'Nảy mầm' },
@@ -163,7 +159,6 @@ export default function FarmerDashboard() {
   // Derived logical states based on Scope
   const valveOpen = realtimeValveOpen;
   const _controlledValveCount = controlScope === 'all' ? INITIAL_VALVES.length : 1;
-  // Use the real water_flow value from the Wokwi ESP32 sensor (via Firebase → wokwi-poller → SSE)
   const currentFlowRate = valveOpen
     ? (Number(sensorData.water_flow ?? 0)).toFixed(1)
     : '0.0';
@@ -177,15 +172,12 @@ export default function FarmerDashboard() {
   };
 
   const readings = {
-    // Salinity & moisture come from wokwi sensor readings (live)
     salinity: Number(sensorData.salinity ?? 0),
     soilMoisture: Number(sensorData.soil_moisture ?? sensorData.moisture ?? 0),
-    // Weather: sensorData now has these flattened from external_forecast by the mapper
     temperature: sensorData.temperature ?? decisionDetails?.weatherMetrics?.temperature?.value ?? null,
     humidity: sensorData.humidity ?? decisionDetails?.weatherMetrics?.humidity?.value ?? null,
     rainfall24h: sensorData.rainfall_24h ?? decisionDetails?.weatherMetrics?.rainfall_24h?.value ?? null,
     tideStatus: sensorData.tide_status ?? null,
-    // crop_stage is hardcoded VEGETATIVE by wokwi-poller
     cropStage: sensorData.crop_stage ?? decisionDetails?.sensorMetrics?.crop_stage?.value ?? 'VEGETATIVE',
     riverWaterLevel: sensorData.river_water_level ?? decisionDetails?.sensorMetrics?.water_level?.value ?? null,
     ph: sensorData.ph ?? null,
@@ -225,16 +217,15 @@ export default function FarmerDashboard() {
 
     const fetchDecisionDetails = async () => {
       try {
-          const res = await fetch(`${API_BASE_URL}/api/decision-details`);
-          if (!res.ok) return;
-          const json = await res.json();
-          if (mounted && json?.data) {
-            setDecisionDetails(json.data);
-          }
-        } catch (err) {
-          // Keep dashboard usable when the details endpoint is temporarily unavailable.
-          console.debug('[Dashboard] decision-details fetch failed:', err?.message || err);
+        const res = await fetch(`${API_BASE_URL}/api/decision-details`);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (mounted && json?.data) {
+          setDecisionDetails(json.data);
         }
+      } catch (err) {
+        console.debug('[Dashboard] decision-details fetch failed:', err?.message || err);
+      }
     };
 
     const fetchLessons = async () => {
@@ -287,28 +278,26 @@ export default function FarmerDashboard() {
     setIsSubmittingFeedback(true);
     toast.loading('Đang mở luồng phản hồi cho AI...', { id: `negative-feedback-${feedbackModal.actionLogId}` });
     try {
-      // 1. Triggers Evaluator Agent
       const evalResponse = await fetch(`${API_BASE_URL}/api/evaluate-feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action_log_id: feedbackModal.actionLogId, 
-          verdict: 'incorrect', 
-          notes: `[${feedbackCategory}] ${feedbackReason}` 
+        body: JSON.stringify({
+          action_log_id: feedbackModal.actionLogId,
+          verdict: 'incorrect',
+          notes: `[${feedbackCategory}] ${feedbackReason}`
         }),
       });
       if (!evalResponse.ok) {
         throw new Error(`Evaluator HTTP ${evalResponse.status}`);
       }
-      
-      // 2. Refreshes policy memory (metrics)
+
       const feedbackResponse = await fetch(`${API_BASE_URL}/api/decision-feedback`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action_log_id: feedbackModal.actionLogId, 
-          verdict: 'incorrect', 
-          notes: `[${feedbackCategory}] ${feedbackReason}` 
+        body: JSON.stringify({
+          action_log_id: feedbackModal.actionLogId,
+          verdict: 'incorrect',
+          notes: `[${feedbackCategory}] ${feedbackReason}`
         }),
       });
       if (!feedbackResponse.ok) {
@@ -347,13 +336,10 @@ export default function FarmerDashboard() {
     try {
       const isOpening = action === 'open';
       await setRemoteValveState(isOpening ? 'OPEN' : 'CLOSED');
-
       setLastUpdated(new Date());
-
       const msg = controlScope === 'all'
         ? (isOpening ? '✅ Tất cả van đã được mở.' : '🔒 Tất cả van đã được đóng.')
         : (isOpening ? `✅ Van ${activeValveId} đã được mở.` : `🔒 Van ${activeValveId} đã được đóng.`);
-
       if (isOpening) {
         toast.success(msg);
       } else {
@@ -461,8 +447,7 @@ export default function FarmerDashboard() {
       || buildLogSummary(log).impact;
 
     reasoning = String(reasoning || 'Chưa có lý do được ghi nhận.').trim();
-    
-    // Localize manual override message
+
     if (reasoning.includes('Manual override from frontend dashboard')) {
       reasoning = 'Người dùng điều chỉnh thủ công từ bảng điều khiển';
     }
@@ -472,7 +457,6 @@ export default function FarmerDashboard() {
 
   const getLogMetrics = (log, liveData = sensorData) => {
     const sensor = log?.sensor_snapshot || {};
-    // Fall back to live sensorData for weather fields if not in snapshot
     const temp = sensor.temperature ?? liveData?.temperature ?? null;
     const weather = sensor.weather ?? liveData?.weather ?? '--';
     const rainfall = sensor.rainfall_24h ?? liveData?.rainfall_24h ?? null;
@@ -531,12 +515,10 @@ export default function FarmerDashboard() {
 
   return (
     <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8 relative" style={{ background: '#EEEEEE' }}>
-      {/* Epic 5: Dynamic Weather Background */}
-      <WeatherAmbience weatherCode={sensorData.weather_code || 0} />
+      <WeatherAmbience weatherCode={debugWeatherCode !== null ? debugWeatherCode : (sensorData.weather_code || 0)} />
 
       <div className="max-w-5xl mx-auto space-y-5 relative z-10">
 
-        {/* ── Header ────────────────────────────────────────────────── */}
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
           <div>
             <h1 className="text-2xl md:text-3xl font-extrabold leading-tight mt-1" style={{ color: '#1F6F5F' }}>
@@ -548,29 +530,34 @@ export default function FarmerDashboard() {
             <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: '#6FCF97' }} />
             <span className="text-xs text-gray-500 font-medium">Cập nhật: {formatTime(lastUpdated)}</span>
           </div>
+
+          <div className="flex items-center gap-2 bg-white rounded-xl px-2 py-1.5 shadow-sm border border-orange-200">
+            <span className="text-[10px] font-bold text-orange-500 px-1">DEBUG:</span>
+            <button onClick={() => setDebugWeatherCode(0)} className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] font-bold rounded hover:bg-yellow-200">NẮNG</button>
+            <button onClick={() => setDebugWeatherCode(3)} className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded hover:bg-slate-200">MÂY</button>
+            <button onClick={() => setDebugWeatherCode(63)} className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded hover:bg-blue-200">MƯA</button>
+            <button onClick={() => setDebugWeatherCode(95)} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded hover:bg-indigo-200">BÃO</button>
+            <button onClick={() => setDebugWeatherCode(null)} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded hover:bg-gray-200">LIVE</button>
+          </div>
         </div>
 
-        {/* ── Unified Environment Grid ───────────────────────────────── */}
         <div>
           <h2 className="text-sm font-bold uppercase tracking-wider mb-3" style={{ color: '#9ca3af' }}>
             Tổng Quan Môi Trường Hiện Tại
           </h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             <StatCard icon={SalinityIcon} label="Độ Mặn" value={readings.salinity.toFixed(1)} unit="‰" color={salinityColor} bg={`${salinityColor}20`} />
-            <StatCard icon={TemperatureIcon} label="Nhiệt Độ" value={readings.temperature != null ? Number(readings.temperature).toFixed(1) : '--'} unit="°C" color="#F2994A" bg="#F2994A20" />
-            <StatCard icon={HumidityIcon} label="Độ Ẩm KK" value={readings.humidity != null ? Number(readings.humidity).toFixed(0) : '--'} unit="%" color="#2FA084" bg="#2FA08420" />
-            <StatCard icon={SoilMoistureIcon} label="Độ Ẩm Đất" value={Number(readings.soilMoisture || 0).toFixed(0)} unit="%" color="#6FCF97" bg="#6FCF9720" />
-            {/* <StatCard icon={PhIcon} label="Độ pH" value={readings.ph != null ? Number(readings.ph).toFixed(1) : '--'} unit="pH" color="#9B59B6" bg="#9B59B620" /> */}
-            <StatCard icon={RainIcon} label="Mưa 24h" value={readings.rainfall24h != null ? Number(readings.rainfall24h).toFixed(1) : '--'} unit="mm" color="#2D9CDB" bg="#2D9CDB20" />
-            <StatCard icon={TideIcon} label="Thủy Triều" value={formatTideStatusVi(readings.tideStatus)} unit="" color="#1F6F5F" bg="#1F6F5F20" />
-            <StatCard icon={CropStageIcon} label="Giai Đoạn Cây" value={getCropStageLabel(readings.cropStage)} unit="" color="#1F6F5F" bg="#1F6F5F20" />
-            {/* <StatCard icon={WaterLevelIcon} label="Mực Nước Sông" value={readings.riverWaterLevel != null ? Number(readings.riverWaterLevel).toFixed(2) : '--'} unit="m" color="#56CCF2" bg="#56CCF220" /> */}
-            <StatCard icon={WeatherIcon} label="Điều Kiện Trời" value={readings.weather} unit="" color="#1F6F5F" bg="#1F6F5F20" />
+            <StatCard icon={TemperatureIcon} label="Nhiệt Độ" value={readings.temperature != null ? Number(readings.temperature).toFixed(1) : '--'} unit="°C" color="#1F6F5F" bg="#1F6F5F15" />
+            <StatCard icon={HumidityIcon} label="Độ Ẩm KK" value={readings.humidity != null ? Number(readings.humidity).toFixed(0) : '--'} unit="%" color="#2FA084" bg="#2FA08415" />
+            <StatCard icon={SoilMoistureIcon} label="Độ Ẩm Đất" value={Number(readings.soilMoisture || 0).toFixed(0)} unit="%" color="#6FCF97" bg="#6FCF9715" />
+            <StatCard icon={RainIcon} label="Mưa 24h" value={readings.rainfall24h != null ? Number(readings.rainfall24h).toFixed(1) : '--'} unit="mm" color="#2FA084" bg="#2FA08415" />
+            <StatCard icon={TideIcon} label="Thủy Triều" value={formatTideStatusVi(readings.tideStatus)} unit="" color="#1F6F5F" bg="#1F6F5F15" />
+            <StatCard icon={CropStageIcon} label="Giai Đoạn Cây" value={getCropStageLabel(readings.cropStage)} unit="" color="#1F6F5F" bg="#1F6F5F15" />
+            <StatCard icon={WeatherIcon} label="Điều Kiện Trời" value={readings.weather} unit="" color="#1F6F5F" bg="#1F6F5F15" />
           </div>
 
-        <div className="mt-4 mb-5 bg-white rounded-2xl p-4 shadow-sm border overflow-hidden" style={{ borderColor: '#1F6F5F20' }}>
+          <div className="mt-4 mb-5 bg-white rounded-2xl p-4 shadow-sm border overflow-hidden" style={{ borderColor: '#1F6F5F20' }}>
             <div className="flex flex-col md:flex-row md:items-center gap-5">
-              {/* Epic 5: Visual Crop Illustration on Dashboard */}
               <div className="w-full md:w-48 shrink-0">
                 <CropStageIllustration stage={readings.cropStage} />
               </div>
@@ -605,13 +592,11 @@ export default function FarmerDashboard() {
                 </div>
               </div>
             </div>
+          </div>
+
+          <IrrigationPlanPanel />
         </div>
 
-        {/* ── Irrigation Planning (Epic 3) ─────────────────────────── */}
-        <IrrigationPlanPanel />
-        </div>
-
-        {/* ── Valve Control Section ─────────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
           <div className="flex items-center gap-3 mb-6 pb-4" style={{ borderBottom: '1px solid #EEEEEE' }}>
             <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
@@ -633,7 +618,6 @@ export default function FarmerDashboard() {
           </div>
 
           <div className="flex flex-col md:flex-row gap-6 items-center">
-            {/* 1. Visual status & action button combined */}
             <button
               onClick={() => setConfirmAction(valveOpen ? 'close' : 'open')}
               disabled={uiControlMode === 'auto' || isToggling}
@@ -695,15 +679,11 @@ export default function FarmerDashboard() {
               </div>
             </button>
 
-            {/* Epic 5: Water Flow Visualization */}
             <div className="shrink-0 w-full md:w-32">
               <WaterFlowSVG isOpen={valveOpen} />
             </div>
 
-            {/* Options Panel (Right Side) */}
             <div className="flex-1 w-full space-y-4">
-
-              {/* 2. Mode Selection Button */}
               <div className="space-y-2">
                 <label className="text-sm font-semibold" style={{ color: '#1F6F5F' }}>CHẾ ĐỘ ĐIỀU KHIỂN</label>
                 <div className="flex bg-gray-100 p-1.5 rounded-2xl">
@@ -724,7 +704,6 @@ export default function FarmerDashboard() {
                 </div>
               </div>
 
-              {/* 3. Flow Rate Field */}
               <div className="space-y-2">
                 <label className="text-sm font-semibold" style={{ color: '#1F6F5F' }}>LƯU LƯỢNG NƯỚC HIỆN TẠI</label>
                 <div className="bg-gray-50 border border-gray-200 rounded-2xl px-5 py-4 flex items-center justify-between">
@@ -739,12 +718,10 @@ export default function FarmerDashboard() {
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
         </div>
 
-        {/* ── Confirmation Modal ─────────────────────────── */}
         {confirmAction && createPortal(
           <div className="fixed inset-0 z-99999 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
             <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">
@@ -781,7 +758,6 @@ export default function FarmerDashboard() {
           document.body
         )}
 
-        {/* ── 1. BIỂU ĐỒ DỮ LIỆU CẢM BIẾN ────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
           <div>
             <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>BIỂU ĐỒ DỮ LIỆU CẢM BIẾN</h2>
@@ -848,7 +824,6 @@ export default function FarmerDashboard() {
           </div>
         </div>
 
-        {/* ── 2. NHẬT KÝ HÀNH ĐỘNG ────────────────────── */}
         <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
           <h2 className="font-bold text-lg" style={{ color: '#1F6F5F' }}>NHẬT KÝ HÀNH ĐỘNG</h2>
           <div className="space-y-5 overflow-auto pr-2 mt-4" style={{ maxHeight: '750px' }}>
@@ -890,13 +865,12 @@ export default function FarmerDashboard() {
                 {formatActorLabel(log.actor) === 'SalinAI' && !hiddenFeedbackLogIds.includes(log.id || log._id) && (
                   <div className="mt-4 flex items-center gap-2 pt-3 border-t" style={{ borderColor: '#1F6F5F10' }}>
                     <span className="text-xs font-semibold text-gray-500">Quyết định này có đúng không?</span>
-                    <button 
+                    <button
                       type="button"
                       onClick={() => submitPositiveFeedback(log.id || log._id)}
-
                       className="px-3 py-1.5 bg-green-50 text-green-700 rounded-md text-xs font-bold hover:bg-green-100 transition-colors"
                     >👍 Đúng</button>
-                    <button 
+                    <button
                       type="button"
                       onClick={() => {
                         const targetId = log.id || log._id;
@@ -915,10 +889,9 @@ export default function FarmerDashboard() {
           </div>
         </div>
 
-        {/* ── 3. BÀI HỌC AI ────────────────────── */}
         {lessonsLearned.length > 0 && (
           <div className="bg-white rounded-2xl shadow-sm border p-5 md:p-6" style={{ borderColor: '#1F6F5F20' }}>
-            <button 
+            <button
               onClick={() => setIsLessonsExpanded(!isLessonsExpanded)}
               className="flex items-center justify-between w-full text-left"
             >
@@ -928,7 +901,7 @@ export default function FarmerDashboard() {
               </div>
               <svg className={`w-5 h-5 text-gray-500 transition-transform ${isLessonsExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
             </button>
-            
+
             {isLessonsExpanded && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                 {lessonsLearned.slice(0, 4).map((lesson, idx) => (
@@ -964,11 +937,11 @@ export default function FarmerDashboard() {
                   </div>
                   <h3 className="text-lg font-bold text-gray-900">Phản hồi quyết định sai</h3>
                 </div>
-                
+
                 <div className="space-y-4">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Phân loại lỗi</label>
-                    <select 
+                    <select
                       value={feedbackCategory}
                       onChange={e => setFeedbackCategory(e.target.value)}
                       className="w-full border border-gray-200 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-[#1F6F5F] outline-none bg-gray-50 font-medium"
@@ -979,10 +952,10 @@ export default function FarmerDashboard() {
                       <option value="Khác">Lý do khác</option>
                     </select>
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-1">Tại sao quyết định này không đúng?</label>
-                    <textarea 
+                    <textarea
                       value={feedbackReason}
                       onChange={e => setFeedbackReason(e.target.value)}
                       placeholder="Giải thích lý do thực tế tại ruộng để AI học hỏi..."

@@ -59,9 +59,9 @@ function createAgentUtilsService(config = {}) {
 
     const buildOrchestratorOutputPreview = ({ rawOutput, toolReason }) => {
         const cleanRaw = cleanModelArtifacts(rawOutput);
-        const reasoningPart = toolReason ? `\n\n[TOOL_REASONING]: ${toolReason}` : "";
-        const final = `[RAW_OUTPUT]: ${cleanRaw}${reasoningPart}`;
-        return final.length > maxPreviewChars ? `${final.slice(0, maxPreviewChars)}...` : final;
+        // Nếu đã có suy luận chi tiết thì dùng nó, nếu không thì dùng lý do từ tool
+        const content = cleanRaw || toolReason || "Đang tổng hợp dữ liệu...";
+        return content.length > maxPreviewChars ? `${content.slice(0, maxPreviewChars)}...` : content;
     };
 
     const buildPolicySummaryForOutput = (block) => {
@@ -69,10 +69,18 @@ function createAgentUtilsService(config = {}) {
         return truncateText(block, 1200);
     };
 
-    const ensureResearcherCitations = (text) => {
+    const ensureResearcherCitations = (text, sourceIds = []) => {
         const cleaned = stripThinkTags(text);
+        // Nếu AI đã tự trích dẫn theo kiểu [Nguồn] thì giữ nguyên
         if (cleaned.includes("[") && cleaned.includes("]")) return cleaned;
-        return cleaned + "\n\n(Nguồn: Tổng hợp từ tài liệu hướng dẫn)";
+        
+        // Nếu không, ta đính kèm danh sách ID thực tế từ RAG
+        if (Array.isArray(sourceIds) && sourceIds.length > 0) {
+            const citations = sourceIds.map(id => `[${id}]`).join(", ");
+            return `${cleaned}\n\n(Nguồn tham khảo: ${citations})`;
+        }
+        
+        return cleaned + "\n\n(Nguồn: Tổng hợp từ kho tri thức khoa học)";
     };
 
     const normalizeFarmerReason = (text) => {

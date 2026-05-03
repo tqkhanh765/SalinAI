@@ -33,11 +33,8 @@ function createQueryRewriterLLM() {
         });
     }
 
-    // Fallback if saola small is missing
-    return new ChatOpenAI({
-        model: "gpt-3.5-turbo", // placeholder fallback or use Gemini
-        apiKey: "none",
-    });
+    // No fallback allowed
+    throw new Error("[Query Rewriter] SaoLa 4 Small is not configured. Please check SAOLA4_SMALL_API_KEY and BASE_URL.");
 }
 
 // --- Internal Helpers ---
@@ -61,11 +58,20 @@ function compactSnippet(text, maxChars = 420) {
  * AI-powered Query Expansion
  */
 async function generateSearchQueries(sensorData) {
-    const { salinity, moisture, crop_stage, external_forecast, trend } = sensorData;
+    const { salinity, moisture, crop_stage, external_forecast } = sensorData;
     const llm = createQueryRewriterLLM();
 
-    const prompt = `Hãy viết ra 2 câu truy vấn tìm kiếm ngắn gọn bằng tiếng Việt để tra cứu guideline nông nghiệp cho tình huống: Lúa giai đoạn ${crop_stage}, độ mặn ${salinity}ppt, độ ẩm ${moisture}%. 
-Yêu cầu: Chỉ trả về các câu truy vấn, mỗi câu một dòng, không đánh số, không gạch đầu dòng.`;
+    const prompt = `Bạn là chuyên gia phân tích truy vấn nông nghiệp. Hãy viết 3 câu truy vấn tìm kiếm ngắn bằng tiếng Việt để tra cứu guideline cho tình huống sau:
+- Lúa giai đoạn: ${crop_stage}
+- Độ mặn hiện tại: ${salinity} ppt
+- Độ ẩm đất: ${moisture}%
+- Thời tiết & Thủy triều: ${external_forecast?.weather || "Không rõ"}, ${external_forecast?.tide_status || "Không rõ"}
+
+Yêu cầu:
+1. Câu 1 tập trung vào ngưỡng mặn an toàn cho giai đoạn ${crop_stage}.
+2. Câu 2 tập trung vào ảnh hưởng của thời tiết/thủy triều đến việc tưới tiêu.
+3. Câu 3 tập trung vào kỹ thuật tối ưu năng suất lúa trong điều kiện này.
+Chỉ trả về 3 câu truy vấn, mỗi câu một dòng, không đánh số.`;
 
     try {
         const response = await llm.invoke(prompt);
@@ -90,6 +96,10 @@ async function executeRAGTool(query, mongoDb, sensorData = {}) {
         const queryVector = await embeddings.embedQuery(normalizedQuery);
         const collection = mongoDb.collection("guideline_documents");
 
+        const limit = parseInt(process.env.VECTOR_TOP_K || "3", 10);
+        const minScore = parseFloat(process.env.VECTOR_MIN_SCORE || "0.5");
+        console.log(`[RAG] Searching with limit=${limit}, minScore=${minScore}`);
+
         // Atlas Vector Search
         const results = await collection.aggregate([
             {
@@ -97,15 +107,25 @@ async function executeRAGTool(query, mongoDb, sensorData = {}) {
                     "index": "vector_index",
                     "path": "embedding",
                     "queryVector": queryVector,
-                    "numCandidates": 50,
-                    "limit": 3
+                    "numCandidates": 100,
+                    "limit": limit
+                }
+            },
+            {
+                "$addFields": {
+                    "score": { "$meta": "vectorSearchScore" }
+                }
+            },
+            {
+                "$match": {
+                    "score": { "$gte": minScore }
                 }
             },
             {
                 "$project": {
                     "content": 1,
                     "metadata": 1,
-                    "score": { "$meta": "vectorSearchScore" }
+                    "score": 1
                 }
             }
         ]).toArray();
@@ -115,8 +135,9 @@ async function executeRAGTool(query, mongoDb, sensorData = {}) {
         }
 
         const context = results.map((res, i) => {
-            const source = res._id || res.source_ref || res.metadata?.source || "Unknown Source";
-            return `${i + 1}) Nguồn: ${source}\n   Trích đoạn: ${compactSnippet(res.content)}`;
+            const source = res.title || res._id || res.source_ref || "Tài liệu khoa học";
+            const scorePercent = ((res.score || 0) * 100).toFixed(1);
+            return `${i + 1}) Nguồn: ${source} (Độ liên quan: ${scorePercent}%)\n   Trích đoạn: ${compactSnippet(res.content)}`;
         }).join("\n\n");
 
         return {

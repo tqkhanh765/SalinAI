@@ -10,9 +10,12 @@
 const cron = require("node-cron");
 const axios = require("axios");
 const { getDb } = require("../../config/mongodb");
-const { toVietnamISOString } = require("../../utils/vietnamTime");
+const { toVietnamISOString, isSameDayVietnam } = require("../../utils/vietnamTime");
 const { runPlannerAgent } = require("../../agent/agentPlanner");
 const db = require("../../config/firebase");
+
+let isGenerating = false;
+let lastTriggerDay = null;
 
 // Tọa độ khu vực canh tác (Mặc định: Bạc Liêu, Việt Nam)
 const LAT = process.env.FARM_LAT || "9.2941";
@@ -51,12 +54,25 @@ async function getLatestPlan() {
     const mongoDb = getDb();
     if (!mongoDb) return null;
 
-    return await mongoDb.collection("irrigation_plans")
+    const latest = await mongoDb.collection("irrigation_plans")
         .find()
         .sort({ created_at: -1 })
         .limit(1)
         .toArray()
         .then(docs => docs[0] || null);
+
+    // AUTO-REFRESH: Nếu đã sang ngày mới, chưa có kế hoạch, và chưa đang chạy lập kế hoạch
+    const todayStr = new Date().toDateString();
+    if (latest && !isSameDayVietnam(latest.created_at) && !isGenerating && lastTriggerDay !== todayStr) {
+        console.log("[Planning] 📅 Đã sang ngày mới. Tự động kích hoạt lập kế hoạch lại...");
+        lastTriggerDay = todayStr;
+        runDailyProactivePlanning().catch(err => {
+            console.error("[Planning] Auto-refresh failed:", err.message);
+            lastTriggerDay = null; // Reset để có thể thử lại nếu lỗi
+        });
+    }
+
+    return latest;
 }
 
 /**
@@ -76,11 +92,16 @@ async function fetch5DayForecast() {
 }
 
 async function runDailyProactivePlanning() {
+    if (isGenerating) return;
+    isGenerating = true;
     console.log("[Scheduler] 🕒 Bắt đầu tiến trình lập kế hoạch chủ động...");
     
     try {
         const forecast = await fetch5DayForecast();
-        if (!forecast) return;
+        if (!forecast) {
+            isGenerating = false;
+            return;
+        }
 
         const sensorSnap = await db.ref("SalinAI/sensor_data/crop_stage").once("value");
         const cropStage = sensorSnap.val() || "VEGETATIVE";
@@ -89,6 +110,8 @@ async function runDailyProactivePlanning() {
         console.log("[Scheduler] ✅ Đã hoàn thành lập kế hoạch chủ động hàng ngày.");
     } catch (err) {
         console.error("[Scheduler] Error in daily task:", err.message);
+    } finally {
+        isGenerating = false;
     }
 }
 
@@ -104,9 +127,26 @@ function startProactivePlanningScheduler() {
     console.log("   -> Proactive Planning Scheduler enabled (Daily at 05:00 AM)");
 }
 
+async function checkAndTriggerStartupPlanning() {
+    console.log("[Planning] 🔍 Đang kiểm tra kế hoạch ngày hôm nay...");
+    try {
+        const latest = await getLatestPlan();
+        if (!latest || !isSameDayVietnam(latest.created_at)) {
+            console.log("[Planning] 🆕 Chưa có kế hoạch cho hôm nay. Đang khởi tạo...");
+            // Không dùng await ở đây để tránh làm chậm quá trình khởi động server
+            runDailyProactivePlanning().catch(err => console.error("[Planning] Startup trigger failed:", err.message));
+        } else {
+            console.log("[Planning] ✅ Kế hoạch hôm nay đã tồn tại. Không cần cập nhật.");
+        }
+    } catch (err) {
+        console.error("[Planning] Startup check failed:", err.message);
+    }
+}
+
 module.exports = {
     generateIrrigationPlan,
     getLatestPlan,
     startProactivePlanningScheduler,
-    runDailyProactivePlanning
+    runDailyProactivePlanning,
+    checkAndTriggerStartupPlanning
 };

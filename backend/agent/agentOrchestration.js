@@ -7,7 +7,7 @@ const { toVietnamISOString, addHoursVietnamISOString } = require("../utils/vietn
 const FEEDBACK_LOOP_DELAY_HOURS = Math.max(0, Number(process.env.OUTCOME_MIN_ACTION_AGE_HOURS || "1"));
 
 function normalizeOrchestratorProvider() {
-    return String(process.env.AI_PROVIDER || "gemini").toLowerCase().trim();
+    return String(process.env.AI_PROVIDER || "none").toLowerCase().trim();
 }
 
 function createOrchestrationLLM() {
@@ -44,12 +44,8 @@ function createOrchestrationLLM() {
         });
     }
 
-    // Gemini — fallback provider
-    return new ChatGoogleGenerativeAI({
-        model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-        apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-        temperature,
-    });
+    // No fallback allowed
+    throw new Error(`[Orchestrator] Provider '${provider}' is not supported or not configured. Only GLM-4 and SaoLa are allowed.`);
 }
 
 function getOrchestratorRuntimeInfo() {
@@ -91,6 +87,7 @@ async function finalizeAction({
     mongoDb,
     agentTrace = [],
     modelInsights = {},
+    triggerReason = "AI Triggered",
 }) {
     if (!actionResult) return;
 
@@ -139,6 +136,7 @@ async function finalizeAction({
     await fbdb.ref("SalinAI/ai_status").update({
         is_processing: false,
         last_reasoning: fullReason,
+        detailed_analysis: actionResult.detailedAnalysis || "Không có phân tích chi tiết.",
         thresholds: thresholds,
         threshold_summary: thresholdSummary,
         threshold_ai_managed: isAiManaged
@@ -156,20 +154,36 @@ async function finalizeAction({
         weather: sensorData.weather ?? weatherContext.weather ?? null,
         tide_status: sensorData.tide_status ?? weatherContext.tide_status ?? null,
     };
+    // Ensure crop_stage is always present in the snapshot (fallback to stored sensor_data or default)
+    try {
+        if (!sensor_snapshot.crop_stage) {
+            const cropStageSnap = await fbdb.ref("SalinAI/sensor_data/crop_stage").once("value");
+            const storedStage = cropStageSnap.val();
+            sensor_snapshot.crop_stage = storedStage || "VEGETATIVE";
+        }
+    } catch (err) {
+        sensor_snapshot.crop_stage = sensor_snapshot.crop_stage || "VEGETATIVE";
+    }
     
+    const orchestrator_provider = normalizeOrchestratorProvider();
+    const researcher_provider = modelInsights?.researcher_provider || "saola4_small"; // Fallback to config default
+
     const actionLogPayload = {
         timestamp: actionTimestamp,
-        actor,
-        action: finalState,
-        reason: fullReason,
-        sensor_snapshot,
-        subagent_summary: researcherSummary,
+        actor: actor || "SYSTEM",
+        trigger_reason: triggerReason || "UNKNOWN",
+        researcher_provider: researcher_provider || "N/A",
+        orchestrator_provider: orchestrator_provider || "N/A",
+        action: finalState || "NO_ACTION",
+        reason: fullReason || "No reason provided",
+        sensor_snapshot: sensor_snapshot || {},
+        subagent_summary: researcherSummary || "",
         retrieval: {
             hit_count: finalHitCount || 0,
             source_ids: finalSourceIds || []
         },
-        agent_trace: agentTrace,
-        model_insights: modelInsights,
+        agent_trace: agentTrace || [],
+        model_insights: modelInsights || {},
     };
 
     await fbdb.ref("SalinAI/action_logs").push(actionLogPayload);

@@ -52,11 +52,8 @@ function createResearcherLLM(providerOverride = "") {
         });
     }
 
-    return new ChatGoogleGenerativeAI({
-        model: process.env.RESEARCHER_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash",
-        apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-        temperature,
-    });
+    // Fallback if no specific match
+    throw new Error(`[Researcher] Provider '${provider}' is not supported. Please check your .env configuration.`);
 }
 
 function createResearcherAgent(providerOverride = "") {

@@ -4,6 +4,7 @@ import { API_BASE_URL } from '../lib/apiClient';
 import StreamingText from '../components/StreamingText';
 import { initSocket } from '../services/socket';
 import CropStageIllustration from '../components/visuals/CropStageIllustration';
+import WeatherAmbience from '../components/visuals/WeatherAmbience';
 
 // ─── Helper sub-components ─────────────────────────────────────────────────────
 
@@ -279,8 +280,11 @@ export default function SimulatorPage() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8" style={{ background: '#EEEEEE' }}>
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8 relative" style={{ background: '#EEEEEE' }}>
+      {/* Epic 5: Dynamic Weather Background */}
+      <WeatherAmbience weatherCode={sensorData.weather_code || 0} />
+
+      <div className="max-w-5xl mx-auto relative z-10">
 
         {/* Page Header */}
         <div className="mb-6 md:mb-8">
@@ -434,7 +438,8 @@ export default function SimulatorPage() {
                     <StreamingText 
                       text={lastLog.reason || 'Không có lý do'} 
                       enabled={true} 
-                      speed={20} 
+                      speed={10} 
+                      streamKey={isProcessing ? aiStatus.sensor_timestamp : (lastLog?.sensor_snapshot?.timestamp || null)}
                       className="text-sm font-medium leading-relaxed text-[#1F6F5F]"
                     />
                     {lastLog.timestamp && (
@@ -628,7 +633,7 @@ export default function SimulatorPage() {
                 </div>
 
                 <div className="mb-3">
-                  <span style={{ color: '#ffa657', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_OUTPUT (phân tích thô từ model):</span>
+                  <span style={{ color: '#ffa657', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_REASONING (phân tích thô từ model):</span>
                   <div className="pl-4 border-l-2 border-[#ffa657] text-xs text-[#8b949e] whitespace-pre-wrap max-h-56 overflow-auto">
                     <StreamingText 
                       text={(() => {
@@ -655,21 +660,23 @@ export default function SimulatorPage() {
                       onComplete={() => setTypingPhase(3)}
                       speed={10}
                       streamMode={isProcessing && idx === 0}
+                      streamKey={isProcessing && idx === 0 ? aiStatus.sensor_timestamp : (idx === 0 ? lastLog?.sensor_snapshot?.timestamp || null : null)}
                     />
                   </div>
                 </div>
 
                 {/* Final Reason */}
                 <div>
-                  <span style={{ color: '#3fb950', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_REASONING (lý do cuối cùng đã thực thi):</span>
+                  <span style={{ color: '#3fb950', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_OUTPUT (lý do cuối cùng đã thực thi):</span>
                   <div className="pl-4 border-l-2 border-[#3fb950] text-[#e6edf3] whitespace-pre-wrap">
                     <StreamingText 
                       text={log.model_insights?.orchestrator_reasoning_summary || buildReasoningSummary(log)} 
                       enabled={idx === 0} 
                       startTrigger={idx === 0 ? typingPhase >= 3 : true}
                       onComplete={() => setTypingPhase(4)}
-                      speed={20} 
+                      speed={10} 
                       streamMode={isProcessing && idx === 0}
+                      streamKey={isProcessing && idx === 0 ? aiStatus.sensor_timestamp : (idx === 0 ? lastLog?.sensor_snapshot?.timestamp || null : null)}
                     />
                   </div>
                 </div>
@@ -686,7 +693,8 @@ export default function SimulatorPage() {
                           : `Hệ thống đang giữ trạng thái hiện tại và tiếp tục theo dõi.`}
                       enabled={idx === 0}
                       startTrigger={idx === 0 ? typingPhase >= 4 : true}
-                      speed={20}
+                      speed={10}
+                      streamKey={isProcessing && idx === 0 ? aiStatus.sensor_timestamp : (idx === 0 ? lastLog?.sensor_snapshot?.timestamp || null : null)}
                     />
                   </div>
                 </div>

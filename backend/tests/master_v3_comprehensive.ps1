@@ -29,8 +29,8 @@ $latestLogId = $null
 
 Header "1. CORE PIPELINE: Sensor Ingestion and AI Decision"
 try {
-    # Use the reset script in the tests directory
-    $null = node ./tests/reset_system.js
+    # Use the reset script in the backend/tests directory
+    $null = node ./backend/tests/reset_system.js
 
     $payload = @{
         salinity = 4.5

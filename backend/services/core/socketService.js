@@ -6,7 +6,7 @@
  */
 
 const { Server } = require("socket.io");
-const { recordStatus, recordToken } = require("./aiStreamService");
+const { recordStatus, recordToken, getCurrentAiStream } = require("./aiStreamService");
 
 let io = null;
 
@@ -48,10 +48,10 @@ function getIO() {
  */
 function emitToken(token, phase = "orchestrator") {
   if (io) {
-    io.emit("ai_token", { token, phase });
-    try {
-      console.debug(`🔊 [Socket] emit ai_token (phase=${phase}) token_preview=${String(token).slice(0,80).replace(/\n/g,' ')}...`);
-    } catch (e) {}
+    // Attach minimal session info so clients can correlate tokens to a running session
+    const snap = getCurrentAiStream();
+    const sessionInfo = snap ? { sessionId: snap.id, sensorTimestamp: snap.sensorData?.timestamp || null } : {};
+    io.emit("ai_token", { token, phase, ...sessionInfo });
   }
   recordToken(token, phase);
 }
@@ -61,10 +61,10 @@ function emitToken(token, phase = "orchestrator") {
  */
 function emitAiStatus(status, metadata = {}) {
   if (io) {
-    io.emit("ai_status", { status, ...metadata });
-    try {
-      console.debug(`🔔 [Socket] emit ai_status status=${status} phase=${metadata.phase || ''} message_preview=${String(metadata.message || '').slice(0,80).replace(/\n/g,' ')}...`);
-    } catch (e) {}
+    // Include current session id / sensor timestamp so clients can correlate status to a session
+    const snap = getCurrentAiStream();
+    const sessionInfo = snap ? { sessionId: snap.id, sensorTimestamp: snap.sensorData?.timestamp || null } : {};
+    io.emit("ai_status", { status, ...metadata, ...sessionInfo });
   }
   recordStatus(status, metadata);
 }
