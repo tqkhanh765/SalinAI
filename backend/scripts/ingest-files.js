@@ -1,4 +1,4 @@
-require('dotenv').config({ path: '../.env' });
+require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 const fs = require('fs');
 const path = require('path');
 const { MongoClient } = require('mongodb');
@@ -56,6 +56,13 @@ async function ingestFiles() {
     });
 
     for (const file of files) {
+        // QUICK CHECK: If chunks for this file already exist, skip it to save API quota
+        const existingCount = await collection.countDocuments({ _id: { $regex: `^paper-${file}-chunk-` } });
+        if (existingCount > 0) {
+            console.log(`⏭️ Skipping ${file} (Already ingested with ${existingCount} chunks)`);
+            continue;
+        }
+
         let rawContent = "";
         
         if (file.endsWith('.pdf')) {

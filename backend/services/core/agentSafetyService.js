@@ -1,4 +1,6 @@
 const fbdb = require("../../config/firebase");
+const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE } = require("../ai/outcomeService");
+const { buildFallbackReason } = require("../../agent/prompt");
 
 function isQuotaError(err) {
     const status = err?.status;
@@ -42,16 +44,27 @@ async function withTimeout(promise, timeoutMs, label) {
     }
 }
 
-async function buildFallbackAction(sensorData, reason) {
+async function buildFallbackAction(sensorData, techReason) {
     const salinity = Number(sensorData?.salinity || 0);
-    const desiredState = salinity >= 2 ? "CLOSED" : "OPEN";
-    const actuatorSnap = await fbdb.ref("actuator").once("value");
+    const moisture = Number(sensorData?.moisture || 0);
+    const stage = String(sensorData?.crop_stage || "VEGETATIVE").toUpperCase();
+
+    // Lấy profile thực tế từ Outcome Service để đồng bộ logic
+    const profile = CROP_STAGE_PROFILES[stage] || DEFAULT_STAGE_PROFILE;
+    const safeThreshold = profile.salinityMaxSafe;
+
+    const desiredState = salinity >= safeThreshold ? "CLOSED" : "OPEN";
+    
+    const actuatorSnap = await fbdb.ref("SalinAI/actuator").once("value");
     const actuator = actuatorSnap.val() || {};
     const blockedByManual = actuator.control_mode === "MANUAL";
 
+    const reason = buildFallbackReason(sensorData, desiredState);
+
     return {
         executed_state: desiredState,
-        reason,
+        reason, // Lý do "diễn sâu" cho UI
+        tech_reason: techReason, // Lý do kỹ thuật thực tế cho backend
         source_ids: [],
         blocked_by_manual: blockedByManual,
     };

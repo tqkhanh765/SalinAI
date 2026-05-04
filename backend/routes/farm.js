@@ -1,18 +1,90 @@
 const express = require("express");
 const router = express.Router();
+const rateLimit = require("express-rate-limit");
 const farmController = require("../controllers/farmController");
 const { formatDecisionDisplay } = require("../services/ai/explanationService");
 const db = require("../config/firebase");
+const { subscribeAiStream, getCurrentAiStream } = require("../services/core/aiStreamService");
+
+// Rate limiters
+const ingestLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 60, // max 60 requests per window
+    message: { error: "Too many requests from this IP, please try again later." }
+});
+
+const streamLimiter = rateLimit({
+    windowMs: 1 * 60 * 1000, // 1 minute
+    max: 30, // max 30 connection attempts per minute
+    message: { error: "Too many stream connection attempts." }
+});
 
 router.get("/api/farm-state", farmController.getFarmState);
 router.get("/api/farm-stream", farmController.streamFarmState);
-router.post("/api/ingest", farmController.ingestData);
-router.post("/api/sensor-data", farmController.ingestData);
+router.post("/api/ingest", ingestLimiter, farmController.ingestData);
+router.post("/api/sensor-data", ingestLimiter, farmController.ingestData);
 router.post("/api/decision-feedback", farmController.submitDecisionFeedback);
 router.get("/api/policy-summary", farmController.getAgentPolicySummary);
 router.patch("/api/control-mode", farmController.updateControlMode);
 router.patch("/api/crop-stage", farmController.updateCropStage);
+router.get("/api/ping-test", (req, res) => res.json({ message: "Active backend is here!", timestamp: new Date().toISOString() }));
 router.post("/api/override", farmController.overrideActuator);
+
+router.get("/api/ai-stream", streamLimiter, (req, res) => {
+    res.status(200);
+    res.set({
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+    });
+
+    if (typeof res.flushHeaders === "function") {
+        res.flushHeaders();
+    }
+
+    const writeEvent = (eventName, payload) => {
+        res.write(`event: ${eventName}\n`);
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+    };
+
+    writeEvent("snapshot", getCurrentAiStream() || { status: "idle" });
+
+    const keepAlive = setInterval(() => {
+        res.write(": ping\n\n");
+    }, 15000);
+
+    const unsubscribe = subscribeAiStream((event) => {
+        if (!event || !event.type) return;
+
+        if (event.type === "done") {
+            writeEvent("done", event.payload || {});
+            res.write("data: [DONE]\n\n");
+            clearInterval(keepAlive);
+            unsubscribe();
+            res.end();
+            return;
+        }
+
+        writeEvent(event.type, event.payload || {});
+    }, { replay: false });
+
+    req.on("close", () => {
+        clearInterval(keepAlive);
+        unsubscribe();
+    });
+});
+
+// ─── RLHF & Evaluator Agent (Epic 2) ─────────────────────────────────────────
+// Triggers SAOLA4_MEDIUM Evaluator Agent on negative feedback → saves lesson to MongoDB
+router.post("/api/evaluate-feedback", farmController.evaluateFeedback);
+// Returns top-N lessons extracted by Evaluator Agent (for Dashboard "💡 Bài học gần đây")
+router.get("/api/lessons-learned", farmController.getLessonsLearned);
+
+// ─── Proactive Forecasting (Epic 3) ──────────────────────────────────────────
+router.get("/api/irrigation-plan", farmController.getIrrigationPlan);
+router.post("/api/irrigation-plan/trigger", farmController.triggerProactivePlanning);
+
 
 /**
  * GET /api/decision-details
@@ -27,10 +99,10 @@ router.get("/api/decision-details", async (req, res) => {
             actuatorSnapshot,
             latestActionSnapshot,
         ] = await Promise.all([
-            db.ref("sensor_data").once("value"),
-            db.ref("ai_status").once("value"),
-            db.ref("actuator").once("value"),
-            db.ref("action_logs").limitToLast(1).once("value"),
+            db.ref("SalinAI/sensor_data").once("value"),
+            db.ref("SalinAI/ai_status").once("value"),
+            db.ref("SalinAI/actuator").once("value"),
+            db.ref("SalinAI/action_logs").limitToLast(1).once("value"),
         ]);
 
         const sensorData = sensorSnapshot.val() || {};

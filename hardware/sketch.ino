@@ -1,242 +1,249 @@
-#include <WiFi.h>
-#include <HTTPClient.h>
-#include <WiFiClientSecure.h>
-#include <LiquidCrystal_I2C.h>
 #include "DHTesp.h"
+#include <HTTPClient.h>
+#include <LiquidCrystal_I2C.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
 
 #define WIFI_SSID "Wokwi-GUEST"
 #define WIFI_PASSWORD ""
 
-// ─── Timeouts ────────────────────────────────────────────────────────────────
-const unsigned long WIFI_CONNECT_TIMEOUT_MS = 15000;  // 15 sec for Wi-Fi
-const unsigned long HTTP_TIMEOUT_MS = 20000;          // 20 sec for HTTP requests (Chống lỗi Cold Start trên Render)
+// ─── Firebase RTDB
+// ────────────────────────────────────────────────────────────
+String rtdbURL =
+    "https://"
+    "salin-ai-hackathon-default-rtdb.asia-southeast1.firebasedatabase.app";
+String SENSOR_PATH = "/SalinAI/sensor_data.json";
+String ACTUATOR_PATH = "/SalinAI/actuator/valve_state.json";
 
-// ─── Backend URL (Deployed on Render) ────────────────────────────────────────
-String backendURL = "https://salinai.onrender.com/api/ingest";
-
-// Firebase RTDB (for low-latency actuator state reads only)
-String rtdbURL = "https://salin-ai-hackathon-default-rtdb.asia-southeast1.firebasedatabase.app";
-
+// ─── Hardware
+// ─────────────────────────────────────────────────────────────────
 LiquidCrystal_I2C lcd(0x27, 20, 4);
 DHTesp dht;
 WiFiClientSecure client;
-
-#define DHT_PIN 15
-#define SALINITY_PIN 34
-#define SOIL_MOISTURE_PIN 35
-#define WATER_FLOW_PIN 32
 #define VALVE_LED_PIN 2
 
-// ─── Timing & Anomaly Thresholds ─────────────────────────────────────────────
-unsigned long lastHeartbeat = 0;
-const unsigned long HEARTBEAT_INTERVAL = 300000; // 5 minutes
-const float SAL_THRESHOLD  = 0.5;
-const float MOIS_THRESHOLD = 10.0;
+// ─── Ngưỡng phát hiện biến động ──────────────────────────────────────────────
+const unsigned long HEARTBEAT_INTERVAL = 300000; // 5 phút
+const float SAL_THRESHOLD = 0.1;  // Nhạy hơn (0.1ppt) để demo mượt
+const float MOIS_THRESHOLD = 1.0; // Nhạy hơn (1%) để demo mượt
 
-// ─── State Tracking ──────────────────────────────────────────────────────────
-float lastSalinity  = -1.0;
-float lastMoisture  = -1.0;
+// ─── State
+// ────────────────────────────────────────────────────────────────────
+float lastSalinity = -1.0;
+float lastMoisture = -1.0;
 String currentAction = "OPEN";
-unsigned long lastFetchActuator = 0;
-const unsigned long FETCH_ACTUATOR_INTERVAL = 30000;  // Fetch every 30 sec
+unsigned long lastHeartbeat = 0;
+bool isFirstSync = true; // Để đồng bộ trạng thái ban đầu mà không in Log
 
-bool connectWiFi() {
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_CONNECT_TIMEOUT_MS) {
-    delay(500);
-    Serial.print(".");
-  }
-  
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi Connected!");
-    return true;
-  }
-  
-  Serial.println("\nWiFi timeout or failed.");
-  return false;
-}
+// ─── Eager Poll
+// ───────────────────────────────────────────────────────────────
+const unsigned long NORMAL_POLL_INTERVAL = 30000; // 30s khi rảnh
+const unsigned long EAGER_POLL_INTERVAL =
+    15000; // 15s sau khi gửi data để AI kịp chạy
+const unsigned long EAGER_DURATION_MS = 60000; // tối đa 1 phút
+
+unsigned long lastActuatorPoll = 0;
+unsigned long eagerPollUntil = 0;
+
+// ─── KỊCH BẢN DEMO 5 PHÚT (20 steps × 40 giây) ───────────────────────────────
+const int TOTAL_STEPS = 20;
+int currentStep = 0;
+
+const float mock_salinity[TOTAL_STEPS] = {
+    0.4, 0.6, 0.9, 1.5, // Tăng dần (Trigger nhẹ)
+    2.8, 3.5, 4.2, 5.0, // Mặn xâm nhập mạnh (Trigger liên tục)
+    4.8, 4.2, 3.5, 2.1, // Giảm dần do có mưa ngọt
+    1.2, 0.6, 0.4, 0.3, // Về mức an toàn
+    0.3, 0.4, 0.3, 0.3  // Ổn định
+};
+const float mock_moisture[TOTAL_STEPS] = {
+    65.0, 64.0, 62.0, 58.0, // Đang khô dần
+    52.0, 48.0, 42.0, 38.0, // Rất khô (Hạn mặn)
+    45.0, 55.0, 65.0, 75.0, // Có mưa (Moisture tăng vọt)
+    72.0, 70.0, 68.0, 67.0, // Ổn định lại
+    66.0, 65.5, 65.0, 65.0};
+const float mock_flow[TOTAL_STEPS] = {
+    25.0, 25.0, 25.0, 25.0, // Đang tưới
+    0.0,  0.0,  0.0,  0.0,  // Đóng van khẩn cấp do mặn
+    0.0,  0.0,  15.0, 20.0, // Bắt đầu mở nhẹ khi mặn giảm
+    25.0, 25.0, 25.0, 25.0, // Mở hoàn toàn
+    25.0, 25.0, 25.0, 25.0};
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 void setup() {
   Serial.begin(115200);
-
   lcd.init();
   lcd.backlight();
   pinMode(VALVE_LED_PIN, OUTPUT);
-  dht.setup(DHT_PIN, DHTesp::DHT22);
 
   lcd.setCursor(0, 0);
   lcd.print("Connecting Wi-Fi...");
-
-  bool wifi_ok = connectWiFi();
-
-  // Bypass SSL cert verification (required for Wokwi HTTPS)
-  client.setInsecure();
-  client.setTimeout(HTTP_TIMEOUT_MS);
-
-  lcd.clear();
-  if (wifi_ok) {
-    lcd.print("SalinAI Online!");
-  } else {
-    lcd.print("Offline Mode");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
   }
+  Serial.println("\n[WiFi] Connected");
+
+  client.setInsecure();
+  lcd.clear();
+  lcd.print("SalinAI Online!");
+
+  // Đồng bộ trạng thái van lần đầu từ Firebase
+  Serial.print("[Sync] Dang lay trang thai van...");
+  fetchActuatorState();
+  Serial.println(" Xong.");
+
   delay(1000);
 }
 
-// ─── POST sensor data to Backend /api/ingest ─────────────────────────────────
-void sendToBackend(float sal, float mois, String triggerType) {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[Ingest] Wi-Fi disconnected, skipping POST.");
-    return;
-  }
-  
-  // Gọi Insecure ngay trước khi request
+// ─── Ghi sensor lên Firebase (PUT) ───────────────────────────────────────────
+void writeToFirebase(float sal, float mois, float flow, String triggerType) {
   client.setInsecure();
-
   HTTPClient http;
-  // Chỉ sử dụng setTimeout, đã gỡ bỏ setReadTimeout và setConnectTimeout để không bị lỗi build
-  http.setTimeout(HTTP_TIMEOUT_MS); 
-  
-  if (!http.begin(client, backendURL)) {
-    Serial.println("[Ingest] Failed to begin HTTP connection.");
-    http.end();
-    return;
-  }
-  
+  http.begin(client, rtdbURL + SENSOR_PATH);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("User-Agent", "ESP32-SalinAI"); 
 
-  // Đã sửa lại key json về "salinity" và "moisture" để tránh lỗi 400 từ backend
+  // Đã sửa lại lỗi mặt mếu và chuỗi escape JSON
   String json = "{";
   json += "\"salinity\":" + String(sal, 2) + ",";
   json += "\"moisture\":" + String(mois, 1) + ",";
-  json += "\"crop_stage\":\"VEGETATIVE\"";
+  json += "\"water_flow\":" + String(flow, 1) + ",";
+  json += "\"trigger\":\"" + triggerType + "\"";
   json += "}";
 
-  Serial.println("[Ingest] POST -> " + json);
-  int code = http.POST(json);
-
-  if (code > 0) {
-    Serial.printf("[Ingest] Backend OK: %d\n", code);
-    String response = http.getString();
-    if (response.length() > 0) {
-      Serial.println("[Ingest] Response: " + response.substring(0, 100));
-    }
-  } else {
-    Serial.printf("[Ingest] Backend Error: %s\n", http.errorToString(code).c_str());
-  }
-  
+  int code = http.PUT(json);
+  Serial.printf("  -> Firebase: %s\n", code > 0 ? "OK" : "FAIL");
   http.end();
 }
 
-// ─── Read actuator valve state from Firebase /actuator ───────────────────────
+// ─── Đọc valve_state từ Firebase ─────────────────────────────────────────────
 void fetchActuatorState() {
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[Actuator] Wi-Fi disconnected, skipping fetch.");
-    return;
-  }
-  
   client.setInsecure();
-
   HTTPClient http;
-  http.setTimeout(HTTP_TIMEOUT_MS); 
-  
-  if (!http.begin(client, rtdbURL + "/actuator/valve_state.json")) {
-    Serial.println("[Actuator] Failed to begin HTTP connection.");
-    http.end();
-    return;
-  }
-  
+  http.begin(client, rtdbURL + ACTUATOR_PATH);
   int code = http.GET();
   if (code == 200) {
     String payload = http.getString();
-    payload.trim();
     payload.replace("\"", "");
-    
-    // Đã sửa "CLOSE" thành "CLOSED"
+    payload.trim();
     if (payload == "CLOSED" || payload == "OPEN") {
-      currentAction = payload;
-      Serial.printf("[Actuator] Updated to: %s\n", currentAction.c_str());
+      if (isFirstSync) {
+        currentAction = payload;
+        isFirstSync = false;
+        Serial.printf("  ✓ Van sync khởi động: %s\n", currentAction.c_str());
+      } else if (payload != currentAction) {
+        currentAction = payload;
+        Serial.printf("  -> Van: %s (AI chuyen trang thai)\n",
+                      currentAction.c_str());
+        eagerPollUntil = 0;
+      } else {
+        Serial.printf("  • Van không đổi: %s\n", currentAction.c_str());
+      }
+    } else if (payload == "" || payload == "null") {
+      Serial.printf("  ⚠ Firebase chưa có van tại %s\n", ACTUATOR_PATH);
     } else {
-      Serial.printf("[Actuator] Invalid payload: %s\n", payload.c_str());
+      Serial.printf("  ⚠ Payload van không hợp lệ: %s\n", payload.c_str());
     }
-  } else if (code > 0) {
-    Serial.printf("[Actuator] HTTP %d\n", code);
+  } else if (code == -1) {
+    Serial.printf("  ✗ Firebase timeout khi đọc van (%s)\n", ACTUATOR_PATH);
   } else {
-    Serial.printf("[Actuator] Error: %s\n", http.errorToString(code).c_str());
+    Serial.printf("  ✗ Firebase HTTP %d khi đọc van (%s)\n", code,
+                  ACTUATOR_PATH);
   }
-  
   http.end();
 }
 
+// ─── Poll van: nhanh sau trigger, chậm khi rảnh ──────────────────────────────
+void runActuatorPoll() {
+  bool isEager = (millis() < eagerPollUntil);
+  unsigned long interval = isEager ? EAGER_POLL_INTERVAL : NORMAL_POLL_INTERVAL;
+
+  if (millis() - lastActuatorPoll >= interval) {
+    lastActuatorPoll = millis();
+    fetchActuatorState(); // eager hay normal đều chỉ cần check van
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 void loop() {
   static unsigned long lastRead = 0;
+  static float currentSal = 0, currentMois = 0, currentFlow = 0;
+  static String lastTrigger = "IDLE";
 
-  // Reconnect Wi-Fi if disconnected
-  if (WiFi.status() != WL_CONNECTED) {
-    connectWiFi();
-  }
+  // 1. Poll van liên tục (5s/lần khi eager, 30s/lần khi normal)
+  runActuatorPoll();
+  digitalWrite(VALVE_LED_PIN, currentAction == "CLOSED" ? HIGH : LOW);
 
-  // Read sensors every 5 seconds
-  if (millis() - lastRead > 5000) {
+  // 2. Thực thi 1 step gửi dữ liệu mỗi 45 giây
+  if (millis() - lastRead > (lastRead == 0 ? 0 : 40000)) {
     lastRead = millis();
 
-    float salinity     = (analogRead(SALINITY_PIN)      / 4095.0) * 5.0;
-    float soilMoisture = (analogRead(SOIL_MOISTURE_PIN) / 4095.0) * 100.0;
+    currentSal = mock_salinity[currentStep];
+    currentMois = mock_moisture[currentStep];
+    currentFlow = mock_flow[currentStep];
 
-    bool isAnomaly = false;
+    // ── Xác định trigger ───────────────────────────────────────────────────
+    bool send = false;
     String triggerType = "";
 
-    // 1. Initial push or Periodic Heartbeat (every 5 min)
     if (lastSalinity < 0 || (millis() - lastHeartbeat > HEARTBEAT_INTERVAL)) {
-      isAnomaly  = true;
+      send = true;
       triggerType = "HEARTBEAT";
       lastHeartbeat = millis();
-    }
-    // 2. Anomaly Detection - only push on significant change
-    else if (abs(salinity - lastSalinity) > SAL_THRESHOLD) {
-      isAnomaly  = true;
-      triggerType = "SALINITY_SPIKE";
-    } else if (abs(soilMoisture - lastMoisture) > MOIS_THRESHOLD) {
-      isAnomaly  = true;
-      triggerType = "MOISTURE_DROP";
+    } else if (abs(currentSal - lastSalinity) >= SAL_THRESHOLD) {
+      send = true;
+      triggerType = "SAL_SPIKE";
+    } else if (abs(currentMois - lastMoisture) >= MOIS_THRESHOLD) {
+      send = true;
+      triggerType = "MOIS_DROP";
     }
 
-    if (isAnomaly) {
-      Serial.printf("[Ingest] Triggering push (%s)...\n", triggerType.c_str());
-      sendToBackend(salinity, soilMoisture, triggerType);
-      lastSalinity = salinity;
-      lastMoisture = soilMoisture;
-    }
+    lastTrigger = (triggerType == "") ? "IDLE" : triggerType;
 
-    // Fetch actuator state every 30 seconds to reduce network load
-    if (millis() - lastFetchActuator > FETCH_ACTUATOR_INTERVAL) {
-      lastFetchActuator = millis();
-      fetchActuatorState();
-    }
+    // ── Log và gửi Firebase ────────────────────────────────────────────────
+    if (send) {
+      Serial.printf("\n[Step %02d] Sal:%.1f Mois:%.0f%% | %s -> Gui Firebase\n",
+                    currentStep, currentSal, currentMois, triggerType.c_str());
+      writeToFirebase(currentSal, currentMois, currentFlow, triggerType);
+      lastSalinity = currentSal;
+      lastMoisture = currentMois;
 
-    // Actuator Control
-    // Đã sửa "CLOSE" thành "CLOSED"
-    if (currentAction == "CLOSED") {
-      digitalWrite(VALVE_LED_PIN, HIGH);
+      // Bật chế độ check van 10s/lần trong vòng 1 phút
+      eagerPollUntil = millis() + EAGER_DURATION_MS;
+      lastActuatorPoll = millis(); // Lần đầu tiên sẽ check sau 10s
     } else {
-      digitalWrite(VALVE_LED_PIN, LOW);
+      Serial.printf("[Step %02d] Sal:%.1f Mois:%.0f%% | IDLE\n", currentStep,
+                    currentSal, currentMois);
     }
 
-    // Update LCD
-    char lcdBuf[21];
-    snprintf(lcdBuf, sizeof(lcdBuf), "Sal:%.1fg M:%.0f%%", salinity, soilMoisture);
-    lcd.setCursor(0, 0); lcd.print(lcdBuf);
+    currentStep++;
+    if (currentStep >= TOTAL_STEPS) {
+      Serial.println("\n===== DEMO XONG - CHAY LAI =====");
+      currentStep = 0;
+      lastSalinity = -1.0;
+    }
+  }
 
-    snprintf(lcdBuf, sizeof(lcdBuf), "Valve:%-6s[%-4s]", currentAction.c_str(), triggerType == "" ? "IDLE" : "PUSH");
-    lcd.setCursor(0, 1); lcd.print(lcdBuf);
-
+  // 3. Cập nhật LCD thường xuyên (500ms) để hiện trạng thái Van ngay khi đổi
+  static unsigned long lastLCD = 0;
+  if (millis() - lastLCD > 500) {
+    lastLCD = millis();
+    char buf[21];
+    snprintf(buf, sizeof(buf), "Sal:%.1fppt Flw:%.0f ", currentSal,
+             currentFlow);
+    lcd.setCursor(0, 0);
+    lcd.print(buf);
+    snprintf(buf, sizeof(buf), "Mois:%.0f%% V:%-6s", currentMois,
+             currentAction.c_str());
+    lcd.setCursor(0, 1);
+    lcd.print(buf);
     lcd.setCursor(0, 2);
-    lcd.print(WiFi.status() == WL_CONNECTED ? "Status: Cloud Sync  " : "Status: Offline     ");
-
+    lcd.print("Status: Firebase    ");
+    snprintf(buf, sizeof(buf), "Evt:%-16s", lastTrigger.c_str());
     lcd.setCursor(0, 3);
-    lcd.print(triggerType == "" ? "Mode: IDLE          " : "Mode: " + triggerType + "   ");
+    lcd.print(buf);
   }
 }

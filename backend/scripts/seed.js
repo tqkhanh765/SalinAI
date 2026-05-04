@@ -1,4 +1,4 @@
-require('dotenv').config({ path: '../.env' });
+require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 const { MongoClient } = require('mongodb');
 const { GoogleGenerativeAIEmbeddings } = require("@langchain/google-genai");
 
@@ -8,104 +8,47 @@ const COLLECTION_NAME = "guideline_documents";
 
 const guidelines = [
   {
-    _id: "guide-rice-seedling-001",
-    title: "Rice irrigation guideline for seedling stage",
-    content: "Seedling stage is highly vulnerable to salinity. IF salinity > 1.5 ppt, immediately close intake valve. DO NOT run pump under any circumstances if risk exists.",
-    crop_type: "RICE",
-    crop_stage: "SEEDLING",
-    region: "MEKONG_DELTA",
-    risk_tags: ["salinity", "vulnerable"],
-    source_ref: "agri-bulletin-2026-04",
-    revision: "2026.04"
-  },
-  {
-    _id: "guide-rice-veg-014",
-    title: "Rice irrigation guideline for vegetative stage",
-    content: "During the vegetative stage, crops can tolerate mild salinity. IF salinity >= 3.0 ppt, close intake valve to prevent yield loss. If salinity < 1.0 ppt and weather is sunny, open valve for irrigation. Keep moisture above 60%.",
+    _id: "guide-awd-technique-001",
+    title: "Kỹ thuật tưới ngập khô xen kẽ (AWD) tiết kiệm nước",
+    content: "Kỹ thuật AWD: Khi lúa ở giai đoạn ĐẺ NHÁNH (Vegetative), hãy để nước tự cạn cho đến khi độ ẩm đất giảm còn 60% rồi mới tưới lại ngập 5cm. Việc này giúp rễ ăn sâu, chống đổ ngã và giảm phát thải khí nhà kính. CHỈ áp dụng khi độ mặn nguồn nước < 1.0 ppt.",
     crop_type: "RICE",
     crop_stage: "VEGETATIVE",
     region: "MEKONG_DELTA",
-    risk_tags: ["salinity", "storm"],
-    source_ref: "agri-bulletin-2026-04",
+    risk_tags: ["AWD", "water_saving", "sustainable"],
+    source_ref: "irri-guideline-2025",
     revision: "2026.04"
   },
   {
-    _id: "guide-rice-flowering-003",
-    title: "Rice irrigation guideline for flowering stage",
-    content: "Flowering stage is highly critical for yield. Ensure moisture > 70% at all times. IF salinity >= 2.0 ppt, close the intake valve to avoid flower drop. In drought conditions, prioritize any fresh water available.",
-    crop_type: "RICE",
-    crop_stage: "FLOWERING",
-    region: "MEKONG_DELTA",
-    risk_tags: ["salinity", "drought"],
-    source_ref: "agri-bulletin-2026-04",
-    revision: "2026.04"
-  },
-  {
-    _id: "guide-rice-harvest-007",
-    title: "Rice management near harvest stage",
-    content: "When field is near harvest, drain excess water. High salinity is less impactful now. You should keep valves CLOSED to dry the field, unless moisture drops critically below 40%.",
-    crop_type: "RICE",
-    crop_stage: "HARVEST",
-    region: "MEKONG_DELTA",
-    risk_tags: ["drainage"],
-    source_ref: "agri-bulletin-2026-04",
-    revision: "2026.04"
-  },
-  {
-    _id: "guide-rainfall-flooding-001",
-    title: "Rainfall-based flood prevention guideline",
-    content: "HEAVY RAINFALL ALERT: If rainfall in past 24 hours exceeds 40mm, IMMEDIATELY close the intake valve to prevent field flooding. This overrides salinity considerations. High rainfall + open valve = crop damage.",
-    crop_type: "RICE",
-    crop_stage: ["SEEDLING", "VEGETATIVE", "FLOWERING"],
-    region: "MEKONG_DELTA",
-    risk_tags: ["rainfall", "flooding", "critical"],
-    source_ref: "hydrology-2026",
-    revision: "2026.04",
-    priority: "CRITICAL"
-  },
-  {
-    _id: "guide-humidity-mold-001",
-    title: "Humidity and moisture management",
-    content: "IF humidity > 80% AND soil_moisture > 75% simultaneously, CLOSE valve immediately and consider turning pump ON to improve air circulation. High humidity + wet soil = fungal disease risk (mold, rice blast).",
-    crop_type: "RICE",
-    crop_stage: ["VEGETATIVE", "FLOWERING"],
-    region: "MEKONG_DELTA",
-    risk_tags: ["humidity", "disease", "mold"],
-    source_ref: "phytopathology-2026",
-    revision: "2026.04"
-  },
-  {
-    _id: "guide-rising-tide-saltwater-001",
-    title: "Rising tide and saltwater intrusion prevention",
-    content: "TIDE ALERT: When tide is RISING and salinity >= 1.0 ppt, CLOSE the intake valve immediately. Rising tides bring saltwater inland. Early closure prevents salinity spike. Expected salinity can increase 2-3x during high tide.",
+    _id: "guide-leaching-salt-001",
+    title: "Kỹ thuật thau chua rửa mặn cấp tốc",
+    content: "RỬA MẶN: Nếu ruộng vừa bị nhiễm mặn > 2.0 ppt và có nguồn nước ngọt dồi dào (< 0.5 ppt), hãy MỞ van cho nước chảy tràn liên tục trong 12h. Sau đó rút cạn và bón bổ sung lân, vôi để giải độc phèn mặn cho rễ.",
     crop_type: "RICE",
     crop_stage: ["SEEDLING", "VEGETATIVE"],
     region: "MEKONG_DELTA",
-    risk_tags: ["tide", "salinity", "proactive"],
-    source_ref: "oceanography-2026",
-    revision: "2026.04",
-    priority: "HIGH"
-  },
-  {
-    _id: "guide-drought-water-conservation-001",
-    title: "Drought response and water management",
-    content: "DROUGHT CONDITIONS: If rainfall in past 24h < 2mm AND water_level < 0.8m AND soil_moisture < 40%, OPEN valve to irrigate. Drought overrides salinity thresholds up to 2.0 ppt. Crop survival takes priority.",
-    crop_type: "RICE",
-    crop_stage: ["VEGETATIVE", "FLOWERING"],
-    region: "MEKONG_DELTA",
-    risk_tags: ["drought", "water_conservation"],
-    source_ref: "water-management-2026",
+    risk_tags: ["leaching", "recovery", "emergency"],
+    source_ref: "agri-extension-vn-2025",
     revision: "2026.04"
   },
   {
-    _id: "guide-combined-weather-salinity-001",
-    title: "Combined weather and salinity decision matrix",
-    content: "MULTI-FACTOR DECISION: (1) IF rainfall > 30mm: prioritize closing (flood prevention). (2) IF tide RISING: prioritize closing (salt prevention). (3) IF salinity > 2.5 AND (rainfall < 10 OR tide FALLING): open to dilute. (4) IF humidity > 85%: consider pump ON instead of valve open.",
+    _id: "guide-rice-variety-om5451",
+    title: "Đặc tính chịu mặn giống lúa OM5451",
+    content: "Giống lúa OM5451 có khả năng chịu mặn trung bình (tối đa 3.0 ppt ở giai đoạn sinh trưởng). Tuy nhiên, ở giai đoạn TRỔ BÔNG, nếu mặn > 1.5 ppt sẽ gây lem lép hạt nghiêm trọng. Cần ưu tiên đóng van tuyệt đối nếu lúa đang trổ.",
     crop_type: "RICE",
-    crop_stage: "VEGETATIVE",
+    crop_stage: ["VEGETATIVE", "FLOWERING"],
     region: "MEKONG_DELTA",
-    risk_tags: ["multifactor", "complex_decision"],
-    source_ref: "integrated-agriculture-2026",
+    risk_tags: ["variety", "OM5451", "sensitivity"],
+    source_ref: "rice-institute-2025",
+    revision: "2026.04"
+  },
+  {
+    _id: "guide-local-wisdom-weather-001",
+    title: "Kinh nghiệm dự báo mưa dựa trên mây và gió",
+    content: "KINH NGHIỆM DÂN GIAN: Nếu thấy mây đen kéo đến từ phía Tây Nam kết hợp gió thổi mạnh, khả năng cao sẽ có mưa lớn trong 1-2h tới. Nếu đất đang quá khô (< 40%) nhưng dự báo có mưa, hãy khoan mở van để tránh lãng phí nước ngọt từ kênh và đón nước mưa sạch.",
+    crop_type: "RICE",
+    crop_stage: "ALL",
+    region: "MEKONG_DELTA",
+    risk_tags: ["wisdom", "weather_prediction"],
+    source_ref: "local-farmers-2025",
     revision: "2026.04"
   }
 ];

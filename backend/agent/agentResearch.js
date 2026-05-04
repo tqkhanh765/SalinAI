@@ -7,8 +7,8 @@ function normalizeResearcherProvider(providerOverride = "") {
     if (explicitProvider) return explicitProvider;
 
     const globalProvider = String(process.env.AI_PROVIDER || "gemini").toLowerCase();
-    if (globalProvider === "saola4_medium") {
-        return "gemini";
+    if (globalProvider === "saola4_medium" || globalProvider === "glm4") {
+        return "saola4_medium"; // Keep Medium for Research as requested
     }
 
     return globalProvider;
@@ -31,17 +31,29 @@ function createResearcherLLM(providerOverride = "") {
             model,
             apiKey,
             temperature,
-            configuration: {
-                baseURL,
-            },
+            configuration: { baseURL },
         });
     }
 
-    return new ChatGoogleGenerativeAI({
-        model: process.env.RESEARCHER_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash",
-        apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-        temperature,
-    });
+    if (provider === "saola4_medium") {
+        const apiKey = process.env.SAOLA4_MEDIUM_API_KEY;
+        const baseURL = process.env.SAOLA4_MEDIUM_BASE_URL;
+        const model = process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium";
+
+        if (!apiKey || !baseURL) {
+            throw new Error("SAOLA4_MEDIUM requires SAOLA4_MEDIUM_API_KEY and SAOLA4_MEDIUM_BASE_URL");
+        }
+
+        return new ChatOpenAI({
+            model,
+            apiKey,
+            temperature,
+            configuration: { baseURL },
+        });
+    }
+
+    // Fallback if no specific match
+    throw new Error(`[Researcher] Provider '${provider}' is not supported. Please check your .env configuration.`);
 }
 
 function createResearcherAgent(providerOverride = "") {

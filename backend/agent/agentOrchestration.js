@@ -7,41 +7,74 @@ const { toVietnamISOString, addHoursVietnamISOString } = require("../utils/vietn
 const FEEDBACK_LOOP_DELAY_HOURS = Math.max(0, Number(process.env.OUTCOME_MIN_ACTION_AGE_HOURS || "1"));
 
 function normalizeOrchestratorProvider() {
-    return String(process.env.AI_PROVIDER || "gemini").toLowerCase().trim();
+    return String(process.env.AI_PROVIDER || "none").toLowerCase().trim();
 }
 
 function createOrchestrationLLM() {
     const provider = normalizeOrchestratorProvider();
     const temperature = Number(process.env.LLM_TEMPERATURE || "0.2");
 
-    if (provider === "saola4_medium") {
-        const apiKey = process.env.SAOLA4_MEDIUM_API_KEY;
-        const baseURL = process.env.SAOLA4_MEDIUM_BASE_URL;
-        const model = process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium";
-
-        if (!apiKey || !baseURL) {
-            throw new Error("AI_PROVIDER=saola4_medium requires SAOLA4_MEDIUM_API_KEY and SAOLA4_MEDIUM_BASE_URL");
-        }
-
+    // GLM-4.7 / FPT Cloud — primary Orchestration Agent
+    if (provider === "glm4") {
+        const apiKey = process.env.GLM4_API_KEY;
+        const baseURL = process.env.GLM4_BASE_URL;
+        const model = process.env.GLM4_MODEL || "GLM-4.7";
+        if (!apiKey || !baseURL) throw new Error("Missing GLM4 config: GLM4_API_KEY and GLM4_BASE_URL are required");
         return new ChatOpenAI({
             model,
             apiKey,
             temperature,
-            configuration: {
-                baseURL,
-            },
+            streaming: true,
+            configuration: { baseURL }
         });
     }
 
-    return new ChatGoogleGenerativeAI({
+    // SAOLA4_MEDIUM — kept for backward compatibility (now used as Feedback/Evaluator Agent)
+    if (provider === "saola4_medium") {
+        const apiKey = process.env.SAOLA4_MEDIUM_API_KEY;
+        const baseURL = process.env.SAOLA4_MEDIUM_BASE_URL;
+        const model = process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium";
+        if (!apiKey || !baseURL) throw new Error("Missing SAOLA4_MEDIUM config");
+        return new ChatOpenAI({
+            model,
+            apiKey,
+            temperature,
+            streaming: true,
+            configuration: { baseURL }
+        });
+    }
+
+    // No fallback allowed
+    throw new Error(`[Orchestrator] Provider '${provider}' is not supported or not configured. Only GLM-4 and SaoLa are allowed.`);
+}
+
+function getOrchestratorRuntimeInfo() {
+    const provider = normalizeOrchestratorProvider();
+
+    if (provider === "glm4") {
+        return {
+            provider,
+            model: process.env.GLM4_MODEL || "GLM-4.7",
+            streaming: true,
+        };
+    }
+
+    if (provider === "saola4_medium") {
+        return {
+            provider,
+            model: process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium",
+            streaming: true,
+        };
+    }
+
+    return {
+        provider: "gemini",
         model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-        apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-        temperature,
-    });
+        streaming: false,
+    };
 }
 
 const llm = createOrchestrationLLM();
-
 const orchestratorAgent = llm.bindTools(orchestratorTools);
 
 async function finalizeAction({
@@ -54,77 +87,117 @@ async function finalizeAction({
     mongoDb,
     agentTrace = [],
     modelInsights = {},
+    triggerReason = "AI Triggered",
 }) {
-    if (!actionResult) {
-        return;
+    if (!actionResult) return;
+
+    // 1. Fetch current valve state DIRECTLY from its node to ensure sync with hardware
+    const valveStateSnap = await fbdb.ref("SalinAI/actuator/valve_state").once("value");
+    const currentValveState = valveStateSnap.val() || "CLOSED";
+
+
+    let finalState = actionResult.executed_state;
+    let humanReason = actionResult.reason || "AI thực hiện hành động.";
+
+    humanReason = humanReason
+        .replace(/\bNO_ACTION\b/gi, "duy trì trạng thái")
+        .replace(/\bOPEN\b/gi, "mở van")
+        .replace(/\bCLOSED\b/gi, "đóng van")
+        .replace(/\bACTUATOR\b/gi, "thiết bị")
+        .replace(/\bVALVE\b/gi, "van");
+
+    if (finalState === "NO_ACTION" || !finalState) {
+        finalState = currentValveState;
+        humanReason = `[DUY TRÌ: ${finalState === "OPEN" ? "MỞ" : "ĐÓNG"} VAN] ` + humanReason;
+    } else if (finalState !== currentValveState) {
+        humanReason = `[THỰC THI: ${finalState === "OPEN" ? "MỞ" : "ĐÓNG"} VAN] ` + humanReason;
+    } else {
+        humanReason = `[XÁC NHẬN: ${finalState === "OPEN" ? "MỞ" : "ĐÓNG"} VAN] ` + humanReason;
     }
 
-    if (!actionResult.blocked_by_manual && (actionResult.executed_state === "OPEN" || actionResult.executed_state === "CLOSED")) {
-        await fbdb.ref("actuator/valve_state").set(actionResult.executed_state);
+    // 3. FORCE synchronization to ensure hardware and dashboard are always updated
+    await fbdb.ref("SalinAI/actuator/valve_state").set(finalState);
+    await fbdb.ref("SalinAI/control/action").set(finalState);
 
-        // Mirror to SalinAI/control/action — the path the Wokwi ESP32 reads (sketch.ino line 86).
-        // The sketch checks for "OPEN" or "CLOSE" (not "CLOSED"), so translate accordingly.
-        const esp32Action = actionResult.executed_state === "OPEN" ? "OPEN" : "CLOSE";
-        await fbdb.ref("SalinAI/control/action").set(esp32Action);
-    }
 
-    await fbdb.ref("ai_status").update({
+    const thresholds = actionResult.suggested_thresholds || {
+        salinity_delta: 0.1,
+        moisture_delta: 1.0,
+        recovery_salinity: 0.8,
+        urgent_moisture: 30
+    };
+
+    // Đánh dấu nếu AI không tự đưa ra ngưỡng (để mình biết mà nhắc AI)
+    const isAiManaged = !!actionResult.suggested_thresholds;
+    const thresholdSummary = `${isAiManaged ? "⚙️ AI đề xuất ngưỡng" : "⚠️ Ngưỡng mặc định"}: Mặn > ${thresholds.salinity_delta}ppt | Ẩm > ${thresholds.moisture_delta}%`;
+
+    const fullReason = humanReason + "\n\n" + thresholdSummary;
+
+    await fbdb.ref("SalinAI/ai_status").update({
         is_processing: false,
-        last_reasoning: actionResult.reason,
-        last_retrieval_hit_count: finalHitCount,
-        last_retrieval_source_ids: finalSourceIds,
+        last_reasoning: fullReason,
+        detailed_analysis: actionResult.detailedAnalysis || "Không có phân tích chi tiết.",
+        thresholds: thresholds,
+        threshold_summary: thresholdSummary,
+        threshold_ai_managed: isAiManaged
     });
 
     const actionTimestamp = toVietnamISOString();
+    
+    // Flatten external_forecast fields into sensor_snapshot for frontend access
+    const weatherContext = sensorData?.external_forecast || {};
+    const sensor_snapshot = {
+        ...sensorData,
+        temperature: sensorData.temperature ?? weatherContext.temperature ?? null,
+        humidity: sensorData.humidity ?? weatherContext.humidity ?? null,
+        rainfall_24h: sensorData.rainfall_24h ?? weatherContext.rainfall_24h ?? null,
+        weather: sensorData.weather ?? weatherContext.weather ?? null,
+        tide_status: sensorData.tide_status ?? weatherContext.tide_status ?? null,
+    };
+    // Ensure crop_stage is always present in the snapshot (fallback to stored sensor_data or default)
+    try {
+        if (!sensor_snapshot.crop_stage) {
+            const cropStageSnap = await fbdb.ref("SalinAI/sensor_data/crop_stage").once("value");
+            const storedStage = cropStageSnap.val();
+            sensor_snapshot.crop_stage = storedStage || "VEGETATIVE";
+        }
+    } catch (err) {
+        sensor_snapshot.crop_stage = sensor_snapshot.crop_stage || "VEGETATIVE";
+    }
+    
+    const orchestrator_provider = normalizeOrchestratorProvider();
+    const researcher_provider = modelInsights?.researcher_provider || "saola4_small"; // Fallback to config default
 
     const actionLogPayload = {
         timestamp: actionTimestamp,
-        actor,
-        action: actionResult.executed_state,
-        reason: actionResult.reason + (actionResult.blocked_by_manual ? " (BLOCKED BY MANUAL MODE)" : ""),
+        actor: actor || "SYSTEM",
+        trigger_reason: triggerReason || "UNKNOWN",
+        researcher_provider: researcher_provider || "N/A",
+        orchestrator_provider: orchestrator_provider || "N/A",
+        action: finalState || "NO_ACTION",
+        reason: fullReason || "No reason provided",
+        sensor_snapshot: sensor_snapshot || {},
+        subagent_summary: researcherSummary || "",
         retrieval: {
-            hit_count: finalHitCount,
-            source_ids: finalSourceIds,
-            retrieval_miss: finalHitCount === 0,
+            hit_count: finalHitCount || 0,
+            source_ids: finalSourceIds || []
         },
-        sensor_snapshot: sensorData,
-        subagent_summary: researcherSummary,
-        agent_trace: agentTrace,
-        model_insights: modelInsights,
-        feedback_loop: {
-            status: "PENDING_OUTCOME",
-            stage: sensorData?.crop_stage || "VEGETATIVE",
-            action_at: actionTimestamp,
-            next_check_at: addHoursVietnamISOString(FEEDBACK_LOOP_DELAY_HOURS),
-            note: `Đang chờ outcome sau ${FEEDBACK_LOOP_DELAY_HOURS} giờ để cập nhật policy memory.`,
-        },
+        agent_trace: agentTrace || [],
+        model_insights: modelInsights || {},
     };
 
-    await fbdb.ref("action_logs").push(actionLogPayload);
+    await fbdb.ref("SalinAI/action_logs").push(actionLogPayload);
+
+    console.log(`\n+---------------- [QUYẾT ĐỊNH CỦA AI] (PID: ${process.pid}) ----------------+`);
+    console.log(`| HÀNH ĐỘNG: [${finalState === "OPEN" ? "MỞ VAN" : "ĐÓNG VAN"}]`);
+    console.log(`| LÝ DO: ${humanReason.substring(0, 70)}...`);
+    console.log(`| LÁ CHẮN: ${thresholdSummary}`);
+    console.log(`+-----------------------------------------------------------+\n`);
 
     if (mongoDb) {
-        // Log with predictions for 24h outcome tracking
-        await logActionWithPrediction(actionLogPayload);
-
-        await fbdb.ref("ai_status").update({
-            feedback_loop: {
-                status: "PENDING_OUTCOME",
-                stage: sensorData?.crop_stage || "VEGETATIVE",
-                action: actionResult.executed_state,
-                action_at: actionLogPayload.timestamp,
-                next_check_at: actionLogPayload.feedback_loop.next_check_at,
-                note: `Đã ghi action và đang chờ outcome sau ${FEEDBACK_LOOP_DELAY_HOURS} giờ để xác nhận feedback loop.`,
-            },
-        });
-
-        // Trigger an immediate scan so new actions are not left waiting for the next scheduler tick.
-        runAutonomousLearningCycle({ minActionAgeHours: FEEDBACK_LOOP_DELAY_HOURS }).catch((error) => {
-            console.error("[Outcome] Immediate scan failed:", error.message);
-        });
+        await logActionWithPrediction(actionLogPayload).catch(() => { });
+        runAutonomousLearningCycle({ minActionAgeHours: FEEDBACK_LOOP_DELAY_HOURS }).catch(() => { });
     }
 }
 
-module.exports = {
-    orchestratorAgent,
-    finalizeAction,
-};
+module.exports = { orchestratorAgent, finalizeAction, getOrchestratorRuntimeInfo };

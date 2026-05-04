@@ -1,8 +1,10 @@
 /**
- * Sensor payload mapper.
- * Normalizes raw ingest data into the shared farm-state shape used by Firebase, the dashboard, and the AI pipeline.
+ * SENSOR PAYLOAD MAPPER
+ * 
+ * Tác dụng: Chuẩn hóa dữ liệu thô từ cảm biến thành định dạng chung mà Dashboard
+ * và AI có thể hiểu được. Đảm bảo tính nhất quán về giai đoạn cây trồng.
  */
-const CROP_STAGES = ["SEEDLING", "VEGETATIVE", "FLOWERING", "FRUITING", "HARVEST"];
+const { CROP_STAGES } = require("../../config/crops");
 const CONTROL_MODES = ["AUTO", "MANUAL"];
 const VALVE_STATES = ["OPEN", "CLOSED"];
 
@@ -53,9 +55,13 @@ function normalizeActionLogs(rawLogs, limit = 20) {
 
 function buildFarmStatePayload(root, limit = 20, sensorHistory = []) {
   const sensorData = root.sensor_data || {};
+  const enrichmentData = root.sensor_enrichment || {};
   const actuator = root.actuator || {};
   const aiStatus = root.ai_status || {};
   const actionLogs = normalizeActionLogs(root.action_logs, limit);
+
+  // Deep merge sensor and enrichment for the dashboard
+  const weatherContext = enrichmentData.external_forecast || sensorData.external_forecast || {};
 
   return {
     sensorData: {
@@ -63,16 +69,17 @@ function buildFarmStatePayload(root, limit = 20, sensorHistory = []) {
       moisture: toNumber(sensorData.moisture, 0),
       ph: sensorData.ph != null ? toNumber(sensorData.ph, null) : null,
       river_water_level: sensorData.river_water_level != null ? toNumber(sensorData.river_water_level, null) : null,
-      temperature: sensorData.external_forecast?.temperature != null ? toNumber(sensorData.external_forecast.temperature) : null,
-      humidity: sensorData.external_forecast?.humidity != null ? toNumber(sensorData.external_forecast.humidity) : null,
-      rainfall_24h: sensorData.external_forecast?.rainfall_24h != null ? toNumber(sensorData.external_forecast.rainfall_24h) : null,
-      weather_code: sensorData.external_forecast?.weather_code != null ? toNumber(sensorData.external_forecast.weather_code, null) : null,
-      weather: sensorData.external_forecast?.weather || null,
-      tide_status: sensorData.external_forecast?.tide_status || null,
+      temperature: weatherContext.temperature != null ? toNumber(weatherContext.temperature) : null,
+      humidity: weatherContext.humidity != null ? toNumber(weatherContext.humidity) : null,
+      rainfall_24h: weatherContext.rainfall_24h != null ? toNumber(weatherContext.rainfall_24h) : null,
+      weather_code: weatherContext.weather_code != null ? toNumber(weatherContext.weather_code, null) : null,
+      weather: weatherContext.weather || null,
+      tide_status: weatherContext.tide_status || null,
       crop_stage: sensorData.crop_stage || "VEGETATIVE",
       timestamp: sensorData.timestamp || null,
     },
     actuator: normalizeActuatorSnapshot(actuator),
+
     aiStatus,
     actionLogs,
     sensorHistory,

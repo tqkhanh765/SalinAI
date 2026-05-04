@@ -74,7 +74,13 @@ export function useRealtimeFarmState() {
       }
     };
 
+    let retryDelay = 1000;
+    let reconnectTimeout = null;
+
     const connectRealtimeStream = () => {
+      if (stream) {
+        stream.close();
+      }
       stream = new EventSource(`${API_BASE_URL}/api/farm-stream?logLimit=30`);
 
       stream.addEventListener('farm_state', (event) => {
@@ -84,6 +90,7 @@ export function useRealtimeFarmState() {
           applyFarmPayload(payload);
           setError(null);
           setLoading(false);
+          retryDelay = 1000; // Reset delay on successful connection
         } catch {
           setError('Invalid stream payload received from backend');
         }
@@ -91,7 +98,13 @@ export function useRealtimeFarmState() {
 
       stream.addEventListener('error', () => {
         if (!mounted) return;
-        setError('Realtime stream disconnected. Reconnecting...');
+        setError(`Realtime stream disconnected. Reconnecting in ${retryDelay / 1000}s...`);
+        stream.close();
+        
+        reconnectTimeout = setTimeout(() => {
+          retryDelay = Math.min(retryDelay * 2, 30000); // Max backoff 30s
+          connectRealtimeStream();
+        }, retryDelay);
       });
     };
 
@@ -100,9 +113,8 @@ export function useRealtimeFarmState() {
 
     return () => {
       mounted = false;
-      if (stream) {
-        stream.close();
-      }
+      if (stream) stream.close();
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
     };
   }, []);
 

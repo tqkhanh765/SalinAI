@@ -19,8 +19,8 @@ const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 300 });
 const CACHE_KEY = 'weather_data';
 
-const STATION_LAT = parseFloat(process.env.STATION_LAT || 10.18);
-const STATION_LON = parseFloat(process.env.STATION_LON || 105.48);
+const STATION_LAT = parseFloat(process.env.STATION_LAT || 9.28);
+const STATION_LON = parseFloat(process.env.STATION_LON || 105.72);
 const TIMEZONE = process.env.TIMEZONE || 'Asia/Bangkok';
 
 /**
