@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -133,7 +133,6 @@ export default function FarmerDashboard() {
   const [hiddenFeedbackLogIds, setHiddenFeedbackLogIds] = useState([]);
   const [lessonsLearned, setLessonsLearned] = useState([]);
   const [isLessonsExpanded, setIsLessonsExpanded] = useState(true);
-  const [debugWeatherCode, setDebugWeatherCode] = useState(null);
 
   const CROP_STAGE_OPTIONS = [
     { value: 'GERMINATION', label: 'Nảy mầm' },
@@ -168,7 +167,29 @@ export default function FarmerDashboard() {
   const latestActionLogId = actionLogs?.[0]?.id || actionLogs?.[0]?._id || null;
 
   const formatVnTime = (value, opts = {}) => {
-    return new Date(value).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', ...opts });
+    if (!value) return '--:--';
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return '--:--';
+
+    const isToday = date.toDateString() === new Date().toDateString();
+
+    const timeStr = date.toLocaleTimeString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+
+    if (isToday) return timeStr;
+
+    const dateStr = date.toLocaleDateString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      day: '2-digit',
+      month: '2-digit',
+    });
+
+    return `${dateStr} ${timeStr.split(':').slice(0, 2).join(':')}`; // Format: DD/MM HH:mm
   };
 
   const readings = {
@@ -212,6 +233,19 @@ export default function FarmerDashboard() {
     setCropStageDraft(nextStage);
   }, [sensorData.crop_stage, readings.cropStage]);
 
+  const fetchLessons = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/lessons-learned`);
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json?.lessons) {
+        setLessonsLearned(json.lessons);
+      }
+    } catch (err) {
+      console.debug('[Dashboard] lessons fetch failed:', err?.message || err);
+    }
+  }, []);
+
   useEffect(() => {
     let mounted = true;
 
@@ -228,29 +262,17 @@ export default function FarmerDashboard() {
       }
     };
 
-    const fetchLessons = async () => {
-      try {
-        const res = await fetch(`${API_BASE_URL}/api/lessons-learned`);
-        if (!res.ok) return;
-        const json = await res.json();
-        if (mounted && json?.lessons) {
-          setLessonsLearned(json.lessons);
-        }
-      } catch (err) {
-        console.debug('[Dashboard] lessons fetch failed:', err?.message || err);
-      }
-    };
 
     fetchDecisionDetails();
     fetchLessons();
     const interval = setInterval(fetchDecisionDetails, 5000);
-    const intervalLessons = setInterval(fetchLessons, 15000);
+    const intervalLessons = setInterval(fetchLessons, 10000);
     return () => {
       mounted = false;
       clearInterval(interval);
       clearInterval(intervalLessons);
     };
-  }, []);
+  }, [fetchLessons]);
 
   const submitPositiveFeedback = async (actionLogId) => {
     if (!actionLogId) return;
@@ -308,6 +330,11 @@ export default function FarmerDashboard() {
       setFeedbackReason('');
       toast.success('Cảm ơn! AI sẽ học từ phản hồi này.', { id: `negative-feedback-${feedbackModal.actionLogId}` });
       setHiddenFeedbackLogIds((prev) => (prev.includes(feedbackModal.actionLogId) ? prev : [...prev, feedbackModal.actionLogId]));
+      
+      // AI Evaluator takes time, so we poll after a delay
+      setTimeout(fetchLessons, 5000);
+      setTimeout(fetchLessons, 15000);
+      setTimeout(fetchLessons, 30000);
     } catch (error) {
       toast.error('Không thể gửi phản hồi: ' + error.message, { id: `negative-feedback-${feedbackModal.actionLogId}` });
     } finally {
@@ -390,8 +417,7 @@ export default function FarmerDashboard() {
       },
     ];
 
-  const formatTime = (d) =>
-    formatVnTime(d, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const formatTime = (d) => formatVnTime(d);
 
   const formatActionLabel = (action) => {
     const normalized = String(action || '').toUpperCase();
@@ -515,7 +541,7 @@ export default function FarmerDashboard() {
 
   return (
     <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8 relative" style={{ background: '#EEEEEE' }}>
-      <WeatherAmbience weatherCode={debugWeatherCode !== null ? debugWeatherCode : (sensorData.weather_code || 0)} />
+      <WeatherAmbience weatherCode={sensorData.weather_code || 0} />
 
       <div className="max-w-5xl mx-auto space-y-5 relative z-10">
 
@@ -531,14 +557,6 @@ export default function FarmerDashboard() {
             <span className="text-xs text-gray-500 font-medium">Cập nhật: {formatTime(lastUpdated)}</span>
           </div>
 
-          <div className="flex items-center gap-2 bg-white rounded-xl px-2 py-1.5 shadow-sm border border-orange-200">
-            <span className="text-[10px] font-bold text-orange-500 px-1">DEBUG:</span>
-            <button onClick={() => setDebugWeatherCode(0)} className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-[10px] font-bold rounded hover:bg-yellow-200">NẮNG</button>
-            <button onClick={() => setDebugWeatherCode(3)} className="px-2 py-0.5 bg-slate-100 text-slate-700 text-[10px] font-bold rounded hover:bg-slate-200">MÂY</button>
-            <button onClick={() => setDebugWeatherCode(63)} className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-bold rounded hover:bg-blue-200">MƯA</button>
-            <button onClick={() => setDebugWeatherCode(95)} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded hover:bg-indigo-200">BÃO</button>
-            <button onClick={() => setDebugWeatherCode(null)} className="px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded hover:bg-gray-200">LIVE</button>
-          </div>
         </div>
 
         <div>
@@ -785,7 +803,7 @@ export default function FarmerDashboard() {
                         </linearGradient>
                       </defs>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={3} />
+                      <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#9ca3af' }} interval="preserveStartEnd" minTickGap={50} />
                       <YAxis domain={[0, 10]} tick={{ fontSize: 10, fill: '#9ca3af' }} />
                       <Tooltip content={<CustomTooltip />} />
                       <ReferenceLine y={chartThresholds.salinitySafe} stroke="#6FCF97" strokeDasharray="4 4" strokeWidth={1.5} />
@@ -810,7 +828,7 @@ export default function FarmerDashboard() {
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={historyChartData} margin={{ top: 6, right: 10, left: -10, bottom: 0 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#9ca3af' }} interval={3} />
+                      <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#9ca3af' }} interval="preserveStartEnd" minTickGap={50} />
                       <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#9ca3af' }} />
                       <Tooltip content={<CustomTooltip />} />
                       <ReferenceLine y={chartThresholds.moistureSafe} stroke="#6FCF97" strokeDasharray="4 4" strokeWidth={1.5} />
@@ -907,7 +925,7 @@ export default function FarmerDashboard() {
                 {lessonsLearned.slice(0, 4).map((lesson, idx) => (
                   <div key={idx} className="bg-gray-50 border border-gray-100 p-3 rounded-xl shadow-sm">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium text-gray-500">{formatVnTime(lesson.created_at_vn, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="text-xs font-medium text-gray-500">{formatVnTime(lesson.created_at_vn)}</span>
                       <span className="text-[10px] bg-[#1F6F5F15] text-[#1F6F5F] px-1.5 py-0.5 rounded font-bold uppercase">{lesson.feedback_source || 'AI'}</span>
                     </div>
                     <p className="text-sm font-semibold text-gray-800 mb-2 leading-relaxed">{lesson.lesson_text}</p>

@@ -1,9 +1,5 @@
 // =============================================================================
-// agent/prompt.js — Central prompt repository for all SalinAI agents
-// =============================================================================
-// All LLM-facing text (system prompts, retry prompts, fallback strings)
-// lives here so they can be reviewed, versioned, and tuned in one place.
-// =============================================================================
+const { getFewShotBlock } = require("../config/baseCases");
 
 // ─── Researcher Agent (SAOLA4_SMALL) ─────────────────────────────────────────
 
@@ -100,7 +96,7 @@ Quy tắc gọi tool:
 
 Ví dụ: "Vì độ mặn 4.5ppt vượt ngưỡng an toàn cho cây con nên tôi quyết định đóng van để bảo vệ ruộng."`;
 
-const orchestratorPromptTemplate = `Bạn là tác tử Orchestrator của SalinAI.
+const buildOrchestratorSystemPrompt = (sensorData) => `Bạn là tác tử Orchestrator của SalinAI.
 Nhiệm vụ của bạn là đưa ra quyết định an toàn, rõ ràng, dựa trên bằng chứng đã được Researcher tổng hợp.
 
 Ngữ cảnh có sẵn:
@@ -108,6 +104,18 @@ Ngữ cảnh có sẵn:
 - Policy memory / outcome memory
 - Dữ liệu cảm biến hiện tại
 - Giai đoạn cây hiện tại
+
+[QUY TẮC ĐỊNH CHUẨN - CALIBRATION RULES]
+Để lập luận chính xác, bạn BẮT BUỘC dùng hệ quy chiếu sau để đánh giá dữ liệu:
+- Về Độ ẩm (Moisture):
+  + > 60%: Đất đủ ẩm, tuyệt đối không cần bơm.
+  + 40% - 60%: Ẩm an toàn, bơm hay không tùy thuộc vào thời tiết.
+  + < 40%: Khô hạn. Bắt buộc xem xét bơm.
+  + < 25%: Khô hạn nguy kịch (Báo động sinh tử).
+- Về Độ mặn (Salinity so với ngưỡng an toàn):
+  + Dưới ngưỡng an toàn: Nước ngọt, ưu tiên bơm nếu đất khô.
+  + Vượt ngưỡng < 1 ppt: Nhiễm mặn nhẹ. Gây xót rễ nhưng CÓ THỂ BƠM cứu hạn nếu đất < 25%.
+  + Vượt ngưỡng > 1 ppt: Mặn nguy hiểm. TUYỆT ĐỐI ĐÓNG VAN, thà để đất khô còn hơn bơm nước muối làm chết cây ngay lập tức.
 
 Nguyên tắc quyết định:
 1) Chỉ dựa trên summary từ Researcher, policy/outcome memory, và dữ liệu cảm biến hiện tại; không tự đọc lại guideline hay history thô.
@@ -118,8 +126,8 @@ Nguyên tắc quyết định:
 6) Không biến câu trả lời thành bản liệt kê lại evidence; nhiệm vụ của bạn là chốt quyết định cuối cùng.
 
 Yêu cầu về câu trả lời:
-- Chỉ viết bằng tiếng Việt tự nhiên, giọng người thật, ngắn gọn.
-- Trình bày theo mạch suy luận tự nhiên: quan sát tình hình -> so sánh với ngưỡng -> giải thích hệ quả -> chốt quyết định.
+- Chỉ viết bằng tiếng Việt tự nhiên, giọng người thật, ngắn gọn nhưng phải có chiều sâu.
+- Lý do giải thích phải có độ dài ít nhất 2 câu, trình bày theo mạch suy luận tự nhiên: quan sát tình hình -> so sánh với ngưỡng -> giải thích hệ quả -> chốt quyết định.
 - Không liệt kê từng quy tắc, không viết kiểu "nếu... thì...", không biến câu trả lời thành danh sách.
 - TUYỆT ĐỐI KHÔNG dùng các từ kỹ thuật như "OPEN", "CLOSED", "NO_ACTION" trong phần giải thích.
 - Không dùng cụm từ "Giữ nguyên trạng thái". Hãy dùng các từ khẳng định như "Tiếp tục Mở van", "Tiếp tục Đóng van", "Mở van ngay" hoặc "Đóng van ngay".
@@ -137,6 +145,7 @@ Yêu cầu về câu trả lời:
 
 Trong phần giải thích, hãy cho thấy bạn đã cân nhắc nhiều lớp thông tin, gồm: hiện trạng cảm biến, giai đoạn cây, bản tóm tắt của Researcher, và kinh nghiệm rút ra từ outcome trước đó.
 
+${getFewShotBlock(sensorData)}
 Sau đó bạn PHẢI gọi execute_valve_control với:
 - state: "OPEN" | "CLOSED" | "NO_ACTION"
 - reason: 1 câu giải thích ngắn, dễ hiểu cho nông dân
@@ -277,7 +286,7 @@ function buildFallbackReason(sensorData, state) {
 module.exports = {
     // Agent system prompts
     researcherPromptTemplate,
-    orchestratorPromptTemplate,
+    buildOrchestratorSystemPrompt,
     orchestratorDetailedPromptTemplate,
     orchestratorSummaryPromptTemplate,
     evaluatorSystemPrompt,

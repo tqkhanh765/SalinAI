@@ -52,8 +52,21 @@ async function buildFallbackAction(sensorData, techReason) {
     // Lấy profile thực tế từ Outcome Service để đồng bộ logic
     const profile = CROP_STAGE_PROFILES[stage] || DEFAULT_STAGE_PROFILE;
     const safeThreshold = profile.salinityMaxSafe;
+    const rainfall = Number(sensorData?.rainfall_24h || sensorData?.external_forecast?.rainfall_24h || 0);
 
-    const desiredState = salinity >= safeThreshold ? "CLOSED" : "OPEN";
+    let desiredState = "CLOSED";
+    if (salinity < safeThreshold) {
+        // Giai đoạn HARVEST (Chín/Thu hoạch) bắt buộc phải siết nước (ĐÓNG), dù đất khô hay nước ngọt.
+        if (stage === "HARVEST" || stage === "RIPENING") {
+            desiredState = "CLOSED";
+        }
+        // "Sweet Water Trap" fallback: Nếu sắp mưa to (>20mm) và đất không quá khô (>30%), hãy ưu tiên ĐÓNG để hứng nước trời.
+        else if (rainfall > 20 && moisture > 30) {
+            desiredState = "CLOSED";
+        } else {
+            desiredState = "OPEN";
+        }
+    }
     
     const actuatorSnap = await fbdb.ref("SalinAI/actuator").once("value");
     const actuator = actuatorSnap.val() || {};

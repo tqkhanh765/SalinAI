@@ -6,6 +6,7 @@
  * chỉ số và bằng chứng guideline.
  */
 const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE } = require("../../config/crops");
+const { toVietnamISOString } = require("../../utils/vietnamTime");
 
 /**
  * Build a user-friendly explanation of the final decision.
@@ -116,7 +117,7 @@ function buildDetailedExplanation(sensorData, weatherData, tideData, guidelines,
 
     // ─── Build Final Explanation ──────────────────────────────────────
     return {
-        timestamp: new Date().toISOString(),
+        timestamp: toVietnamISOString(),
         decision: decision?.executed_state || "ĐANG QUAN SÁT",
         mainReason: decision?.reason || "Chưa có quyết định",
         factors,
