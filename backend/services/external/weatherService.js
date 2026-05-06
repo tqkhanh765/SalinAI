@@ -153,24 +153,25 @@ function mapWeatherCodeToText(weatherCode) {
  * 71-77, 80-82 = Rain, 95-99 = Thunderstorm
  */
 function inferTideStatus(weatherCode, rainfall_24h, currentPrecip) {
-    // Thunderstorm or heavy rain = rising tide (storm surge)
-    if (weatherCode >= 95 || (weatherCode >= 80 && rainfall_24h > 10)) {
-        return 'RISING';  // Storm tide
+    if (weatherCode >= 95 || (weatherCode >= 80 && rainfall_24h > 100)) {
+        return 'RISING';
     }
 
-    // Moderate/light rain = some water influx
-    if (weatherCode >= 51 || rainfall_24h > 2) {
-        return 'RISING';  // More freshwater
+    if (weatherCode >= 51 && rainfall_24h > 10) {
+        return 'RISING';
     }
 
-    // Clear/calm weather with no rain = receding
-    if (weatherCode === 0 && rainfall_24h < 0.5) {
-        return 'FALLING';  // Tide going out
+    if (rainfall_24h > 30) {
+        return 'RISING';
     }
 
-    // Default to shifting
+    if (weatherCode === 0 && rainfall_24h < 5) {
+        return 'FALLING';
+    }
+
     return 'FALLING';
 }
+
 
 /**
  * Default weather (fallback)
