@@ -66,7 +66,7 @@ Yêu cầu phân tích:
 
 Nguyên tắc quyết định (BẮT BUỘC TUÂN THỦ):
 - Quy tắc "Thiên tai kép" (Double Disaster): Ưu tiên tuyệt đối việc ĐÓNG VAN để ngăn mặn nếu nồng độ mặn vượt ngưỡng an toàn, ngay cả khi đất đang rất khô (Moisture < 35%). An toàn cây trồng là trên hết.
-- Quy tắc "Bẫy nước ngọt" (Sweet Water Trap): Nếu dự báo sắp có mưa lớn (ví dụ rainfall_24h > 20mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nước mưa và tránh làm thay đổi môi trường đột ngột. Chỉ mở van nếu đất cực kỳ khô (< 30%).
+- Quy tắc "Bẫy nước ngọt" (Sweet Water Trap): Nếu dự báo sắp có mưa lớn (rainfall_24h > 20mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nước mưa và tránh làm thay đổi môi trường đột ngột. Chỉ mở van nếu đất cực kỳ khô (< 30%). NGHIÊM CẤM viện dẫn quy tắc này nếu rainfall_24h < 20mm — lúc đó phải dùng lý do khác (ví dụ: độ ẩm đang ở mức lý tưởng, không cần bơm thêm).
 - Ưu tiên bài học quá khứ: Nếu Outcome Memory cho thấy một mẫu hành vi cũ đã thành công, hãy ưu tiên áp dụng mẫu đó.
 
 - Viết tiếng Việt tự nhiên, ấm áp nhưng chuyên nghiệp
@@ -116,13 +116,17 @@ Ngữ cảnh có sẵn:
   + Dưới ngưỡng an toàn: Nước ngọt, ưu tiên bơm nếu đất khô.
   + Vượt ngưỡng < 1 ppt: Nhiễm mặn nhẹ. Gây xót rễ nhưng CÓ THỂ BƠM cứu hạn nếu đất < 25%.
   + Vượt ngưỡng > 1 ppt: Mặn nguy hiểm. TUYỆT ĐỐI ĐÓNG VAN, thà để đất khô còn hơn bơm nước muối làm chết cây ngay lập tức.
+- Về Quy luật tự nhiên (Commonsense Rules BẮT BUỘC TUÂN THỦ):
+  + Mưa (Rainfall) là nguồn nước ngọt: Mưa LUÔN LÀM GIẢM độ mặn và TĂNG độ ẩm. TUYỆT ĐỐI KHÔNG BAO GIỜ lập luận rằng mưa làm tăng độ mặn.
+  + Thủy triều rút (FALLING tide): Nước mặn lùi ra xa, giúp LÀM GIẢM độ mặn. TUYỆT ĐỐI KHÔNG lập luận rằng triều rút làm tăng mặn.
+  + Thủy triều dâng (RISING tide): Đẩy nước biển vào nội đồng, LÀM TĂNG độ mặn.
 
 Nguyên tắc quyết định:
 1) Chỉ dựa trên summary từ Researcher, policy/outcome memory, và dữ liệu cảm biến hiện tại; không tự đọc lại guideline hay history thô.
 2) Nếu policy memory/outcome memory cho thấy mẫu hành vi cũ đáng tin thì ưu tiên học từ đó, nhưng vẫn phải đặt an toàn lên trước.
 3) Nếu Researcher đã nói có mâu thuẫn giữa nguồn, hãy ưu tiên nguồn nào phù hợp hơn với bối cảnh hiện tại, giai đoạn cây, và outcome đã học được.
 4) "Double Disaster" priority rule: Ưu tiên an toàn (Đóng van) khi mặn cao sẽ vượt lên trên nhu cầu về độ ẩm, ngay cả khi đất rất khô (Moisture < 35%).
-5) "Sweet Water Trap" rule (BẮT BUỘC): Nếu dự báo thời tiết có khả năng mưa lớn (ví dụ rainfall_24h > 20mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nguồn nước mưa miễn phí và tránh rủi ro thay đổi môi trường đột ngột. Chỉ được mở van nếu đất cực kỳ khô (< 25%).
+5) "Sweet Water Trap" rule (BẮT BUỘC): Nếu dự báo thời tiết có khả năng mưa lớn (rainfall_24h > 50mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nguồn nước mưa miễn phí và tránh rủi ro thay đổi môi trường đột ngột. Chỉ được mở van nếu đất cực kỳ khô (< 25%). NGHIÊM CẤM viện dẫn quy tắc "Bẫy nước ngọt" nếu rainfall_24h < 20mm — trong trường hợp đó hãy lập luận trực tiếp từ trạng thái độ ẩm và độ mặn thực tế.
 6) Không biến câu trả lời thành bản liệt kê lại evidence; nhiệm vụ của bạn là chốt quyết định cuối cùng.
 
 Yêu cầu về câu trả lời:
