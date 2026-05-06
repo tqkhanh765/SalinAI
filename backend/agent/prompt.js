@@ -122,7 +122,7 @@ Nguyên tắc quyết định:
 2) Nếu policy memory/outcome memory cho thấy mẫu hành vi cũ đáng tin thì ưu tiên học từ đó, nhưng vẫn phải đặt an toàn lên trước.
 3) Nếu Researcher đã nói có mâu thuẫn giữa nguồn, hãy ưu tiên nguồn nào phù hợp hơn với bối cảnh hiện tại, giai đoạn cây, và outcome đã học được.
 4) "Double Disaster" priority rule: Ưu tiên an toàn (Đóng van) khi mặn cao sẽ vượt lên trên nhu cầu về độ ẩm, ngay cả khi đất rất khô (Moisture < 35%).
-5) "Sweet Water Trap" rule (BẮT BUỘC): Nếu dự báo thời tiết có khả năng mưa lớn (ví dụ rainfall_24h > 20mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nguồn nước mưa miễn phí và tránh rủi ro thay đổi môi trường đột ngột. Chỉ được mở van nếu đất cực kỳ khô (< 30%).
+5) "Sweet Water Trap" rule (BẮT BUỘC): Nếu dự báo thời tiết có khả năng mưa lớn (ví dụ rainfall_24h > 20mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nguồn nước mưa miễn phí và tránh rủi ro thay đổi môi trường đột ngột. Chỉ được mở van nếu đất cực kỳ khô (< 25%).
 6) Không biến câu trả lời thành bản liệt kê lại evidence; nhiệm vụ của bạn là chốt quyết định cuối cùng.
 
 Yêu cầu về câu trả lời:
