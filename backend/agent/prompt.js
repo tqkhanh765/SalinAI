@@ -38,7 +38,10 @@ Phong cách trả lời:
 - CẤM dùng placeholder kiểu "guideline X", "nguồn Y", "paper Z"; chỉ được dùng đúng source ID thật (ví dụ: paper-...-chunk-...).
 - Nếu có mâu thuẫn giữa các nguồn, phải nêu rõ nguồn nào ủng hộ mở/đóng, nguồn nào phản biện, và vì sao chọn nguồn mạnh hơn.
 - Có thể trích rất ngắn một câu/cụm từ quan trọng từ guideline hoặc history, nhưng không được chép dài nguyên văn.
-- Câu mở đầu nên đi thẳng vào bằng chứng chính và nêu rõ source ID thật, tránh mở kiểu chung chung.
+- Sử dụng 'query_salin_knowledge' (Vertex AI Search) để tìm kiếm kiến thức chuyên sâu, cơ sở khoa học từ tài liệu PDF. Đây là nguồn ưu tiên hàng đầu.
+- Sử dụng 'search_agricultural_guidelines' (MongoDB RAG) để tra cứu các quy tắc an toàn, ngưỡng kỹ thuật hoặc chỉ dẫn ngắn gọn mang tính quy định.
+- Kết hợp cả hai nguồn để đưa ra bản báo cáo vừa có tính khoa học vừa tuân thủ đúng các quy tắc thực tế.
+- Sau khi có thông tin từ các nguồn, bạn phải tổng hợp lại thành một bản báo cáo ngắn gọn, khách quan và có chiều sâu bằng tiếng Việt.
 
 Đầu ra mong muốn: một phân tích ngắn nhưng có chiều sâu, chỉ gồm dẫn chứng và lập luận trung lập để Orchestrator tự ra quyết định.`;
 
@@ -122,7 +125,7 @@ Nguyên tắc quyết định:
 2) Nếu policy memory/outcome memory cho thấy mẫu hành vi cũ đáng tin thì ưu tiên học từ đó, nhưng vẫn phải đặt an toàn lên trước.
 3) Nếu Researcher đã nói có mâu thuẫn giữa nguồn, hãy ưu tiên nguồn nào phù hợp hơn với bối cảnh hiện tại, giai đoạn cây, và outcome đã học được.
 4) "Double Disaster" priority rule: Ưu tiên an toàn (Đóng van) khi mặn cao sẽ vượt lên trên nhu cầu về độ ẩm, ngay cả khi đất rất khô (Moisture < 35%).
-5) "Sweet Water Trap" rule (BẮT BUỘC): Nếu dự báo thời tiết có khả năng mưa lớn (ví dụ rainfall_24h > 20mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nguồn nước mưa miễn phí và tránh rủi ro thay đổi môi trường đột ngột. Chỉ được mở van nếu đất cực kỳ khô (< 30%).
+5) "Sweet Water Trap" rule (BẮT BUỘC): Nếu dự báo thời tiết có khả năng mưa lớn (ví dụ rainfall_24h > 20mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nguồn nước mưa miễn phí và tránh rủi ro thay đổi môi trường đột ngột. Chỉ được mở van nếu đất cực kỳ khô (< 25%).
 6) Không biến câu trả lời thành bản liệt kê lại evidence; nhiệm vụ của bạn là chốt quyết định cuối cùng.
 
 Yêu cầu về câu trả lời:
@@ -240,10 +243,10 @@ const FALLBACK_OPENERS = [
 ];
 
 const STAGE_NAMES_VN = {
-    SEEDLING:   "mạ non",
+    SEEDLING: "mạ non",
     VEGETATIVE: "sinh trưởng",
-    FLOWERING:  "trổ bông",
-    HARVEST:    "sắp thu hoạch",
+    FLOWERING: "trổ bông",
+    HARVEST: "sắp thu hoạch",
 };
 
 /**
@@ -255,9 +258,9 @@ const STAGE_NAMES_VN = {
 function buildFallbackReason(sensorData, state) {
     const salinity = Number(sensorData?.salinity || 0);
     const moisture = Number(sensorData?.moisture || 0);
-    const stage    = String(sensorData?.crop_stage || "VEGETATIVE").toUpperCase();
-    const vnStage  = STAGE_NAMES_VN[stage] || "phát triển";
-    const opener   = FALLBACK_OPENERS[Math.floor(Math.random() * FALLBACK_OPENERS.length)];
+    const stage = String(sensorData?.crop_stage || "VEGETATIVE").toUpperCase();
+    const vnStage = STAGE_NAMES_VN[stage] || "phát triển";
+    const opener = FALLBACK_OPENERS[Math.floor(Math.random() * FALLBACK_OPENERS.length)];
 
     if (state === "CLOSED") {
         const options = [

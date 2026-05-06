@@ -4,6 +4,7 @@ const { orchestratorTools } = require("./tools");
 const fbdb = require("../config/firebase");
 const { logActionWithPrediction, runAutonomousLearningCycle } = require("../services/ai/outcomeService");
 const { toVietnamISOString, addHoursVietnamISOString } = require("../utils/vietnamTime");
+const { bigquery, datasetId, tableId } = require("../config/bigquerry");
 const FEEDBACK_LOOP_DELAY_HOURS = Math.max(0, Number(process.env.OUTCOME_MIN_ACTION_AGE_HOURS || "1"));
 
 function normalizeOrchestratorProvider() {
@@ -143,7 +144,7 @@ async function finalizeAction({
     });
 
     const actionTimestamp = toVietnamISOString();
-    
+
     // Flatten external_forecast fields into sensor_snapshot for frontend access
     const weatherContext = sensorData?.external_forecast || {};
     const sensor_snapshot = {
@@ -164,7 +165,7 @@ async function finalizeAction({
     } catch (err) {
         sensor_snapshot.crop_stage = sensor_snapshot.crop_stage || "VEGETATIVE";
     }
-    
+
     const orchestrator_provider = normalizeOrchestratorProvider();
     const researcher_provider = modelInsights?.researcher_provider || "saola4_small"; // Fallback to config default
 
@@ -193,6 +194,23 @@ async function finalizeAction({
     console.log(`| LÝ DO: ${humanReason.substring(0, 70)}...`);
     console.log(`| LÁ CHẮN: ${thresholdSummary}`);
     console.log(`+-----------------------------------------------------------+\n`);
+
+    // 4. LOG TO BIGQUERY (Final decision & context)
+    const bigQueryRow = {
+        timestamp: actionTimestamp,
+        salinity: Number(sensor_snapshot.salinity || 0),
+        moisture: Number(sensor_snapshot.moisture || 0),
+        river_water_level: Number(sensor_snapshot.river_water_level || 0),
+        temperature: Number(sensor_snapshot.temperature || 0),
+        humidity: Number(sensor_snapshot.humidity || 0),
+        crop_stage: sensor_snapshot.crop_stage || "VEGETATIVE",
+        ai_action: finalState || "NO_ACTION",
+        trigger_reason: triggerReason || "AI_TRIGGERED"
+    };
+
+    bigquery.dataset(datasetId).table(tableId).insert([bigQueryRow])
+        .then(() => console.log(`[BigQuery] 🚀 Final action logged: ${finalState}`))
+        .catch(err => console.error("[BigQuery] ❌ Final log failed:", err.message));
 
     if (mongoDb) {
         await logActionWithPrediction(actionLogPayload).catch(() => { });

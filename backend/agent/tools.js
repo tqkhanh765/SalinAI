@@ -2,13 +2,18 @@ const { DynamicStructuredTool } = require("@langchain/core/tools");
 const { z } = require("zod");
 const fbdb = require("../config/firebase");
 const { getDb } = require("../config/mongodb");
+const { querySalinKnowledge } = require("../services/ai/vertexSearchService");
+
 
 // ─── Researcher Subagent Tools ───────────────────────────────────────────
 const search_agricultural_guidelines = new DynamicStructuredTool({
   name: "search_agricultural_guidelines",
-  description: "Searches the MongoDB RAG database for agricultural safety rules based on a natural language query.",
+  description: "Truy xuất nhanh các quy tắc an toàn và ngưỡng kỹ thuật cơ bản từ cơ sở dữ liệu MongoDB RAG.",
   schema: z.object({ query: z.string().describe("Câu truy vấn tự nhiên tiếng Việt") }),
-  func: async ({ query }) => { return "Execute vector search for: " + query; } // Intercepted in loop
+  func: async ({ query }) => { 
+    // Logic này sẽ được xử lý trong vòng lặp chính của Agent
+    return "Execute vector search for: " + query; 
+  }
 });
 
 const query_action_history = new DynamicStructuredTool({
@@ -29,6 +34,15 @@ const query_action_history = new DynamicStructuredTool({
     } catch (err) {
         return "Failed to fetch history: " + err.message;
     }
+  }
+});
+
+const query_salin_knowledge = new DynamicStructuredTool({
+  name: "query_salin_knowledge",
+  description: "Truy xuất kiến thức chuyên sâu về kỹ thuật lúa gạo, quy trình xử lý độ mặn và hạn hán từ kho tài liệu PDF chuyên ngành thông qua Vertex AI Search.",
+  schema: z.object({ query: z.string().describe("Câu hỏi hoặc từ khóa kỹ thuật cần tra cứu") }),
+  func: async ({ query }) => {
+    return await querySalinKnowledge(query);
   }
 });
 
@@ -62,6 +76,6 @@ const execute_valve_control = new DynamicStructuredTool({
 });
 
 module.exports = { 
-    researcherTools: [search_agricultural_guidelines, query_action_history],
+    researcherTools: [search_agricultural_guidelines, query_action_history, query_salin_knowledge],
     orchestratorTools: [execute_valve_control]
 };

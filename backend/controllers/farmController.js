@@ -12,6 +12,7 @@ const { validateIngestPayload } = require("../services/core/farmIngestValidation
 const { decideAiTrigger } = require("../services/core/farmAiTriggerService");
 const { toVietnamISOString } = require("../utils/vietnamTime");
 const { getDb } = require("../config/mongodb");
+const { bigquery, datasetId, tableId } = require("../config/bigquerry");
 const { getLatestPlan } = require("../services/ai/proactivePlanningService");
 const { runDailyProactivePlanning } = require("../services/ai/proactivePlanningService");
 const { saveDecisionFeedback, getPolicySummary } = require("../services/ai/policyLearningService");
@@ -40,6 +41,30 @@ function streamFarmState(req, res) {
     rootRef: db.ref("/SalinAI"),
     buildPayload: buildStatePayload,
   });
+}
+
+/**
+ * Helper to stream sensor data to BigQuery
+ */
+async function streamToBigQuery(payload, aiAction = "PENDING_AGENT") {
+  try {
+    const row = {
+      timestamp: payload.timestamp || toVietnamISOString(),
+      salinity: Number(payload.salinity || 0),
+      moisture: Number(payload.moisture || 0),
+      river_water_level: Number(payload.river_water_level || 0),
+      temperature: Number(payload.temperature || 0),
+      humidity: Number(payload.humidity || 0),
+      crop_stage: payload.crop_stage || "VEGETATIVE",
+      ai_action: aiAction,
+      trigger_reason: payload.trigger_reason || "RAW_INGEST"
+    };
+
+    await bigquery.dataset(datasetId).table(tableId).insert([row]);
+    console.log(`[BigQuery] ✅ Sensor data logged (Action: ${aiAction})`);
+  } catch (err) {
+    console.error("[BigQuery] ❌ Failed to stream data:", err.message);
+  }
 }
 
 /**
@@ -84,6 +109,11 @@ async function ingestData(req, res) {
     if (shouldTriggerAI) {
       console.log(`[Ingest API] 🤖 AI Trigger Candidate: ${triggerReason} (Delegating to Watcher)`);
     }
+
+    // 5. Stream to BigQuery (Async)
+    streamToBigQuery(enrichedPayload).catch(err => {
+      console.error("[BigQuery] ❌ Ingest stream failed:", err.message);
+    });
 
     return res.status(200).json({
       status: "OK",

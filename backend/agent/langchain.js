@@ -18,6 +18,7 @@ const { toVietnamISOString } = require("../utils/vietnamTime");
 
 const { executeRAGTool, generateSearchQueries } = require("../services/ai/retrievalService");
 const { researcherAgent, createResearcherAgent, normalizeResearcherProvider } = require("./agentResearch");
+const { querySalinKnowledge } = require("../services/ai/vertexSearchService");
 
 const {
     orchestratorAgent,
@@ -195,44 +196,16 @@ async function runAgent(sensorData, triggerReason = "") {
         });
 
         let mandatoryRetrievalContext = "";
-        let queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: triggerReason });
+        const queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: triggerReason });
+        const queryText = queries.join(" ");
 
-        let ragRetryCount = 0;
-        const maxRagRetries = 2;
-
-        while (ragRetryCount <= maxRagRetries) {
-            const queryText = queries.join(" ");
-            const retrieval = await executeRAGTool(queryText, mongoDb, { salinity, moisture });
-
-            const hasHighRelevance = Array.isArray(retrieval.docs) && retrieval.docs.some((d) => Number(d.score || 0) >= 0.72);
-
-            if (retrieval.hitCount > 0 && hasHighRelevance) {
-                finalHitCount = retrieval.hitCount;
-                finalSourceIds = retrieval.sourceIds;
-                mandatoryRetrievalContext = retrieval.context;
-                addTrace("retrieval", "rag_accepted", `RAG chấp nhận ở lần thử ${ragRetryCount + 1}`, {
-                    hit_count: finalHitCount,
-                    queries,
-                });
-                break;
-            } else {
-                addTrace("retrieval", "rag_retry", `RAG không đạt (hit=${retrieval.hitCount}, maxScore < 0.72), thử lại`, {
-                    attempt: ragRetryCount + 1,
-                    queries,
-                });
-                ragRetryCount++;
-                if (ragRetryCount <= maxRagRetries) {
-                    queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: `Cần mở rộng ngữ cảnh, không tìm thấy tài liệu liên quan cho (lần thử ${ragRetryCount})` });
-                } else {
-                    finalHitCount = retrieval.hitCount;
-                    finalSourceIds = retrieval.sourceIds;
-                    mandatoryRetrievalContext = retrieval.context || "Không tìm thấy dữ liệu liên quan.";
-                    addTrace("retrieval", "rag_fallback", "RAG cạn kiệt lượt thử, dùng kết quả cuối", {
-                        hit_count: finalHitCount,
-                    });
-                }
-            }
-        }
+        addTrace("retrieval", "vertex_search_start", "Đang tra cứu kiến thức từ Vertex AI Search", { query: queryText });
+        mandatoryRetrievalContext = await querySalinKnowledge(queryText);
+        
+        // Vertex Search managed citations might not be raw IDs like MongoDB, but we use the summary
+        finalHitCount = mandatoryRetrievalContext.includes("Không tìm thấy") ? 0 : 1;
+        finalSourceIds = ["VERTEX_KNOWLEDGE_BASE"];
+        addTrace("retrieval", "vertex_search_complete", "Đã nhận được kiến thức từ Vertex AI", { hit: finalHitCount > 0 });
 
         // Optimization: Prepare the final context for the Researcher
         retrievalOutputPreview = mandatoryRetrievalContext;
@@ -667,16 +640,15 @@ async function runAgentStreaming(sensorData, triggerReason = "") {
         emitAiStatus("processing", { phase: "pipeline", message: "🧠 Đang nạp trí nhớ bài học (Policy Memory)..." });
         const policyPromptBlock = await buildPolicyPromptBlock();
 
-        // 2. RAG
-        emitAiStatus("processing", { phase: "retrieval", message: "📚 Đang truy xuất kiến thức từ kho guideline..." });
+        // 2. Vertex AI Search
+        emitAiStatus("processing", { phase: "retrieval", message: "📚 Đang tra cứu kiến thức chuyên sâu từ Vertex AI..." });
         const queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: triggerReason });
+        const queryText = queries.join(" ");
 
-        // Use only the first (best) query for vector search to reduce noise
-        const bestQuery = queries[0] || `Hướng dẫn xử lý cho lúa giai đoạn ${crop_stage}`;
-        const retrieval = await executeRAGTool(bestQuery, mongoDb, { salinity, moisture });
-        finalHitCount = retrieval.hitCount;
-        finalSourceIds = retrieval.sourceIds;
-        const mandatoryRetrievalContext = retrieval.context || "Không tìm thấy dữ liệu liên quan.";
+        const vertexContext = await querySalinKnowledge(queryText);
+        finalHitCount = vertexContext.includes("Không tìm thấy") ? 0 : 1;
+        finalSourceIds = ["VERTEX_KNOWLEDGE_BASE"];
+        const mandatoryRetrievalContext = vertexContext;
         retrievalOutputPreview = truncateText(mandatoryRetrievalContext, MAX_RETRIEVAL_OUTPUT_CHARS);
 
         // 3. Researcher
