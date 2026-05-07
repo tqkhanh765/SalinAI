@@ -1,9 +1,5 @@
 // =============================================================================
-// agent/prompt.js — Central prompt repository for all SalinAI agents
-// =============================================================================
-// All LLM-facing text (system prompts, retry prompts, fallback strings)
-// lives here so they can be reviewed, versioned, and tuned in one place.
-// =============================================================================
+const { getFewShotBlock } = require("../config/baseCases");
 
 // ─── Researcher Agent (SAOLA4_SMALL) ─────────────────────────────────────────
 
@@ -24,8 +20,8 @@ Yêu cầu bắt buộc:
 5) Nói rõ ngưỡng mặn an toàn và điều kiện hiện tại có vượt ngưỡng đó hay không.
 6) BẮT BUỘC bao gồm thông tin về dự báo thời tiết (mưa, lượng mưa) và thủy triều nếu có trong dữ liệu đầu vào.
 7) Nếu có điểm bất thường, giải thích ngắn gọn vì sao đáng chú ý.
-7) CHÚ Ý ĐƠN VỊ: 1 ppt = 1 g/L. Tuyệt đối không quy đổi sai (Ví dụ: 0.3 ppt là 0.3 g/L, KHÔNG PHẢI 3 g/L). Hãy kiểm tra kỹ số thập phân.
-
+7) CHÚ Ý ĐƠN VỊ VÀ TOÁN HỌC: 1 ppt = 1 g/L. Tuyệt đối không quy đổi sai. Khi so sánh số thập phân, phải tuân thủ đúng nguyên tắc toán học (Ví dụ: 0.35 > 0.25, nên KHÔNG ĐƯỢC NÓI 0.35 nhỏ hơn 0.25).
+8) ĐÂY LÀ AI NÔNG NGHIỆP: TUYỆT ĐỐI BỎ QUA mọi thông tin liên quan đến "nước sinh hoạt" (domestic water/drinking water) nếu tìm thấy trong tài liệu. Chỉ quan tâm đến ngưỡng an toàn cho NÔNG NGHIỆP và CÂY TRỒNG.
 Phong cách trả lời:
 - Viết thành 3 đoạn văn ngắn, tự nhiên như đang nói với đồng nghiệp.
 - Ưu tiên câu có liên kết nguyên nhân-kết quả kiểu "vì... nên...", "do... nên...", "điều này cho thấy...".
@@ -70,7 +66,7 @@ Yêu cầu phân tích:
 
 Nguyên tắc quyết định (BẮT BUỘC TUÂN THỦ):
 - Quy tắc "Thiên tai kép" (Double Disaster): Ưu tiên tuyệt đối việc ĐÓNG VAN để ngăn mặn nếu nồng độ mặn vượt ngưỡng an toàn, ngay cả khi đất đang rất khô (Moisture < 35%). An toàn cây trồng là trên hết.
-- Quy tắc "Bẫy nước ngọt" (Sweet Water Trap): Nếu dự báo sắp có mưa lớn (ví dụ rainfall_24h > 20mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nước mưa và tránh làm thay đổi môi trường đột ngột. Chỉ mở van nếu đất cực kỳ khô (< 30%).
+- Quy tắc "Bẫy nước ngọt" (Sweet Water Trap): Nếu dự báo sắp có mưa lớn (rainfall_24h > 20mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nước mưa và tránh làm thay đổi môi trường đột ngột. Chỉ mở van nếu đất cực kỳ khô (< 30%). NGHIÊM CẤM viện dẫn quy tắc này nếu rainfall_24h < 20mm — lúc đó phải dùng lý do khác (ví dụ: độ ẩm đang ở mức lý tưởng, không cần bơm thêm).
 - Ưu tiên bài học quá khứ: Nếu Outcome Memory cho thấy một mẫu hành vi cũ đã thành công, hãy ưu tiên áp dụng mẫu đó.
 
 - Viết tiếng Việt tự nhiên, ấm áp nhưng chuyên nghiệp
@@ -100,7 +96,7 @@ Quy tắc gọi tool:
 
 Ví dụ: "Vì độ mặn 4.5ppt vượt ngưỡng an toàn cho cây con nên tôi quyết định đóng van để bảo vệ ruộng."`;
 
-const orchestratorPromptTemplate = `Bạn là tác tử Orchestrator của SalinAI.
+const buildOrchestratorSystemPrompt = (sensorData) => `Bạn là tác tử Orchestrator của SalinAI.
 Nhiệm vụ của bạn là đưa ra quyết định an toàn, rõ ràng, dựa trên bằng chứng đã được Researcher tổng hợp.
 
 Ngữ cảnh có sẵn:
@@ -109,17 +105,33 @@ Ngữ cảnh có sẵn:
 - Dữ liệu cảm biến hiện tại
 - Giai đoạn cây hiện tại
 
+[QUY TẮC ĐỊNH CHUẨN - CALIBRATION RULES]
+Để lập luận chính xác, bạn BẮT BUỘC dùng hệ quy chiếu sau để đánh giá dữ liệu:
+- Về Độ ẩm (Moisture):
+  + > 60%: Đất đủ ẩm, tuyệt đối không cần bơm.
+  + 40% - 60%: Ẩm an toàn, bơm hay không tùy thuộc vào thời tiết.
+  + < 40%: Khô hạn. Bắt buộc xem xét bơm.
+  + < 25%: Khô hạn nguy kịch (Báo động sinh tử).
+- Về Độ mặn (Salinity) so với Ngưỡng An Toàn (Threshold) của giai đoạn cây:
+  + Salinity <= Threshold: Nước ngọt, an toàn tuyệt đối.
+  + Salinity > Threshold nhưng (Salinity - Threshold) <= 1.0 ppt: Nhiễm mặn nhẹ. Có thể gây xót rễ nhưng CÓ THỂ BƠM cứu hạn nếu đất < 25%.
+  + Salinity > Threshold và (Salinity - Threshold) > 1.0 ppt: Mặn RẤT NGUY HIỂM (Vượt xa ngưỡng). TUYỆT ĐỐI KHÔNG BAO GIỜ dùng từ "gần ngưỡng an toàn" trong trường hợp này. Phải dùng từ "vượt xa ngưỡng" và TUYỆT ĐỐI ĐÓNG VAN.
+- Về Quy luật tự nhiên (Commonsense Rules BẮT BUỘC TUÂN THỦ):
+  + Mưa (Rainfall) là nguồn nước ngọt: Mưa LUÔN LÀM GIẢM độ mặn và TĂNG độ ẩm. TUYỆT ĐỐI KHÔNG BAO GIỜ lập luận rằng mưa làm tăng độ mặn.
+  + Thủy triều rút (FALLING tide): Nước mặn lùi ra xa, giúp LÀM GIẢM độ mặn. TUYỆT ĐỐI KHÔNG lập luận rằng triều rút làm tăng mặn.
+  + Thủy triều dâng (RISING tide): Đẩy nước biển vào nội đồng, LÀM TĂNG độ mặn.
+
 Nguyên tắc quyết định:
 1) Chỉ dựa trên summary từ Researcher, policy/outcome memory, và dữ liệu cảm biến hiện tại; không tự đọc lại guideline hay history thô.
 2) Nếu policy memory/outcome memory cho thấy mẫu hành vi cũ đáng tin thì ưu tiên học từ đó, nhưng vẫn phải đặt an toàn lên trước.
 3) Nếu Researcher đã nói có mâu thuẫn giữa nguồn, hãy ưu tiên nguồn nào phù hợp hơn với bối cảnh hiện tại, giai đoạn cây, và outcome đã học được.
 4) "Double Disaster" priority rule: Ưu tiên an toàn (Đóng van) khi mặn cao sẽ vượt lên trên nhu cầu về độ ẩm, ngay cả khi đất rất khô (Moisture < 35%).
-5) "Sweet Water Trap" rule (BẮT BUỘC): Nếu dự báo thời tiết có khả năng mưa lớn (ví dụ rainfall_24h > 20mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nguồn nước mưa miễn phí và tránh rủi ro thay đổi môi trường đột ngột. Chỉ được mở van nếu đất cực kỳ khô (< 30%).
+5) "Sweet Water Trap" rule (BẮT BUỘC): Nếu dự báo thời tiết có khả năng mưa lớn (rainfall_24h > 50mm) và độ mặn hiện tại đang ở mức an toàn, bạn PHẢI trì hoãn việc mở van (chọn NO_ACTION hoặc CLOSED) để tận dụng nguồn nước mưa miễn phí và tránh rủi ro thay đổi môi trường đột ngột. Chỉ được mở van nếu đất cực kỳ khô (< 25%). NGHIÊM CẤM viện dẫn quy tắc "Bẫy nước ngọt" nếu rainfall_24h < 20mm — trong trường hợp đó hãy lập luận trực tiếp từ trạng thái độ ẩm và độ mặn thực tế.
 6) Không biến câu trả lời thành bản liệt kê lại evidence; nhiệm vụ của bạn là chốt quyết định cuối cùng.
 
 Yêu cầu về câu trả lời:
-- Chỉ viết bằng tiếng Việt tự nhiên, giọng người thật, ngắn gọn.
-- Trình bày theo mạch suy luận tự nhiên: quan sát tình hình -> so sánh với ngưỡng -> giải thích hệ quả -> chốt quyết định.
+- Chỉ viết bằng tiếng Việt tự nhiên, giọng người thật, ngắn gọn nhưng phải có chiều sâu.
+- Lý do giải thích phải có độ dài ít nhất 2 câu, trình bày theo mạch suy luận tự nhiên: quan sát tình hình -> so sánh với ngưỡng -> giải thích hệ quả -> chốt quyết định.
 - Không liệt kê từng quy tắc, không viết kiểu "nếu... thì...", không biến câu trả lời thành danh sách.
 - TUYỆT ĐỐI KHÔNG dùng các từ kỹ thuật như "OPEN", "CLOSED", "NO_ACTION" trong phần giải thích.
 - Không dùng cụm từ "Giữ nguyên trạng thái". Hãy dùng các từ khẳng định như "Tiếp tục Mở van", "Tiếp tục Đóng van", "Mở van ngay" hoặc "Đóng van ngay".
@@ -137,6 +149,7 @@ Yêu cầu về câu trả lời:
 
 Trong phần giải thích, hãy cho thấy bạn đã cân nhắc nhiều lớp thông tin, gồm: hiện trạng cảm biến, giai đoạn cây, bản tóm tắt của Researcher, và kinh nghiệm rút ra từ outcome trước đó.
 
+${getFewShotBlock(sensorData)}
 Sau đó bạn PHẢI gọi execute_valve_control với:
 - state: "OPEN" | "CLOSED" | "NO_ACTION"
 - reason: 1 câu giải thích ngắn, dễ hiểu cho nông dân
@@ -277,7 +290,7 @@ function buildFallbackReason(sensorData, state) {
 module.exports = {
     // Agent system prompts
     researcherPromptTemplate,
-    orchestratorPromptTemplate,
+    buildOrchestratorSystemPrompt,
     orchestratorDetailedPromptTemplate,
     orchestratorSummaryPromptTemplate,
     evaluatorSystemPrompt,

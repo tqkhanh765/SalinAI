@@ -6,6 +6,7 @@
  * chỉ số và bằng chứng guideline.
  */
 const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE } = require("../../config/crops");
+const { toVietnamISOString } = require("../../utils/vietnamTime");
 
 /**
  * Build a user-friendly explanation of the final decision.
@@ -116,7 +117,7 @@ function buildDetailedExplanation(sensorData, weatherData, tideData, guidelines,
 
     // ─── Build Final Explanation ──────────────────────────────────────
     return {
-        timestamp: new Date().toISOString(),
+        timestamp: toVietnamISOString(),
         decision: decision?.executed_state || "ĐANG QUAN SÁT",
         mainReason: decision?.reason || "Chưa có quyết định",
         factors,
@@ -136,27 +137,38 @@ function getSalinityThreshold(cropStage) {
 
 /**
  * Get stage-specific safety advice
+ * Dynamically builds threshold text from CROP_STAGE_PROFILES to stay in sync
+ * with the single source of truth in crops.js.
  */
 function getStageSafetyAdvice(cropStage) {
-    const advice = {
-        "SEEDLING": {
-            advice: "Giai đoạn nhạy cảm nhất. Cần bảo vệ khỏi mặn & đổ lũa",
-            threshold: "< 1.5 ppt salinity"
-        },
-        "VEGETATIVE": {
-            advice: "Giai đoạn phát triển. Cần nước đều & bảo vệ khỏi lũa lụt",
-            threshold: "< 2.0 ppt salinity, 40-80% moisture"
-        },
-        "FLOWERING": {
-            advice: "Giai đoạn quan trọng cho năng suất. Nước phải > 70% luôn",
-            threshold: "< 2.0 ppt salinity, > 70% moisture"
-        },
-        "HARVEST": {
-            advice: "Giai đoạn cuối. Cần làm khô ruộng chuẩn bị thu hoạch",
-            threshold: "Tránh nước đọng"
-        }
+    const key = String(cropStage || "").trim().toUpperCase();
+    const profile = CROP_STAGE_PROFILES[key];
+
+    // Advice text by stage — only the human-readable description is hardcoded here,
+    // all numeric thresholds are derived from CROP_STAGE_PROFILES dynamically.
+    const adviceText = {
+        GERMINATION: "Giai đoạn nảy mầm. Cần độ ẩm rất cao và tuyệt đối tránh mặn.",
+        SEEDLING:    "Giai đoạn mạ non nhạy cảm nhất. Cần bảo vệ khỏi mặn & đổ ngã.",
+        VEGETATIVE:  "Giai đoạn sinh trưởng. Cần nước đều & bảo vệ khỏi ngập úng.",
+        FLOWERING:   "Giai đoạn trổ bông — quan trọng nhất cho năng suất. Kiểm soát mặn & ẩm chặt chẽ.",
+        FRUITING:    "Giai đoạn tạo hạt. Duy trì đủ nước để hạt chắc, tránh mặn.",
+        HARVEST:     "Giai đoạn sắp thu hoạch. Cần làm khô ruộng, tránh nước đọng.",
     };
-    return advice[cropStage] || { advice: "Giai đoạn chưa xác định", threshold: "N/A" };
+
+    if (!profile) {
+        return { advice: "Giai đoạn chưa xác định", threshold: "N/A" };
+    }
+
+    const sal  = profile.salinityMaxSafe;
+    const mois = profile.moistureTarget;
+
+    // Build a concise threshold string from the live profile data
+    const thresholdStr = `< ${sal} ppt mặn, ${mois.min}–${mois.max}% ẩm`;
+
+    return {
+        advice:    adviceText[key] || "Giai đoạn chưa xác định",
+        threshold: thresholdStr,
+    };
 }
 
 /**

@@ -1,3 +1,5 @@
+const { toVietnamISOString } = require("../../utils/vietnamTime");
+
 const listeners = new Set();
 
 let currentSession = null;
@@ -38,8 +40,8 @@ function startAiStreamSession({ sensorData = {}, triggerReason = "" } = {}) {
   currentSession = {
     id: `ai-stream-${Date.now()}-${sessionCounter}`,
     status: "processing",
-    startedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    startedAt: toVietnamISOString(),
+    updatedAt: toVietnamISOString(),
     finishedAt: null,
     triggerReason,
     sensorData,
@@ -77,7 +79,7 @@ function appendStreamEvent(type, payload = {}) {
     payload: {
       ...payload,
       sessionId: session.id,
-      updatedAt: new Date().toISOString(),
+      updatedAt: toVietnamISOString(),
     },
   };
 
@@ -127,7 +129,7 @@ function completeAiStreamSession(result = {}) {
   if (!currentSession) return null;
 
   currentSession.status = "done";
-  currentSession.finishedAt = new Date().toISOString();
+  currentSession.finishedAt = toVietnamISOString();
   currentSession.updatedAt = currentSession.finishedAt;
   if (result.action) {
     currentSession.finalAction = result.action;
@@ -158,7 +160,7 @@ function failAiStreamSession(message = "Unknown error") {
 
   currentSession.status = "error";
   currentSession.error = message;
-  currentSession.finishedAt = new Date().toISOString();
+  currentSession.finishedAt = toVietnamISOString();
   currentSession.updatedAt = currentSession.finishedAt;
 
   const snapshot = createSnapshot(currentSession);

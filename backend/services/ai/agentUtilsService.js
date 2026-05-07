@@ -38,10 +38,22 @@ function createAgentUtilsService(config = {}) {
     };
 
     const parseDecisionFromText = (text) => {
-        const cleaned = stripThinkTags(text).toUpperCase();
-        if (cleaned.includes("ACTION: OPEN") || cleaned.includes('"STATE": "OPEN"')) return "OPEN";
-        if (cleaned.includes("ACTION: CLOSED") || cleaned.includes('"STATE": "CLOSED"')) return "CLOSED";
-        return "NO_ACTION";
+        const cleaned = stripThinkTags(text);
+        const upper = cleaned.toUpperCase();
+        
+        let state = "NO_ACTION";
+        if (upper.includes("ACTION: OPEN") || upper.includes('"STATE": "OPEN"') || upper.includes("QUYẾT ĐỊNH: MỞ")) {
+            state = "OPEN";
+        } else if (upper.includes("ACTION: CLOSED") || upper.includes('"STATE": "CLOSED"') || upper.includes("QUYẾT ĐỊNH: ĐÓNG")) {
+            state = "CLOSED";
+        }
+
+        // Cố gắng tìm phần giải thích trong text (thường là trước hoặc sau quyết định)
+        let reason = cleaned.replace(/ACTION:|STATE:|QUYẾT ĐỊNH:|MỞ|ĐÓNG|OPEN|CLOSED|"|{|}/gi, "").trim();
+        // Nếu text quá dài, lấy đoạn đầu
+        if (reason.length > 500) reason = reason.slice(0, 500) + "...";
+
+        return { state, reason: reason || "AI đã đưa ra quyết định dựa trên bối cảnh hiện tại." };
     };
 
     const cleanModelArtifacts = (value) => {

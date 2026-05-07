@@ -2,7 +2,7 @@
  * Multi-agent AI runner.
  * Orchestrates the Researcher and Orchestrator phases, injects policy memory, and stores the final action trace.
  */
-const { researcherPromptTemplate, orchestratorPromptTemplate } = require("./prompt");
+const { researcherPromptTemplate, buildOrchestratorSystemPrompt } = require("./prompt");
 const { getDb } = require("../config/mongodb");
 const fbdb = require("../config/firebase");
 const { researcherTools, orchestratorTools } = require("./tools");
@@ -45,13 +45,13 @@ const RESEARCHER_PHASE_TIMEOUT_MS = Math.max(
 );
 const ORCHESTRATOR_PHASE_TIMEOUT_MS = Math.max(
     2000,
-    parseInt(process.env.ORCHESTRATOR_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "60000", 10)
+    parseInt(process.env.ORCHESTRATOR_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "120000", 10)
 );
 const AGENT_TIMEOUT_RETRIES = Math.max(0, parseInt(process.env.AGENT_TIMEOUT_RETRIES || "1", 10));
 const AGENT_TIMEOUT_RETRY_DELAY_MS = Math.max(0, parseInt(process.env.AGENT_TIMEOUT_RETRY_DELAY_MS || "600", 10));
 const MAX_TRACE_STEPS = Math.max(10, parseInt(process.env.AGENT_TRACE_MAX_STEPS || "40", 10));
 const MAX_INSIGHT_CHARS = Math.max(200, parseInt(process.env.AGENT_INSIGHT_MAX_CHARS || "800", 10));
-const MAX_RETRIEVAL_OUTPUT_CHARS = Math.max(400, parseInt(process.env.RETRIEVAL_OUTPUT_MAX_CHARS || "2200", 10));
+const MAX_RETRIEVAL_OUTPUT_CHARS = Math.max(400, parseInt(process.env.RETRIEVAL_OUTPUT_MAX_CHARS || "1200", 10));
 const MAX_FULL_OUTPUT_CHARS = Math.max(2000, parseInt(process.env.MODEL_OUTPUT_MAX_CHARS || "12000", 10));
 const MAX_ORCHESTRATOR_OUTPUT_PREVIEW_CHARS = Math.max(700, parseInt(process.env.ORCHESTRATOR_OUTPUT_PREVIEW_CHARS || "1600", 10));
 
@@ -300,7 +300,7 @@ ${mandatoryRetrievalContext}`,
                 addTrace("researcher", "summary", "Researcher tạo bản tóm tắt cuối", {
                     preview: compactText(researcherSummary, 400),
                 });
-                console.log(`[Subagent] 📜 Researcher summary ready: "${researcherSummary.substring(0, 60)}..."`);
+                console.log(`[Subagent] 📜 Researcher summary ready: "${researcherSummary.substring(0, 200)}..."`);
                 break;
             }
 
@@ -371,10 +371,23 @@ ${mandatoryRetrievalContext}`,
 - Chỉ dẫn phong cách: ĐÂY LÀ THÔNG SỐ NỘI BỘ. Đừng trích dẫn trực tiếp con số "${stageProfile.salinityMaxSafe} ppt" vào lời thoại. Hãy dùng ngôn ngữ tự nhiên như "độ mặn đang ở mức cho phép", "có dấu hiệu chớm mặn", "vượt ngưỡng an toàn" hoặc "môi trường rất thuận lợi". Hãy giải thích dựa trên cảm nhận về sự phù hợp đối với cây lúa thay vì đọc công thức.`;
 
         const orchestratorMessages = [
-            { role: "system", content: `${orchestratorPromptTemplate}\n\n${policyPromptBlock}\n\n${constraintsBlock}` },
+            { role: "system", content: `${buildOrchestratorSystemPrompt(sensorData)}\n\n${policyPromptBlock}\n\n${constraintsBlock}` },
             {
                 role: "user",
-                content: `Dữ liệu cảm biến hiện tại:\n- Độ mặn: ${salinity} ppt\n- Độ ẩm đất: ${moisture}%\n- Giai đoạn cây: ${crop_stage || "VEGETATIVE"}\n\nBáo cáo từ Researcher:\n${researcherSummary}\n\nTóm tắt đánh giá cũ (policy/outcome memory):\n${policyContextForModel || "Chưa có dữ liệu đánh giá cũ."}\n\nHãy đưa ra quyết định cuối cùng và gọi tool điều khiển van. Viết ngắn gọn, tự nhiên, bằng tiếng Việt. Hãy tư duy như một chuyên gia nông nghiệp đầy kinh nghiệm, biết cân nhắc giữa rủi ro mặn và nhu cầu nước của cây.`,
+                content: `Dữ liệu cảm biến hiện tại:
+- Độ mặn: ${salinity} ppt
+- Độ ẩm đất: ${moisture}%
+- Giai đoạn cây: ${crop_stage || "VEGETATIVE"}
+- Dự báo mưa (24h): ${external_forecast?.rainfall_24h ?? "Không có dữ liệu"} mm
+- Thủy triều: ${external_forecast?.tide_status || "Không có dữ liệu"}
+
+Báo cáo từ Researcher:
+${researcherSummary}
+
+Tóm tắt đánh giá cũ (policy/outcome memory):
+${policyContextForModel || "Chưa có dữ liệu đánh giá cũ."}
+
+Hãy đưa ra quyết định cuối cùng và gọi tool điều khiển van. Viết ngắn gọn nhưng đầy đủ chiều sâu, bằng tiếng Việt. Hãy tư duy như một chuyên gia nông nghiệp đầy kinh nghiệm, biết cân nhắc giữa rủi ro mặn và nhu cầu nước của cây.`,
             },
         ];
 
@@ -578,16 +591,11 @@ ${mandatoryRetrievalContext}`,
             const fallbackAction = await tryFinalizeFallback({
                 err,
                 sensorData,
-                finalHitCount,
-                finalSourceIds,
-                researcherSummary,
-                researcherRawOutput,
-                orchestratorRawOutput,
-                orchestratorArgumentReason,
-                retrievalOutputPreview,
+                finalizeAction,
+                buildFallbackAction,
+                addTrace,
                 mongoDb,
                 agentTrace,
-                addTrace,
             });
 
             console.warn(`[Orchestrator] ⚠️ Dùng fallback action do lỗi pipeline: ${err.message}`);

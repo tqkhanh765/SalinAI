@@ -3,14 +3,14 @@
  * Validates incoming sensor updates, serves realtime snapshots, and exposes feedback/policy endpoints for the AI workflow.
  */
 const db = require("../config/firebase");
-const { buildFarmStatePayload, normalizeNestedSensorPayload } = require("../services/core/farmPayloadMapper");
+const { buildFarmStatePayload, normalizeNestedSensorPayload, CROP_STAGES } = require("../services/core/farmPayloadMapper");
 const { getLatestSensorHistory } = require("../services/core/farmHistoryService");
 const { streamFarmState: streamFarmStateService } = require("../services/core/farmRealtimeStreamService");
 const { ingestSensorPayload } = require("../services/core/farmSensorIngestionService");
 const { setControlMode, overrideActuatorFields } = require("../services/core/farmActuatorService");
 const { validateIngestPayload } = require("../services/core/farmIngestValidationService");
 const { decideAiTrigger } = require("../services/core/farmAiTriggerService");
-const { CROP_STAGES } = require("../services/core/farmPayloadMapper");
+const { toVietnamISOString } = require("../utils/vietnamTime");
 const { getDb } = require("../config/mongodb");
 const { getLatestPlan } = require("../services/ai/proactivePlanningService");
 const { runDailyProactivePlanning } = require("../services/ai/proactivePlanningService");
@@ -312,7 +312,7 @@ async function updateCropStage(req, res) {
     const sensorRef = db.ref("SalinAI/sensor_data");
     await sensorRef.update({
       crop_stage: nextStage,
-      timestamp: new Date().toISOString(),
+      timestamp: toVietnamISOString(),
     });
 
     const updatedSnapshot = await sensorRef.once("value");
