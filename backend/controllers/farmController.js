@@ -3,16 +3,19 @@
  * Validates incoming sensor updates, serves realtime snapshots, and exposes feedback/policy endpoints for the AI workflow.
  */
 const db = require("../config/firebase");
-const { buildFarmStatePayload, normalizeNestedSensorPayload } = require("../services/core/farmPayloadMapper");
+const { buildFarmStatePayload, normalizeNestedSensorPayload, CROP_STAGES } = require("../services/core/farmPayloadMapper");
 const { getLatestSensorHistory } = require("../services/core/farmHistoryService");
 const { streamFarmState: streamFarmStateService } = require("../services/core/farmRealtimeStreamService");
 const { ingestSensorPayload } = require("../services/core/farmSensorIngestionService");
 const { setControlMode, overrideActuatorFields } = require("../services/core/farmActuatorService");
 const { validateIngestPayload } = require("../services/core/farmIngestValidationService");
 const { decideAiTrigger } = require("../services/core/farmAiTriggerService");
-const { CROP_STAGES } = require("../services/core/farmPayloadMapper");
-const { runAgent } = require("../agent/langchain");
+const { toVietnamISOString } = require("../utils/vietnamTime");
+const { getDb } = require("../config/mongodb");
+const { getLatestPlan } = require("../services/ai/proactivePlanningService");
+const { runDailyProactivePlanning } = require("../services/ai/proactivePlanningService");
 const { saveDecisionFeedback, getPolicySummary } = require("../services/ai/policyLearningService");
+const { runEvaluatorAgent, buildRLHFMemoryBlock } = require("../agent/agentEvaluator");
 
 async function buildStatePayload(root, limit) {
   const sensorHistory = await getLatestSensorHistory(30);
@@ -191,6 +194,110 @@ async function getAgentPolicySummary(req, res) {
   }
 }
 
+/**
+ * POST /api/evaluate-feedback  [E2-B2]
+ * Triggers the Evaluator Agent (SAOLA4_MEDIUM) on a negative farmer verdict.
+ * Saves a structured lesson to MongoDB `lessons_learned`.
+ *
+ * Body: { action_log_id, verdict: "incorrect", notes, corrected_action? }
+ */
+async function evaluateFeedback(req, res) {
+  try {
+    const actionLogId = String(req.body?.action_log_id || "").trim();
+    const verdict = String(req.body?.verdict || "").toLowerCase().trim();
+    const notes = String(req.body?.notes || "").trim();
+
+    if (!actionLogId) {
+      return res.status(400).json({ error: "action_log_id is required" });
+    }
+    if (verdict !== "incorrect") {
+      return res.status(400).json({
+        error: "verdict must be 'incorrect' to trigger Evaluator Agent",
+      });
+    }
+    if (!notes) {
+      return res.status(400).json({ error: "notes (farmer reason) is required" });
+    }
+
+    // Fetch action log from Firebase
+    const actionSnapshot = await db.ref(`SalinAI/action_logs/${actionLogId}`).once("value");
+    const actionLog = actionSnapshot.val();
+    if (!actionLog) {
+      return res.status(404).json({ error: "Action log not found in Firebase" });
+    }
+
+    // Run Evaluator Agent asynchronously (non-blocking response)
+    // We respond immediately so the UI isn't blocked, then run in background
+    res.status(202).json({
+      status: "ACCEPTED",
+      message: "Phản hồi đã nhận. AI đang học từ nhận xét của bạn...",
+      action_log_id: actionLogId,
+    });
+
+    // Background: run Evaluator Agent + save lesson
+    runEvaluatorAgent({ action_log_id: actionLogId, action_log: actionLog, verdict, notes })
+      .then((lesson) => {
+        if (lesson) {
+          console.log(`[Evaluator API] ✅ Bài học đã lưu cho action_log ${actionLogId}`);
+        }
+      })
+      .catch((err) => {
+        console.error(`[Evaluator API] ❌ Evaluator Agent thất bại:`, err.message);
+      });
+
+  } catch (error) {
+    console.error("[Evaluator API] Internal error:", error.message);
+    return res.status(500).json({ error: "Internal Server Error", details: error.message });
+  }
+}
+
+/**
+ * GET /api/lessons-learned  [E2-B3]
+ * Returns the top-10 most recent lessons extracted by the Evaluator Agent.
+ * Used by the Dashboard's "💡 Bài học gần đây" panel.
+ *
+ * Query params:
+ *   limit  — number of lessons (default 10, max 50)
+ */
+async function getLessonsLearned(req, res) {
+  try {
+    const mongoDb = getDb();
+    if (!mongoDb) {
+      return res.status(503).json({ error: "MongoDB not connected" });
+    }
+
+    const limit = Math.min(Math.max(Number(req.query.limit || 10), 1), 50);
+
+    const lessons = await mongoDb
+      .collection("lessons_learned")
+      .find({})
+      .sort({ created_at: -1 })
+      .limit(limit)
+      .project({
+        _id: 1,
+        action_log_id: 1,
+        condition_pattern: 1,
+        action_taken: 1,
+        correct_action: 1,
+        lesson_text: 1,
+        root_cause: 1,
+        farmer_notes: 1,
+        created_at_vn: 1,
+        feedback_source: 1,
+      })
+      .toArray();
+
+    return res.status(200).json({
+      status: "OK",
+      count: lessons.length,
+      lessons,
+    });
+  } catch (error) {
+    console.error("[Lessons API] Error:", error.message);
+    return res.status(500).json({ error: "Failed to fetch lessons", details: error.message });
+  }
+}
+
 async function updateCropStage(req, res) {
   try {
     const nextStage = String(req.body?.crop_stage || "").trim().toUpperCase();
@@ -205,7 +312,7 @@ async function updateCropStage(req, res) {
     const sensorRef = db.ref("SalinAI/sensor_data");
     await sensorRef.update({
       crop_stage: nextStage,
-      timestamp: new Date().toISOString(),
+      timestamp: toVietnamISOString(),
     });
 
     const updatedSnapshot = await sensorRef.once("value");
@@ -220,6 +327,25 @@ async function updateCropStage(req, res) {
   }
 }
 
+async function getIrrigationPlan(req, res) {
+  try {
+    const plan = await getLatestPlan();
+    return res.status(200).json(plan);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
+
+async function triggerProactivePlanning(req, res) {
+  try {
+    await runDailyProactivePlanning();
+    return res.status(200).json({ message: "Proactive planning triggered successfully." });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
 module.exports = {
   getFarmState,
   streamFarmState,
@@ -229,4 +355,8 @@ module.exports = {
   submitDecisionFeedback,
   getAgentPolicySummary,
   updateCropStage,
+  evaluateFeedback,
+  getLessonsLearned,
+  getIrrigationPlan,
+  triggerProactivePlanning,
 };

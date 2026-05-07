@@ -39,7 +39,7 @@ async function decideAiTrigger(enrichedPayload, previousPoint, thresholds = DEFA
   const moisDelta = Math.abs(currentMois - prevMois);
 
   // 2. RECOVERY TRIGGER: If water is now sweet enough based on AI's own recovery threshold
-  if (recoverySal !== undefined && currentSal < recoverySal) {
+  if (recoverySal != null && currentSal < recoverySal) {
     return {
       shouldTriggerAI: true,
       triggerReason: `Recovery detected: Salinity (${currentSal}) dropped below AI's target (${recoverySal}).`,
@@ -47,7 +47,7 @@ async function decideAiTrigger(enrichedPayload, previousPoint, thresholds = DEFA
   }
 
   // 3. URGENCY TRIGGER: If soil is too dry based on AI's urgency threshold
-  if (urgentMois !== undefined && currentMois < urgentMois) {
+  if (urgentMois != null && currentMois < urgentMois) {
     return {
       shouldTriggerAI: true,
       triggerReason: `Urgent moisture drop: Moisture (${currentMois}%) is below AI's safety limit (${urgentMois}%).`,

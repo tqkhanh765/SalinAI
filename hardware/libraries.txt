@@ -1,2 +1,0 @@
-LiquidCrystal I2C
-DHT sensor library for ESPx

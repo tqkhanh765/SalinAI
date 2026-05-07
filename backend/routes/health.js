@@ -27,11 +27,25 @@ router.get("/api/health", async (req, res) => {
       }
     }
 
+    // 3. Check Last AI Run
+    let lastAiRun = null;
+    try {
+      const logSnap = await db.ref("SalinAI/action_logs").orderByChild("timestamp").limitToLast(1).once("value");
+      if (logSnap.exists()) {
+        const logs = logSnap.val();
+        const key = Object.keys(logs)[0];
+        lastAiRun = logs[key].timestamp;
+      }
+    } catch (e) {
+      console.warn("[Health] Failed to fetch last AI run:", e.message);
+    }
+
     res.status(200).json({
       status: "OK",
       timestamp: new Date().toISOString(),
       firebase: firebaseConnected ? "CONNECTED" : "DISCONNECTED",
-      mongodb: mongodbConnected ? "CONNECTED" : "DISCONNECTED"
+      mongodb: mongodbConnected ? "CONNECTED" : "DISCONNECTED",
+      last_ai_run: lastAiRun || "UNKNOWN"
     });
   } catch (error) {
     console.error("[Health Check] API error:", error.message);

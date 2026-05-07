@@ -1,53 +1,20 @@
 /**
- * Outcome evaluation service.
- * Records predicted outcomes for each action, then scores those predictions later to measure long-term decision quality.
+ * OUTCOME EVALUATION SERVICE
+ * 
+ * Tác dụng: Tính toán điểm thưởng (Reward) dựa trên hiệu quả thực tế của các
+ * hành động AI, so sánh với lịch sử cảm biến để rút ra bài học kinh nghiệm.
  */
 
 const { getDb } = require("../../config/mongodb");
 const fbdb = require("../../config/firebase");
+const { toVietnamISOString, addHoursVietnamISOString } = require("../../utils/vietnamTime");
+const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE } = require("../../config/crops");
 
 const AUTO_FEEDBACK_SOURCE = "auto_outcome_evaluator";
 const AUTO_REWARD_PASS_THRESHOLD = Number(process.env.AUTO_REWARD_PASS_THRESHOLD || "0.35");
 const OUTCOME_EVAL_BATCH_SIZE = Math.max(10, parseInt(process.env.OUTCOME_EVAL_BATCH_SIZE || "80", 10));
 const OUTCOME_RECHECK_INTERVAL_HOURS = Math.max(1, parseInt(process.env.OUTCOME_RECHECK_INTERVAL_HOURS || "6", 10));
 const OUTCOME_MIN_ACTION_AGE_HOURS = Math.max(0, parseInt(process.env.OUTCOME_MIN_ACTION_AGE_HOURS || "1", 10));
-
-const DEFAULT_STAGE_PROFILE = {
-    moistureTarget: { min: 40, max: 80, ideal: 60 },
-    salinityMaxSafe: 6.0,
-    salinityDeltaTolerance: 0.5,
-    weights: {
-        moisture: 0.7,
-        salinity: 0.3,
-    },
-};
-
-const CROP_STAGE_PROFILES = {
-    SEEDLING: {
-        moistureTarget: { min: 55, max: 85, ideal: 70 },
-        salinityMaxSafe: 2.0,
-        salinityDeltaTolerance: 0.3,
-        weights: { moisture: 0.8, salinity: 0.2 },
-    },
-    VEGETATIVE: {
-        moistureTarget: { min: 45, max: 80, ideal: 62 },
-        salinityMaxSafe: 2.5,
-        salinityDeltaTolerance: 0.4,
-        weights: { moisture: 0.75, salinity: 0.25 },
-    },
-    FLOWERING: {
-        moistureTarget: { min: 50, max: 82, ideal: 66 },
-        salinityMaxSafe: 1.5,
-        salinityDeltaTolerance: 0.3,
-        weights: { moisture: 0.78, salinity: 0.22 },
-    },
-    HARVEST: {
-        moistureTarget: { min: 35, max: 70, ideal: 52 },
-        salinityMaxSafe: 3.0,
-        salinityDeltaTolerance: 0.5,
-        weights: { moisture: 0.65, salinity: 0.35 },
-    },
-};
 
 function getStageProfile(stage) {
     const key = String(stage || "").trim().toUpperCase();
@@ -422,13 +389,20 @@ async function updateGuidelineSuccessRate(sourceId, reward) {
                     successful_uses: increment,
                 },
                 $set: {
-                    success_rate: 0, // Will be calculated in query
                     last_evaluated: new Date(),
                 }
             }
         );
 
-        console.log(`[Outcome] Updated ${sourceId}: reward=${reward}`);
+        const doc = await mongoDb.collection("guideline_documents").findOne({ _id: sourceId });
+        if (doc && doc.total_uses > 0) {
+            await mongoDb.collection("guideline_documents").updateOne(
+                { _id: sourceId },
+                { $set: { success_rate: Number((doc.successful_uses / doc.total_uses).toFixed(2)) } }
+            );
+        }
+
+        console.log(`[Outcome] Updated ${sourceId}: reward=${reward}, success_rate=${doc ? (doc.successful_uses / doc.total_uses).toFixed(2) : 0}`);
 
     } catch (err) {
         console.error(`[Outcome] Failed to update guideline ${sourceId}:`, err.message);

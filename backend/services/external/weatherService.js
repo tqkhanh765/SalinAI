@@ -19,8 +19,8 @@ const NodeCache = require('node-cache');
 const cache = new NodeCache({ stdTTL: 300 });
 const CACHE_KEY = 'weather_data';
 
-const STATION_LAT = parseFloat(process.env.STATION_LAT || 10.18);
-const STATION_LON = parseFloat(process.env.STATION_LON || 105.48);
+const STATION_LAT = parseFloat(process.env.STATION_LAT || 9.28);
+const STATION_LON = parseFloat(process.env.STATION_LON || 105.72);
 const TIMEZONE = process.env.TIMEZONE || 'Asia/Bangkok';
 
 /**
@@ -153,24 +153,25 @@ function mapWeatherCodeToText(weatherCode) {
  * 71-77, 80-82 = Rain, 95-99 = Thunderstorm
  */
 function inferTideStatus(weatherCode, rainfall_24h, currentPrecip) {
-    // Thunderstorm or heavy rain = rising tide (storm surge)
-    if (weatherCode >= 95 || (weatherCode >= 80 && rainfall_24h > 10)) {
-        return 'RISING';  // Storm tide
+    if (weatherCode >= 95 || (weatherCode >= 80 && rainfall_24h > 100)) {
+        return 'RISING';
     }
 
-    // Moderate/light rain = some water influx
-    if (weatherCode >= 51 || rainfall_24h > 2) {
-        return 'RISING';  // More freshwater
+    if (weatherCode >= 51 && rainfall_24h > 10) {
+        return 'RISING';
     }
 
-    // Clear/calm weather with no rain = receding
-    if (weatherCode === 0 && rainfall_24h < 0.5) {
-        return 'FALLING';  // Tide going out
+    if (rainfall_24h > 30) {
+        return 'RISING';
     }
 
-    // Default to shifting
+    if (weatherCode === 0 && rainfall_24h < 5) {
+        return 'FALLING';
+    }
+
     return 'FALLING';
 }
+
 
 /**
  * Default weather (fallback)

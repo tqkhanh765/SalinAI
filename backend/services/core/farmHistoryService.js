@@ -4,6 +4,7 @@
  */
 const { getDb } = require("../../config/mongodb");
 const { toNumber } = require("./farmPayloadMapper");
+const { toVietnamISOString } = require("../../utils/vietnamTime");
 
 const SENSOR_HISTORY_COLLECTION = "sensor_history";
 
@@ -34,7 +35,7 @@ async function persistSensorHistoryPoint(payload) {
     await mongo.collection(SENSOR_HISTORY_COLLECTION).insertOne({
       salinity: toNumber(payload.salinity, 0),
       moisture: toNumber(payload.moisture, 0),
-      timestamp: payload.timestamp || new Date().toISOString(),
+      timestamp: payload.timestamp || toVietnamISOString(),
       crop_stage: payload.crop_stage || "VEGETATIVE",
       river_water_level: payload.river_water_level != null ? toNumber(payload.river_water_level, null) : null,
       weather: payload.weather || null,

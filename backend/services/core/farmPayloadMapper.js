@@ -1,8 +1,11 @@
 /**
- * Sensor payload mapper.
- * Normalizes raw ingest data into the shared farm-state shape used by Firebase, the dashboard, and the AI pipeline.
+ * SENSOR PAYLOAD MAPPER
+ * 
+ * Tác dụng: Chuẩn hóa dữ liệu thô từ cảm biến thành định dạng chung mà Dashboard
+ * và AI có thể hiểu được. Đảm bảo tính nhất quán về giai đoạn cây trồng.
  */
-const CROP_STAGES = ["SEEDLING", "VEGETATIVE", "FLOWERING", "FRUITING", "HARVEST"];
+const { CROP_STAGES } = require("../../config/crops");
+const { toVietnamISOString } = require("../../utils/vietnamTime");
 const CONTROL_MODES = ["AUTO", "MANUAL"];
 const VALVE_STATES = ["OPEN", "CLOSED"];
 
@@ -33,7 +36,7 @@ function normalizeNestedSensorPayload(body = {}) {
     ph: body.ph != null ? toNumber(body.ph, null) : null,
     river_water_level: body.river_water_level != null ? toNumber(body.river_water_level, null) : null,
     crop_stage: cropStage,
-    timestamp: new Date().toISOString(),
+    timestamp: toVietnamISOString(),
     external_forecast: {
       tide_status: body.tide_status || null,
       temperature: body.temperature != null ? toNumber(body.temperature, null) : null,
@@ -81,7 +84,7 @@ function buildFarmStatePayload(root, limit = 20, sensorHistory = []) {
     aiStatus,
     actionLogs,
     sensorHistory,
-    fetchedAt: new Date().toISOString(),
+    fetchedAt: toVietnamISOString(),
   };
 }
 

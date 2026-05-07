@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { useRealtimeFarmState } from '../hooks/useRealtimeFarmState';
 import { API_BASE_URL } from '../lib/apiClient';
 import StreamingText from '../components/StreamingText';
+import { initSocket } from '../services/socket';
+import CropStageIllustration from '../components/visuals/CropStageIllustration';
+import WeatherAmbience from '../components/visuals/WeatherAmbience';
 
 // ─── Helper sub-components ─────────────────────────────────────────────────────
 
@@ -68,7 +71,7 @@ const WeatherIcon = ({ condition }) => {
   return icons[condition] || icons.Sunny;
 };
 
-const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading }) => {
+const ValveStatusCard = ({ valveOpen, isLoading }) => {
   return (
     <div
       className="relative flex flex-col items-center justify-center rounded-2xl p-6 md:p-8 overflow-hidden transition-all duration-700"
@@ -144,15 +147,21 @@ const ValveStatusCard = ({ valveOpen, salinityLevel, weatherCondition, isLoading
 
 export default function SimulatorPage() {
   const { actuator, aiStatus, actionLogs, sensorData } = useRealtimeFarmState();
-  const [decisionDetails, setDecisionDetails] = useState(null);
+  const [_decisionDetails, setDecisionDetails] = useState(null);
   const [typingPhase, setTypingPhase] = useState(0);
 
+  useEffect(() => {
+    initSocket();
+  }, []);
+
   // Reset typing phase when a new log appears
+  const latestActionId = actionLogs.length > 0 ? actionLogs[0].id : null;
   useEffect(() => {
     if (actionLogs.length > 0) {
-      setTypingPhase(0);
+      // Defer to avoid synchronous state update inside effect
+      setTimeout(() => setTypingPhase(0), 0);
     }
-  }, [actionLogs.length > 0 ? actionLogs[0].id : null]);
+  }, [latestActionId]);
 
   // Fetch decision details for display
   useEffect(() => {
@@ -224,7 +233,7 @@ export default function SimulatorPage() {
   };
 
   const researcherAgentName = 'SaoLa4-small';
-  const orchestratorAgentName = 'SaoLa4-medium';
+  const orchestratorAgentName = 'GLM-4.7';
 
   // Helper: format nullable number
   const fmt = (v, digits = 1, suffix = '') =>
@@ -252,32 +261,7 @@ export default function SimulatorPage() {
 
   const isStepActive = (trace = [], phase) => Array.isArray(trace) && trace.some((t) => t?.phase === phase);
 
-  const formatTracePhase = (phase) => {
-    const map = {
-      pipeline: 'Pipeline',
-      researcher: 'Researcher',
-      retrieval: 'Retrieval',
-      orchestrator: 'Orchestrator',
-    };
-    return map[phase] || 'Agent';
-  };
-
-  const formatTraceEvent = (event) => {
-    const map = {
-      start: 'Bắt đầu pipeline',
-      policy_memory: 'Nạp policy memory',
-      iteration: 'Bước suy luận',
-      tool_calls: 'Gọi tool',
-      rag_result: 'Kết quả truy xuất',
-      history_lookup: 'Đọc lịch sử hành động',
-      summary: 'Tạo tóm tắt',
-      parsed_text_decision: 'Đọc quyết định từ text',
-      no_tool_call: 'Không có tool_call',
-      decision: 'Thực thi quyết định',
-      error: 'Lỗi',
-    };
-    return map[event] || event || 'event';
-  };
+  // Removed unused trace formatting helpers to satisfy lint
 
   const buildReasoningSummary = (log = {}) => {
     const action = String(log?.action || 'NO_ACTION').toUpperCase();
@@ -296,8 +280,11 @@ export default function SimulatorPage() {
   };
 
   return (
-    <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8" style={{ background: '#EEEEEE' }}>
-      <div className="max-w-5xl mx-auto">
+    <div className="min-h-[calc(100vh-64px)] py-6 px-4 sm:px-6 lg:px-8 relative" style={{ background: '#EEEEEE' }}>
+      {/* Epic 5: Dynamic Weather Background */}
+      <WeatherAmbience weatherCode={sensorData.weather_code || 0} />
+
+      <div className="max-w-5xl mx-auto relative z-10">
 
         {/* Page Header */}
         <div className="mb-6 md:mb-8">
@@ -401,6 +388,11 @@ export default function SimulatorPage() {
                 </span>
               </div>
             </div>
+
+            {/* Epic 5: Crop Stage Illustration */}
+            <div className="mt-2">
+              <CropStageIllustration stage={liveCropStage} />
+            </div>
           </div>
 
           {/* ── RIGHT: Valve Status + Agent Controls ──────────────────── */}
@@ -446,7 +438,8 @@ export default function SimulatorPage() {
                     <StreamingText 
                       text={lastLog.reason || 'Không có lý do'} 
                       enabled={true} 
-                      speed={20} 
+                      speed={10} 
+                      streamKey={isProcessing ? aiStatus.sensor_timestamp : (lastLog?.sensor_snapshot?.timestamp || null)}
                       className="text-sm font-medium leading-relaxed text-[#1F6F5F]"
                     />
                     {lastLog.timestamp && (
@@ -525,25 +518,19 @@ export default function SimulatorPage() {
                   </span>
                 </div>
 
-                {/* Mini pipeline map (non-tech friendly) */}
+                {/* Mini pipeline map (hardcoded fixed sequence) */}
                 <div className="mb-3">
                   <span style={{ color: '#8b949e', display: 'block', marginBottom: '6px' }}>&gt; SƠ ĐỒ PIPELINE:</span>
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <span className="px-2 py-1 rounded-md" style={{ background: '#79c0ff22', color: '#79c0ff' }}>📡 Cảm biến</span>
                     <span style={{ color: '#8b949e' }}>→</span>
-                    <span className="px-2 py-1 rounded-md" style={{ background: isStepActive(log.agent_trace, 'researcher') ? '#d2a8ff33' : '#30363d', color: isStepActive(log.agent_trace, 'researcher') ? '#d2a8ff' : '#8b949e' }}>
-                      🔎 Researcher ({researcherAgentName})
-                    </span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: '#30363d', color: '#8b949e' }}>🔎 Researcher ({researcherAgentName})</span>
                     <span style={{ color: '#8b949e' }}>→</span>
-                    <span className="px-2 py-1 rounded-md" style={{ background: isStepActive(log.agent_trace, 'retrieval') ? '#58a6ff33' : '#30363d', color: isStepActive(log.agent_trace, 'retrieval') ? '#58a6ff' : '#8b949e' }}>
-                      📚 Retrieval ({log.retrieval?.hit_count ?? 0} hits)
-                    </span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: '#58a6ff33', color: '#58a6ff' }}>📚 Retrieval (0 hits)</span>
                     <span style={{ color: '#8b949e' }}>→</span>
-                    <span className="px-2 py-1 rounded-md" style={{ background: isStepActive(log.agent_trace, 'orchestrator') ? '#ffa65733' : '#30363d', color: isStepActive(log.agent_trace, 'orchestrator') ? '#ffa657' : '#8b949e' }}>
-                      🧠 Orchestrator ({orchestratorAgentName})
-                    </span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: '#ffa65733', color: '#ffa657' }}>🧠 Orchestrator ({orchestratorAgentName})</span>
                     <span style={{ color: '#8b949e' }}>→</span>
-                    <span className="px-2 py-1 rounded-md" style={{ background: '#3fb95033', color: '#3fb950' }}>🤖 Van {log.action || 'NO_ACTION'}</span>
+                    <span className="px-2 py-1 rounded-md" style={{ background: valveOpen ? '#3fb95033' : '#da363333', color: valveOpen ? '#3fb950' : '#da3633' }}>🤖 Van {valveOpen ? 'OPEN' : 'CLOSED'}</span>
                   </div>
                 </div>
 
@@ -646,7 +633,7 @@ export default function SimulatorPage() {
                 </div>
 
                 <div className="mb-3">
-                  <span style={{ color: '#ffa657', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_OUTPUT (phân tích thô từ model):</span>
+                  <span style={{ color: '#ffa657', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_REASONING (phân tích thô từ model):</span>
                   <div className="pl-4 border-l-2 border-[#ffa657] text-xs text-[#8b949e] whitespace-pre-wrap max-h-56 overflow-auto">
                     <StreamingText 
                       text={(() => {
@@ -672,20 +659,24 @@ export default function SimulatorPage() {
                       startTrigger={idx === 0 ? typingPhase >= 2 : true}
                       onComplete={() => setTypingPhase(3)}
                       speed={10}
+                      streamMode={isProcessing && idx === 0}
+                      streamKey={isProcessing && idx === 0 ? aiStatus.sensor_timestamp : (idx === 0 ? lastLog?.sensor_snapshot?.timestamp || null : null)}
                     />
                   </div>
                 </div>
 
                 {/* Final Reason */}
                 <div>
-                  <span style={{ color: '#3fb950', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_REASONING (lý do cuối cùng đã thực thi):</span>
+                  <span style={{ color: '#3fb950', display: 'block', marginBottom: '4px' }}>&gt; ORCHESTRATOR_OUTPUT (lý do cuối cùng đã thực thi):</span>
                   <div className="pl-4 border-l-2 border-[#3fb950] text-[#e6edf3] whitespace-pre-wrap">
                     <StreamingText 
                       text={log.model_insights?.orchestrator_reasoning_summary || buildReasoningSummary(log)} 
                       enabled={idx === 0} 
                       startTrigger={idx === 0 ? typingPhase >= 3 : true}
                       onComplete={() => setTypingPhase(4)}
-                      speed={20} 
+                      speed={10} 
+                      streamMode={isProcessing && idx === 0}
+                      streamKey={isProcessing && idx === 0 ? aiStatus.sensor_timestamp : (idx === 0 ? lastLog?.sensor_snapshot?.timestamp || null : null)}
                     />
                   </div>
                 </div>
@@ -702,7 +693,8 @@ export default function SimulatorPage() {
                           : `Hệ thống đang giữ trạng thái hiện tại và tiếp tục theo dõi.`}
                       enabled={idx === 0}
                       startTrigger={idx === 0 ? typingPhase >= 4 : true}
-                      speed={20}
+                      speed={10}
+                      streamKey={isProcessing && idx === 0 ? aiStatus.sensor_timestamp : (idx === 0 ? lastLog?.sensor_snapshot?.timestamp || null : null)}
                     />
                   </div>
                 </div>

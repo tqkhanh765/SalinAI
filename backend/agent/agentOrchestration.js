@@ -7,26 +7,71 @@ const { toVietnamISOString, addHoursVietnamISOString } = require("../utils/vietn
 const FEEDBACK_LOOP_DELAY_HOURS = Math.max(0, Number(process.env.OUTCOME_MIN_ACTION_AGE_HOURS || "1"));
 
 function normalizeOrchestratorProvider() {
-    return String(process.env.AI_PROVIDER || "gemini").toLowerCase().trim();
+    return String(process.env.AI_PROVIDER || "none").toLowerCase().trim();
 }
 
 function createOrchestrationLLM() {
     const provider = normalizeOrchestratorProvider();
     const temperature = Number(process.env.LLM_TEMPERATURE || "0.2");
 
+    // GLM-4.7 / FPT Cloud — primary Orchestration Agent
+    if (provider === "glm4") {
+        const apiKey = process.env.GLM4_API_KEY;
+        const baseURL = process.env.GLM4_BASE_URL;
+        const model = process.env.GLM4_MODEL || "GLM-4.7";
+        if (!apiKey || !baseURL) throw new Error("Missing GLM4 config: GLM4_API_KEY and GLM4_BASE_URL are required");
+        return new ChatOpenAI({
+            model,
+            apiKey,
+            temperature,
+            streaming: true,
+            configuration: { baseURL }
+        });
+    }
+
+    // SAOLA4_MEDIUM — kept for backward compatibility (now used as Feedback/Evaluator Agent)
     if (provider === "saola4_medium") {
         const apiKey = process.env.SAOLA4_MEDIUM_API_KEY;
         const baseURL = process.env.SAOLA4_MEDIUM_BASE_URL;
         const model = process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium";
         if (!apiKey || !baseURL) throw new Error("Missing SAOLA4_MEDIUM config");
-        return new ChatOpenAI({ model, apiKey, temperature, configuration: { baseURL } });
+        return new ChatOpenAI({
+            model,
+            apiKey,
+            temperature,
+            streaming: true,
+            configuration: { baseURL }
+        });
     }
 
-    return new ChatGoogleGenerativeAI({
+    // No fallback allowed
+    throw new Error(`[Orchestrator] Provider '${provider}' is not supported or not configured. Only GLM-4 and SaoLa are allowed.`);
+}
+
+function getOrchestratorRuntimeInfo() {
+    const provider = normalizeOrchestratorProvider();
+
+    if (provider === "glm4") {
+        return {
+            provider,
+            model: process.env.GLM4_MODEL || "GLM-4.7",
+            streaming: true,
+        };
+    }
+
+    if (provider === "saola4_medium") {
+        return {
+            provider,
+            model: process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium",
+            streaming: true,
+        };
+    }
+
+    return {
+        provider: "gemini",
         model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-        apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY,
-        temperature,
-    });
+        streaming: false,
+    };
 }
 
 const llm = createOrchestrationLLM();
@@ -42,6 +87,7 @@ async function finalizeAction({
     mongoDb,
     agentTrace = [],
     modelInsights = {},
+    triggerReason = "AI Triggered",
 }) {
     if (!actionResult) return;
 
@@ -74,13 +120,13 @@ async function finalizeAction({
     await fbdb.ref("SalinAI/control/action").set(finalState);
 
 
-    const thresholds = actionResult.suggested_thresholds || { 
-        salinity_delta: 0.1, 
-        moisture_delta: 1.0, 
+    const thresholds = actionResult.suggested_thresholds || {
+        salinity_delta: 0.1,
+        moisture_delta: 1.0,
         recovery_salinity: 0.8,
         urgent_moisture: 30
     };
-    
+
     // Đánh dấu nếu AI không tự đưa ra ngưỡng (để mình biết mà nhắc AI)
     const isAiManaged = !!actionResult.suggested_thresholds;
     const thresholdSummary = `${isAiManaged ? "⚙️ AI đề xuất ngưỡng" : "⚠️ Ngưỡng mặc định"}: Mặn > ${thresholds.salinity_delta}ppt | Ẩm > ${thresholds.moisture_delta}%`;
@@ -90,25 +136,54 @@ async function finalizeAction({
     await fbdb.ref("SalinAI/ai_status").update({
         is_processing: false,
         last_reasoning: fullReason,
+        detailed_analysis: actionResult.detailedAnalysis || "Không có phân tích chi tiết.",
         thresholds: thresholds,
         threshold_summary: thresholdSummary,
         threshold_ai_managed: isAiManaged
     });
 
     const actionTimestamp = toVietnamISOString();
+    
+    // Flatten external_forecast fields into sensor_snapshot for frontend access
+    const weatherContext = sensorData?.external_forecast || {};
+    const sensor_snapshot = {
+        ...sensorData,
+        temperature: sensorData.temperature ?? weatherContext.temperature ?? null,
+        humidity: sensorData.humidity ?? weatherContext.humidity ?? null,
+        rainfall_24h: sensorData.rainfall_24h ?? weatherContext.rainfall_24h ?? null,
+        weather: sensorData.weather ?? weatherContext.weather ?? null,
+        tide_status: sensorData.tide_status ?? weatherContext.tide_status ?? null,
+    };
+    // Ensure crop_stage is always present in the snapshot (fallback to stored sensor_data or default)
+    try {
+        if (!sensor_snapshot.crop_stage) {
+            const cropStageSnap = await fbdb.ref("SalinAI/sensor_data/crop_stage").once("value");
+            const storedStage = cropStageSnap.val();
+            sensor_snapshot.crop_stage = storedStage || "VEGETATIVE";
+        }
+    } catch (err) {
+        sensor_snapshot.crop_stage = sensor_snapshot.crop_stage || "VEGETATIVE";
+    }
+    
+    const orchestrator_provider = normalizeOrchestratorProvider();
+    const researcher_provider = modelInsights?.researcher_provider || "saola4_small"; // Fallback to config default
+
     const actionLogPayload = {
         timestamp: actionTimestamp,
-        actor,
-        action: finalState,
-        reason: fullReason,
-        sensor_snapshot: sensorData,
-        subagent_summary: researcherSummary,
+        actor: actor || "SYSTEM",
+        trigger_reason: triggerReason || "UNKNOWN",
+        researcher_provider: researcher_provider || "N/A",
+        orchestrator_provider: orchestrator_provider || "N/A",
+        action: finalState || "NO_ACTION",
+        reason: fullReason || "No reason provided",
+        sensor_snapshot: sensor_snapshot || {},
+        subagent_summary: researcherSummary || "",
         retrieval: {
             hit_count: finalHitCount || 0,
             source_ids: finalSourceIds || []
         },
-        agent_trace: agentTrace,
-        model_insights: modelInsights,
+        agent_trace: agentTrace || [],
+        model_insights: modelInsights || {},
     };
 
     await fbdb.ref("SalinAI/action_logs").push(actionLogPayload);
@@ -120,9 +195,9 @@ async function finalizeAction({
     console.log(`+-----------------------------------------------------------+\n`);
 
     if (mongoDb) {
-        await logActionWithPrediction(actionLogPayload).catch(() => {});
-        runAutonomousLearningCycle({ minActionAgeHours: FEEDBACK_LOOP_DELAY_HOURS }).catch(() => {});
+        await logActionWithPrediction(actionLogPayload).catch(() => { });
+        runAutonomousLearningCycle({ minActionAgeHours: FEEDBACK_LOOP_DELAY_HOURS }).catch(() => { });
     }
 }
 
-module.exports = { orchestratorAgent, finalizeAction };
+module.exports = { orchestratorAgent, finalizeAction, getOrchestratorRuntimeInfo };

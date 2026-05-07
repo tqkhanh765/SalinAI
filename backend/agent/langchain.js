@@ -2,7 +2,7 @@
  * Multi-agent AI runner.
  * Orchestrates the Researcher and Orchestrator phases, injects policy memory, and stores the final action trace.
  */
-const { researcherPromptTemplate, orchestratorPromptTemplate } = require("./prompt");
+const { researcherPromptTemplate, buildOrchestratorSystemPrompt } = require("./prompt");
 const { getDb } = require("../config/mongodb");
 const fbdb = require("../config/firebase");
 const { researcherTools, orchestratorTools } = require("./tools");
@@ -16,16 +16,24 @@ const {
 } = require("../services/core/agentSafetyService");
 const { toVietnamISOString } = require("../utils/vietnamTime");
 
-const { executeRAGTool } = require("../services/ai/retrievalService");
+const { executeRAGTool, generateSearchQueries } = require("../services/ai/retrievalService");
 const { researcherAgent, createResearcherAgent, normalizeResearcherProvider } = require("./agentResearch");
 
 const {
     orchestratorAgent,
     finalizeAction,
+    getOrchestratorRuntimeInfo,
 } = require("./agentOrchestration");
+
+const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE, logActionWithPrediction } = require("../services/ai/outcomeService");
 const { buildPolicyPromptBlock } = require("../services/ai/policyLearningService");
-const { createLangchainFormattingService } = require("../services/ai/langchainFormattingService");
-const { createLangchainResilienceService } = require("../services/ai/langchainResilienceService");
+const { createAgentUtilsService } = require("../services/ai/agentUtilsService");
+const { emitToken, emitAiStatus } = require("../services/core/socketService");
+const {
+    startAiStreamSession,
+    completeAiStreamSession,
+    failAiStreamSession,
+} = require("../services/core/aiStreamService");
 
 const MAX_RESEARCH_LOOPS = Math.max(1, parseInt(process.env.MAX_RESEARCH_LOOPS || "2", 10));
 const MAX_ORCHESTRATION_LOOPS = Math.max(1, parseInt(process.env.MAX_ORCHESTRATION_LOOPS || "3", 10));
@@ -37,13 +45,13 @@ const RESEARCHER_PHASE_TIMEOUT_MS = Math.max(
 );
 const ORCHESTRATOR_PHASE_TIMEOUT_MS = Math.max(
     2000,
-    parseInt(process.env.ORCHESTRATOR_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "60000", 10)
+    parseInt(process.env.ORCHESTRATOR_PHASE_TIMEOUT_MS || process.env.AGENT_PHASE_TIMEOUT_MS || "120000", 10)
 );
 const AGENT_TIMEOUT_RETRIES = Math.max(0, parseInt(process.env.AGENT_TIMEOUT_RETRIES || "1", 10));
 const AGENT_TIMEOUT_RETRY_DELAY_MS = Math.max(0, parseInt(process.env.AGENT_TIMEOUT_RETRY_DELAY_MS || "600", 10));
 const MAX_TRACE_STEPS = Math.max(10, parseInt(process.env.AGENT_TRACE_MAX_STEPS || "40", 10));
 const MAX_INSIGHT_CHARS = Math.max(200, parseInt(process.env.AGENT_INSIGHT_MAX_CHARS || "800", 10));
-const MAX_RETRIEVAL_OUTPUT_CHARS = Math.max(400, parseInt(process.env.RETRIEVAL_OUTPUT_MAX_CHARS || "2200", 10));
+const MAX_RETRIEVAL_OUTPUT_CHARS = Math.max(400, parseInt(process.env.RETRIEVAL_OUTPUT_MAX_CHARS || "1200", 10));
 const MAX_FULL_OUTPUT_CHARS = Math.max(2000, parseInt(process.env.MODEL_OUTPUT_MAX_CHARS || "12000", 10));
 const MAX_ORCHESTRATOR_OUTPUT_PREVIEW_CHARS = Math.max(700, parseInt(process.env.ORCHESTRATOR_OUTPUT_PREVIEW_CHARS || "1600", 10));
 
@@ -64,16 +72,18 @@ const {
     toText,
     compactText,
     truncateText,
-    cleanModelArtifacts,
     stripThinkTags,
-    buildReasoningSummary,
-    buildPolicySummaryForOutput,
-    buildOrchestratorOutputPreview,
-    normalizeFarmerReason,
-    buildOrchestratorRetryPrompt,
-    ensureResearcherCitations,
     parseDecisionFromText,
-} = createLangchainFormattingService({
+    cleanModelArtifacts,
+    buildReasoningSummary,
+    buildOrchestratorOutputPreview,
+    buildPolicySummaryForOutput,
+    ensureResearcherCitations,
+    normalizeFarmerReason,
+    normalizePipelineError,
+    tryFinalizeFallback,
+    buildOrchestratorRetryPrompt,
+} = createAgentUtilsService({
     maxInsightChars: MAX_INSIGHT_CHARS,
     maxFullOutputChars: MAX_FULL_OUTPUT_CHARS,
     maxOrchestratorOutputPreviewChars: MAX_ORCHESTRATOR_OUTPUT_PREVIEW_CHARS,
@@ -83,23 +93,16 @@ const {
     isRetryableAttempt,
     queueRetryInstruction,
     createNoToolActionError,
-    normalizePipelineError,
-    tryFinalizeFallback,
-} = createLangchainResilienceService({
-    maxOrchestrationLoops: MAX_ORCHESTRATION_LOOPS,
-    maxFullOutputChars: MAX_FULL_OUTPUT_CHARS,
-    isQuotaError,
-    parseRetrySeconds,
-    buildFallbackAction,
-    finalizeAction,
-    buildOrchestratorOutputPreview,
-    buildReasoningSummary,
-    truncateText,
-});
+} = {
+    // Basic logic for loop control if needed, but mostly managed in try/catch now
+    isRetryableAttempt: (loop) => loop < MAX_ORCHESTRATION_LOOPS,
+    queueRetryInstruction: (trace, msg) => trace.push({ role: 'retry', content: msg }),
+    createNoToolActionError: () => new Error("Model failed to call a tool.")
+};
 
 // ─── Pipeline Execution ──────────────────────────────────────────────────────
-async function runAgent(sensorData) {
-    const { salinity, moisture, crop_stage } = sensorData;
+async function runAgent(sensorData, triggerReason = "") {
+    const { salinity, moisture, crop_stage, external_forecast } = sensorData;
     const mongoDb = getDb();
     if (!mongoDb) {
         console.error("[Orchestrator] MongoDB chưa được kết nối.");
@@ -108,7 +111,7 @@ async function runAgent(sensorData) {
             last_reasoning: "MongoDB chưa được kết nối. Quy trình AI không thể chạy.",
         };
         await fbdb.ref("SalinAI/ai_status").update(statusPayload);
-        return;
+        return { action: "NO_ACTION", reason: "MongoDB chưa được kết nối." };
     }
 
     let finalHitCount = 0;
@@ -179,7 +182,6 @@ async function runAgent(sensorData) {
     };
 
     try {
-        console.log("\n[Pipeline] 🚀 Bắt đầu pipeline nhiều tác tử...");
         addTrace("pipeline", "start", "Bắt đầu pipeline nhiều tác tử", {
             sensor: { salinity, moisture, crop_stage: crop_stage || "VEGETATIVE" },
         });
@@ -192,21 +194,60 @@ async function runAgent(sensorData) {
             preview: compactText(policyPromptBlock, 220),
         });
 
-        const mandatoryRetrieval = await executeRAGTool(salinity, moisture, mongoDb, crop_stage);
-        finalHitCount = mandatoryRetrieval.hitCount;
-        finalSourceIds = mandatoryRetrieval.sourceIds;
-        retrievalOutputPreview = truncateText(mandatoryRetrieval.context, MAX_RETRIEVAL_OUTPUT_CHARS);
-        addTrace("retrieval", "mandatory_rag_result", `Đã nạp sẵn ${finalHitCount} đoạn guideline cho Researcher`, {
-            source_ids: finalSourceIds,
-        });
+        let mandatoryRetrievalContext = "";
+        let queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: triggerReason });
+
+        let ragRetryCount = 0;
+        const maxRagRetries = 2;
+
+        while (ragRetryCount <= maxRagRetries) {
+            const queryText = queries.join(" ");
+            const retrieval = await executeRAGTool(queryText, mongoDb, { salinity, moisture });
+
+            const hasHighRelevance = Array.isArray(retrieval.docs) && retrieval.docs.some((d) => Number(d.score || 0) >= 0.72);
+
+            if (retrieval.hitCount > 0 && hasHighRelevance) {
+                finalHitCount = retrieval.hitCount;
+                finalSourceIds = retrieval.sourceIds;
+                mandatoryRetrievalContext = retrieval.context;
+                addTrace("retrieval", "rag_accepted", `RAG chấp nhận ở lần thử ${ragRetryCount + 1}`, {
+                    hit_count: finalHitCount,
+                    queries,
+                });
+                break;
+            } else {
+                addTrace("retrieval", "rag_retry", `RAG không đạt (hit=${retrieval.hitCount}, maxScore < 0.72), thử lại`, {
+                    attempt: ragRetryCount + 1,
+                    queries,
+                });
+                ragRetryCount++;
+                if (ragRetryCount <= maxRagRetries) {
+                    queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: `Cần mở rộng ngữ cảnh, không tìm thấy tài liệu liên quan cho (lần thử ${ragRetryCount})` });
+                } else {
+                    finalHitCount = retrieval.hitCount;
+                    finalSourceIds = retrieval.sourceIds;
+                    mandatoryRetrievalContext = retrieval.context || "Không tìm thấy dữ liệu liên quan.";
+                    addTrace("retrieval", "rag_fallback", "RAG cạn kiệt lượt thử, dùng kết quả cuối", {
+                        hit_count: finalHitCount,
+                    });
+                }
+            }
+        }
+
+        // Optimization: Prepare the final context for the Researcher
+        retrievalOutputPreview = mandatoryRetrievalContext;
 
         console.log("[Subagent] 🕵️ Researcher đang phân tích bằng chứng guideline...");
         const researcherMessages = [
             { role: "system", content: researcherPromptTemplate },
             {
                 role: "user",
-                content: `Dữ liệu cảm biến hiện tại: độ mặn ${salinity} ppt, độ ẩm đất ${moisture}%, giai đoạn cây ${crop_stage || "VEGETATIVE"}. Hãy phân tích theo kiểu tự nhiên, có chiều sâu hơn, bằng tiếng Việt. Viết như đang giải thích cho một đồng nghiệp nghe, không dùng gạch đầu dòng. Nếu có nhiều nguồn thì hãy so sánh chúng và nói nguồn nào đáng tin hơn trong tình huống này. Đừng chốt kết luận quá sớm; hãy đi từ bối cảnh, đến bằng chứng, đến nhận xét về xu hướng rồi mới kết luận. Mỗi đoạn phải nêu rõ nguồn nào đang được dùng làm bằng chứng, ví dụ guideline ID, lịch sử hành động gần đây, hoặc bài học outcome. Dưới đây là evidence retrieval bắt buộc đã được nạp sẵn:
-${mandatoryRetrieval.context}`,
+                content: `Dữ liệu cảm biến hiện tại: độ mặn ${salinity} ppt, độ ẩm đất ${moisture}%, giai đoạn cây ${crop_stage || "VEGETATIVE"}.
+Dự báo thời tiết: ${external_forecast?.weather || "Không rõ"} (Lượng mưa 24h: ${external_forecast?.rainfall_24h || 0}mm).
+Thủy triều: ${external_forecast?.tide_status || "Không rõ"}.
+
+Hãy phân tích theo kiểu tự nhiên, có chiều sâu hơn, bằng tiếng Việt. Dưới đây là evidence retrieval bắt buộc:
+${mandatoryRetrievalContext}`,
             },
         ];
 
@@ -259,7 +300,7 @@ ${mandatoryRetrieval.context}`,
                 addTrace("researcher", "summary", "Researcher tạo bản tóm tắt cuối", {
                     preview: compactText(researcherSummary, 400),
                 });
-                console.log(`[Subagent] 📜 Researcher summary ready: "${researcherSummary.substring(0, 60)}..."`);
+                console.log(`[Subagent] 📜 Researcher summary ready: "${researcherSummary.substring(0, 200)}..."`);
                 break;
             }
 
@@ -269,12 +310,14 @@ ${mandatoryRetrieval.context}`,
 
             for (const toolCall of response.tool_calls) {
                 if (toolCall.name === "search_agricultural_guidelines") {
-                    const ragData = await executeRAGTool(toolCall.args.salinity, toolCall.args.moisture, mongoDb, crop_stage);
+                    const ragQuery = String(toolCall.args?.query || "").trim() || queries.join(" ");
+                    const ragData = await executeRAGTool(ragQuery, mongoDb, { salinity, moisture, crop_stage });
                     finalHitCount = ragData.hitCount;
                     finalSourceIds = ragData.sourceIds;
                     retrievalOutputPreview = truncateText(ragData.context, MAX_RETRIEVAL_OUTPUT_CHARS);
                     addTrace("retrieval", "rag_result", `Đã truy xuất ${finalHitCount} đoạn guideline`, {
                         source_ids: finalSourceIds,
+                        query: ragQuery,
                     });
 
                     researcherMessages.push({
@@ -318,10 +361,9 @@ ${mandatoryRetrieval.context}`,
         }
 
 
-        const { CROP_STAGE_PROFILES, DEFAULT_STAGE_PROFILE } = require("../services/ai/outcomeService");
         const currentStageUpper = String(crop_stage || "VEGETATIVE").toUpperCase();
         const stageProfile = CROP_STAGE_PROFILES[currentStageUpper] || DEFAULT_STAGE_PROFILE;
-        
+
         const constraintsBlock = `
 [THÔNG TIN THAM KHẢO NỘI BỘ - GIAI ĐOẠN ${currentStageUpper}]:
 - Ngưỡng mặn khuyến nghị: < ${stageProfile.salinityMaxSafe} ppt.
@@ -329,23 +371,65 @@ ${mandatoryRetrieval.context}`,
 - Chỉ dẫn phong cách: ĐÂY LÀ THÔNG SỐ NỘI BỘ. Đừng trích dẫn trực tiếp con số "${stageProfile.salinityMaxSafe} ppt" vào lời thoại. Hãy dùng ngôn ngữ tự nhiên như "độ mặn đang ở mức cho phép", "có dấu hiệu chớm mặn", "vượt ngưỡng an toàn" hoặc "môi trường rất thuận lợi". Hãy giải thích dựa trên cảm nhận về sự phù hợp đối với cây lúa thay vì đọc công thức.`;
 
         const orchestratorMessages = [
-            { role: "system", content: `${orchestratorPromptTemplate}\n\n${policyPromptBlock}\n\n${constraintsBlock}` },
+            { role: "system", content: `${buildOrchestratorSystemPrompt(sensorData)}\n\n${policyPromptBlock}\n\n${constraintsBlock}` },
             {
                 role: "user",
-                content: `Dữ liệu cảm biến hiện tại:\n- Độ mặn: ${salinity} ppt\n- Độ ẩm đất: ${moisture}%\n- Giai đoạn cây: ${crop_stage || "VEGETATIVE"}\n\nBáo cáo từ Researcher:\n${researcherSummary}\n\nTóm tắt đánh giá cũ (policy/outcome memory):\n${policyContextForModel || "Chưa có dữ liệu đánh giá cũ."}\n\nHãy đưa ra quyết định cuối cùng và gọi tool điều khiển van. Viết ngắn gọn, tự nhiên, bằng tiếng Việt. Hãy tư duy như một chuyên gia nông nghiệp đầy kinh nghiệm, biết cân nhắc giữa rủi ro mặn và nhu cầu nước của cây.`,
+                content: `Dữ liệu cảm biến hiện tại:
+- Độ mặn: ${salinity} ppt
+- Độ ẩm đất: ${moisture}%
+- Giai đoạn cây: ${crop_stage || "VEGETATIVE"}
+- Dự báo mưa (24h): ${external_forecast?.rainfall_24h ?? "Không có dữ liệu"} mm
+- Thủy triều: ${external_forecast?.tide_status || "Không có dữ liệu"}
+
+Báo cáo từ Researcher:
+${researcherSummary}
+
+Tóm tắt đánh giá cũ (policy/outcome memory):
+${policyContextForModel || "Chưa có dữ liệu đánh giá cũ."}
+
+Hãy đưa ra quyết định cuối cùng và gọi tool điều khiển van. Viết ngắn gọn nhưng đầy đủ chiều sâu, bằng tiếng Việt. Hãy tư duy như một chuyên gia nông nghiệp đầy kinh nghiệm, biết cân nhắc giữa rủi ro mặn và nhu cầu nước của cây.`,
             },
         ];
 
+        console.log("[Orchestrator] Prompt sizes", {
+            system_chars: orchestratorMessages[0].content.length,
+            user_chars: orchestratorMessages[1].content.length,
+            policy_preview_chars: policyPromptBlock.length,
+            researcher_summary_chars: researcherSummary.length,
+        });
+
         let orchestrationLoop = 0;
+        const orchestratorRuntimeInfo = getOrchestratorRuntimeInfo();
         while (orchestrationLoop < MAX_ORCHESTRATION_LOOPS) {
             orchestrationLoop++;
-            addTrace("orchestrator", "iteration", `Vòng Orchestrator ${orchestrationLoop} bắt đầu`);
+            addTrace("orchestrator", "iteration", `Vòng Orchestrator ${orchestrationLoop} bắt đầu`, {
+                provider: orchestratorRuntimeInfo.provider,
+                model: orchestratorRuntimeInfo.model,
+                streaming: orchestratorRuntimeInfo.streaming,
+            });
+            console.log(
+                `[Orchestrator] Invoke start | provider=${orchestratorRuntimeInfo.provider} | model=${orchestratorRuntimeInfo.model} | loop=${orchestrationLoop}`
+            );
+            const orchestratorInvokeStartedAt = Date.now();
+            addTrace("orchestrator", "invoke_start", "Bắt đầu gọi model Orchestrator", {
+                provider: orchestratorRuntimeInfo.provider,
+                model: orchestratorRuntimeInfo.model,
+                system_chars: orchestratorMessages[0].content.length,
+                user_chars: orchestratorMessages[1].content.length,
+            });
             const response = await invokeWithPhaseTimeoutRetry({
                 phaseKey: "orchestrator",
-                label: "Orchestrator phase",
+                label: `Orchestrator phase (${orchestratorRuntimeInfo.provider}/${orchestratorRuntimeInfo.model})`,
                 timeoutMs: ORCHESTRATOR_PHASE_TIMEOUT_MS,
                 invokeFn: () => orchestratorAgent.invoke(orchestratorMessages),
                 iteration: orchestrationLoop,
+            });
+            addTrace("orchestrator", "latency_detail", "Orchestrator invoke xong", {
+                provider: orchestratorRuntimeInfo.provider,
+                model: orchestratorRuntimeInfo.model,
+                duration_ms: Date.now() - orchestratorInvokeStartedAt,
+                timeout_ms: ORCHESTRATOR_PHASE_TIMEOUT_MS,
+                loop: orchestrationLoop,
             });
             orchestratorMessages.push(response);
             const orchestratorContent = cleanModelArtifacts(stripThinkTags(toText(response?.content)));
@@ -397,7 +481,16 @@ ${mandatoryRetrieval.context}`,
 
             for (const toolCall of response.tool_calls) {
                 if (toolCall.name === "execute_valve_control") {
-                    console.log("[Orchestrator] 🛠️ TOOL CALL ARGS:", JSON.stringify(toolCall.args, null, 2));
+                    // Sanitize args to handle LLM artifacts (like extra quotes or backslashes)
+                    if (toolCall.args) {
+                        for (const key in toolCall.args) {
+                            if (typeof toolCall.args[key] === "string") {
+                                toolCall.args[key] = toolCall.args[key].replace(/^["']|["']$/g, "").trim();
+                            }
+                        }
+                    }
+
+                    console.log("[Orchestrator] 🛠️ TOOL CALL ARGS (Sanitized):", JSON.stringify(toolCall.args, null, 2));
 
                     const toolInstance = orchestratorTools.find((tool) => tool.name === toolCall.name);
                     orchestratorArgumentReason = stripThinkTags(toText(toolCall.args?.reason || ""));
@@ -470,14 +563,22 @@ ${mandatoryRetrieval.context}`,
                         ? (process.env.SAOLA4_SMALL_MODEL || "saola4-small")
                         : (process.env.RESEARCHER_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash"),
                 orchestrator_provider: String(process.env.AI_PROVIDER || "gemini").toLowerCase(),
-                orchestrator_model:
-                    String(process.env.AI_PROVIDER || "gemini").toLowerCase() === "saola4_medium"
-                        ? (process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium")
-                        : (process.env.GEMINI_MODEL || "gemini-2.5-flash"),
+                orchestrator_model: (() => {
+                    const p = String(process.env.AI_PROVIDER || "gemini").toLowerCase();
+                    if (p === "glm4") return process.env.GLM4_MODEL || "GLM-4.7";
+                    if (p === "saola4_medium") return process.env.SAOLA4_MEDIUM_MODEL || "SaoLa4-medium";
+                    return process.env.GEMINI_MODEL || "gemini-2.5-flash";
+                })(),
             },
         });
 
         // Log moved to finalizeAction for better consolidation.
+        return {
+            action: actionResult.executed_state,
+            reason: actionResult.reason,
+            suggested_thresholds: actionResult.suggested_thresholds,
+            source_ids: actionResult.source_ids
+        };
 
     } catch (err) {
         normalizePipelineError(err);
@@ -490,20 +591,19 @@ ${mandatoryRetrieval.context}`,
             const fallbackAction = await tryFinalizeFallback({
                 err,
                 sensorData,
-                finalHitCount,
-                finalSourceIds,
-                researcherSummary,
-                researcherRawOutput,
-                orchestratorRawOutput,
-                orchestratorArgumentReason,
-                retrievalOutputPreview,
+                finalizeAction,
+                buildFallbackAction,
+                addTrace,
                 mongoDb,
                 agentTrace,
-                addTrace,
             });
 
             console.warn(`[Orchestrator] ⚠️ Dùng fallback action do lỗi pipeline: ${err.message}`);
-            return;
+            return {
+                action: fallbackAction.executed_state,
+                reason: fallbackAction.reason,
+                is_fallback: true
+            };
         } catch (fallbackErr) {
             console.error("[Orchestrator] Fallback action failed:", fallbackErr.message);
         }
@@ -517,4 +617,244 @@ ${mandatoryRetrieval.context}`,
         throw err;
     }
 }
-module.exports = { runAgent };
+/**
+ * runAgentStreaming
+ * Identical logic to runAgent but streams orchestrator tokens to Socket.io.
+ */
+async function runAgentStreaming(sensorData, triggerReason = "") {
+    const { salinity, moisture, crop_stage, external_forecast } = sensorData;
+    const mongoDb = getDb();
+    if (!mongoDb) {
+        failAiStreamSession("MongoDB not connected");
+        emitAiStatus("error", { message: "MongoDB not connected" });
+        return runAgent(sensorData, triggerReason);
+    }
+
+    startAiStreamSession({ sensorData, triggerReason });
+
+    emitAiStatus("start", { phase: "pipeline" });
+
+    let finalHitCount = 0;
+    let finalSourceIds = [];
+    let researcherSummary = "";
+    let actionResult = null;
+    let researcherRawOutput = "";
+    let orchestratorRawOutput = "";
+    let orchestratorArgumentReason = "";
+    let retrievalOutputPreview = "";
+    const agentTrace = [];
+
+    const utils = createAgentUtilsService({
+        maxInsightChars: MAX_INSIGHT_CHARS,
+        maxFullOutputChars: MAX_FULL_OUTPUT_CHARS,
+        maxOrchestratorOutputPreviewChars: MAX_ORCHESTRATOR_OUTPUT_PREVIEW_CHARS,
+    });
+
+    const addTrace = (phase, event, message, meta = {}) => {
+        if (agentTrace.length >= MAX_TRACE_STEPS) return;
+        agentTrace.push({
+            timestamp: toVietnamISOString(),
+            phase,
+            event,
+            message,
+            meta,
+        });
+    };
+
+    try {
+
+        // 1. Policy Memory
+        emitAiStatus("processing", { phase: "pipeline", message: "🧠 Đang nạp trí nhớ bài học (Policy Memory)..." });
+        const policyPromptBlock = await buildPolicyPromptBlock();
+
+        // 2. RAG
+        emitAiStatus("processing", { phase: "retrieval", message: "📚 Đang truy xuất kiến thức từ kho guideline..." });
+        const queries = await generateSearchQueries({ salinity, moisture, crop_stage, external_forecast, trend: triggerReason });
+
+        // Use only the first (best) query for vector search to reduce noise
+        const bestQuery = queries[0] || `Hướng dẫn xử lý cho lúa giai đoạn ${crop_stage}`;
+        const retrieval = await executeRAGTool(bestQuery, mongoDb, { salinity, moisture });
+        finalHitCount = retrieval.hitCount;
+        finalSourceIds = retrieval.sourceIds;
+        const mandatoryRetrievalContext = retrieval.context || "Không tìm thấy dữ liệu liên quan.";
+        retrievalOutputPreview = truncateText(mandatoryRetrievalContext, MAX_RETRIEVAL_OUTPUT_CHARS);
+
+        // 3. Researcher
+        emitAiStatus("processing", { phase: "researcher", message: `🕵️ Researcher đang đối soát dữ liệu với ${finalSourceIds.length} tài liệu hướng dẫn...` });
+        const researcherMessages = [
+            { role: "system", content: researcherPromptTemplate },
+            {
+                role: "user",
+                content: `Dữ liệu cảm biến hiện tại: độ mặn ${salinity} ppt, độ ẩm đất ${moisture}%, giai đoạn cây ${crop_stage || "VEGETATIVE"}.
+Dự báo thời tiết: ${external_forecast?.weather || "Không rõ"} (Lượng mưa 24h: ${external_forecast?.rainfall_24h || 0}mm).
+Thủy triều: ${external_forecast?.tide_status || "Không rõ"}.
+
+Hãy phân tích theo kiểu tự nhiên, có chiều sâu bằng tiếng Việt. Tập trung vào việc đối chiếu dữ liệu cảm biến trên với các guideline dưới đây để tìm bằng chứng hành động:
+${mandatoryRetrievalContext}`,
+            },
+        ];
+
+        let researchLoop = 0;
+        const MAX_RESEARCH_LOOPS = 3;
+        while (researchLoop < MAX_RESEARCH_LOOPS) {
+            researchLoop++;
+            const resResponse = await researcherAgent.invoke(researcherMessages);
+            researcherMessages.push(resResponse);
+
+            const content = utils.stripThinkTags(utils.toText(resResponse?.content));
+            if (!resResponse.tool_calls || resResponse.tool_calls.length === 0) {
+                researcherRawOutput = content;
+                researcherSummary = utils.ensureResearcherCitations(content, finalSourceIds);
+                break;
+            }
+
+            // Handle researcher tool calls if any (e.g. RAG)
+            for (const toolCall of resResponse.tool_calls) {
+                const toolInstance = researcherTools.find((t) => t.name === toolCall.name);
+                if (toolInstance) {
+                    let toolResult;
+                    if (toolCall.name === "search_agricultural_guidelines") {
+                        const queryStr = toolCall.args.query || `Ngưỡng mặn lúa giai đoạn ${crop_stage}`;
+                        const ragData = await executeRAGTool(queryStr, mongoDb, { salinity, moisture });
+                        finalHitCount = ragData.hitCount;
+                        finalSourceIds = ragData.sourceIds;
+                        retrievalOutputPreview = truncateText(ragData.context, MAX_RETRIEVAL_OUTPUT_CHARS);
+                        toolResult = ragData.context;
+                    } else {
+                        toolResult = await toolInstance.invoke(toolCall.args);
+                    }
+
+                    researcherMessages.push({
+                        role: "tool",
+                        tool_call_id: toolCall.id,
+                        name: toolCall.name,
+                        content: toolResult,
+                    });
+                }
+            }
+        }
+        console.log(`[Pipeline] 🔍 Researcher đã hoàn thành với ${finalHitCount} nguồn.`);
+
+        // 4. Orchestrator Phase 1: Detailed Analysis (Streaming)
+        console.log("[Pipeline] 🤖 Bắt đầu phase Orchestrator (Detailed Analysis)...");
+        emitAiStatus("processing", { phase: "orchestrator", message: "🤖 Orchestrator bắt đầu lập luận chuyên sâu..." });
+
+        const { orchestratorDetailedPromptTemplate, orchestratorSummaryPromptTemplate } = require("./prompt");
+
+        const detailedAnalysisMessages = [
+            { role: "system", content: `${orchestratorDetailedPromptTemplate}\n\n${policyPromptBlock}` },
+            {
+                role: "user",
+                content: `
+Báo cáo Researcher: ${researcherSummary}
+
+[Dữ Liệu Hiện Tại]
+- Độ mặn: ${salinity} ppt
+- Độ ẩm đất: ${moisture}%
+- Giai đoạn cây: ${crop_stage || "VEGETATIVE"}
+- Thời tiết: ${external_forecast?.weather || "Không rõ"}
+- Lượng mưa 24h: ${external_forecast?.rainfall_24h || 0} mm
+- Thủy triều: ${external_forecast?.tide_status || "Không rõ"}`,
+            },
+        ];
+
+        // STREAMING START (Phase 1)
+        const stream = await orchestratorAgent.stream(detailedAnalysisMessages);
+        let gatheredDetailedAnalysis = "";
+
+        try {
+            let tokenCount = 0;
+            for await (const chunk of stream) {
+                if (chunk.content) {
+                    const token = typeof chunk.content === "string" ? chunk.content : utils.toText(chunk.content);
+                    gatheredDetailedAnalysis += token;
+                    emitToken(token, "orchestrator");
+
+                    tokenCount++;
+                    // Chỉ update Firebase mỗi 15 tokens để tránh spam database gây rate-limit hoặc nghẽn cổ chai
+                    if (tokenCount % 15 === 0) {
+                        fbdb.ref("SalinAI/ai_status").update({ last_reasoning: gatheredDetailedAnalysis }).catch(() => { });
+                    }
+                }
+            }
+            // Đảm bảo update lần cuối khi stream kết thúc
+            fbdb.ref("SalinAI/ai_status").update({ last_reasoning: gatheredDetailedAnalysis }).catch(() => { });
+        } catch (streamErr) {
+            throw streamErr;
+        }
+
+        orchestratorRawOutput = gatheredDetailedAnalysis;
+        console.log("[Pipeline] 🤖 Orchestrator đã hoàn thành phân tích chi tiết.");
+
+        // 5. Orchestrator Phase 2: Final Summary & Tool Call (Decision)
+        console.log("[Pipeline] 🎯 Bắt đầu phase Orchestrator (Decision)...");
+        emitAiStatus("processing", { phase: "orchestrator", message: "Đang chốt quyết định cuối cùng..." });
+
+        const summaryDecisionMessages = [
+            { role: "system", content: orchestratorSummaryPromptTemplate },
+            {
+                role: "user",
+                content: `Phân tích chi tiết: ${gatheredDetailedAnalysis}\n\nBằng chứng từ Researcher: ${researcherSummary}`,
+            },
+        ];
+
+        const summaryResponse = await orchestratorAgent.invoke(summaryDecisionMessages);
+
+        // Handle tool call for final decision
+        if (summaryResponse.tool_calls && summaryResponse.tool_calls.length > 0) {
+            const toolCall = summaryResponse.tool_calls[0];
+            const toolInstance = orchestratorTools.find((t) => t.name === toolCall.name);
+            if (toolInstance) {
+                const rawOutput = await toolInstance.invoke(toolCall.args);
+                actionResult = JSON.parse(rawOutput);
+            }
+        } else {
+            // Fallback parsing if no tool call
+            const content = utils.toText(summaryResponse.content);
+            const state = utils.parseDecisionFromText(content);
+            const toolInstance = orchestratorTools.find((t) => t.name === "execute_valve_control");
+            const rawOutput = await toolInstance.invoke({
+                state,
+                reason: content.slice(0, 150),
+                source_ids: (finalSourceIds || []).map((id) => String(id)),
+            });
+            actionResult = JSON.parse(rawOutput);
+        }
+
+        actionResult.reason = utils.normalizeFarmerReason(actionResult.reason);
+
+        await finalizeAction({
+            actionResult,
+            sensorData,
+            finalHitCount,
+            finalSourceIds,
+            researcherSummary,
+            actor: "ORCHESTRATOR_AGENT",
+            mongoDb,
+            agentTrace,
+            modelInsights: {
+                orchestrator_output_preview: orchestratorRawOutput,
+                orchestrator_reasoning_summary: actionResult.reason,
+                researcher_output_preview: researcherRawOutput,
+                retrieval_output_preview: retrievalOutputPreview
+            }
+        });
+
+        console.log(`[Pipeline] ✅ Quyết định cuối cùng: ${actionResult.executed_state}`);
+        emitAiStatus("done", { phase: "pipeline" });
+        completeAiStreamSession({ action: actionResult.executed_state, reason: actionResult.reason });
+        return {
+            action: actionResult.executed_state,
+            reason: actionResult.reason
+        };
+
+    } catch (err) {
+        console.error("[Streaming Pipeline] Error:", err.message);
+        emitAiStatus("error", { message: err.message });
+        failAiStreamSession(err.message);
+        // Safe fallback
+        return { action: "NO_ACTION", reason: `Lỗi streaming: ${err.message}` };
+    }
+}
+
+module.exports = { runAgent, runAgentStreaming };
