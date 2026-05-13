@@ -4,6 +4,14 @@
 
 ---
 
+## 🎬 Demo Video
+
+[![SalinAI Demo Video](https://img.youtube.com/vi/VlD3pZOHvxo/maxresdefault.jpg)](https://www.youtube.com/watch?v=VlD3pZOHvxo)
+
+> 📺 Click the thumbnail above to watch the full project demo on YouTube.
+
+---
+
 ## 🌟 Vision & Mission
 SalinAI is a comprehensive IoT and AI solution designed to protect crops in salinity-threatened regions like the Mekong Delta. By combining real-time sensor data with an **Agentic Multi-Agent Pipeline**, the system autonomously reasons through agricultural guidelines to make precise irrigation decisions, minimizing water stress and salinity damage for farmers.
 
